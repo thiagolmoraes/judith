@@ -174,3 +174,80 @@ def test_ollama_models_gated_on_liveness(tmp_path, monkeypatch):
 
     monkeypatch.setattr(SessionManager, "_ollama_alive", lambda self: True)
     assert "ollama:llama3.3" in manager.get_settings()["models"]
+
+
+def test_local_server_liveness_accepts_openai_compatible(tmp_path, monkeypatch):
+    """The liveness probe backing `ollama:*` must accept an OpenAI-compatible local server
+    (vLLM, llama.cpp, LM Studio), not just Ollama's native API. Those serve `/v1/models` but
+    404 on `/api/tags`, which alone reads as "nothing running" and culls their models.
+    """
+    from types import SimpleNamespace
+
+    from coworker.server.manager import SessionManager
+
+    monkeypatch.setenv("COWORKER_STATE_DIR", str(tmp_path / "state"))
+    manager = SessionManager(data_dir=tmp_path / "data")
+    manager.secrets.put("provider:ollama", {"base_url": "http://192.0.2.10:9001/v1"})
+
+    seen: list[str] = []
+
+    def fake_get(url, **kwargs):
+        seen.append(url)
+        # vLLM: no native Ollama API, but a working OpenAI-compatible surface.
+        code = 404 if url.endswith("/api/tags") else 200
+        return SimpleNamespace(
+            status_code=code, json=lambda: {"data": [{"id": "qwen3-14b"}]}
+        )
+
+    monkeypatch.setattr("httpx.get", fake_get)
+    manager._ollama_alive_cache = None
+
+    assert manager._ollama_alive() is True
+    assert seen == [
+        "http://192.0.2.10:9001/api/tags",  # native tried first
+        "http://192.0.2.10:9001/v1/models",  # then the compat fallback
+    ]
+    # ...and the compat listing is read from `/v1/models`'s `data[].id`.
+    assert manager._ollama_models() == ["ollama:qwen3-14b"]
+
+
+def test_local_server_liveness_false_when_nothing_answers(tmp_path, monkeypatch):
+    """Both probes failing still means "not present" — the anti-phantom guarantee holds."""
+    from coworker.server.manager import SessionManager
+
+    monkeypatch.setenv("COWORKER_STATE_DIR", str(tmp_path / "state"))
+    manager = SessionManager(data_dir=tmp_path / "data")
+    manager.secrets.put("provider:ollama", {"base_url": "http://192.0.2.10:9001/v1"})
+
+    def fake_get(url, **kwargs):
+        raise ConnectionError("refused")
+
+    monkeypatch.setattr("httpx.get", fake_get)
+    manager._ollama_alive_cache = None
+
+    assert manager._ollama_alive() is False
+    assert manager._ollama_models() == []
+
+
+def test_native_ollama_listing_still_uses_api_tags(tmp_path, monkeypatch):
+    """A real Ollama must keep being read via `/api/tags` (`models[].name`) — the fallback is
+    additive and must not change behavior where the native API answers."""
+    from types import SimpleNamespace
+
+    from coworker.server.manager import SessionManager
+
+    monkeypatch.setenv("COWORKER_STATE_DIR", str(tmp_path / "state"))
+    manager = SessionManager(data_dir=tmp_path / "data")
+    manager.secrets.put("provider:ollama", {"base_url": "http://localhost:11434"})
+
+    def fake_get(url, **kwargs):
+        assert url.endswith("/api/tags"), f"compat path should not be probed: {url}"
+        return SimpleNamespace(
+            status_code=200, json=lambda: {"models": [{"name": "qwen3-coder:30b"}]}
+        )
+
+    monkeypatch.setattr("httpx.get", fake_get)
+    manager._ollama_alive_cache = None
+
+    assert manager._ollama_alive() is True
+    assert manager._ollama_models() == ["ollama:qwen3-coder:30b"]

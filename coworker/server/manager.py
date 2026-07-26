@@ -1634,49 +1634,73 @@ class SessionManager:
         return {"ok": True, "dm_session": self.dm_session()}
 
     def _ollama_alive(self) -> bool:
-        """Best-effort local-Ollama liveness, cached 30s (get_settings runs on every GUI
+        """Best-effort local-server liveness, cached 30s (get_settings runs on every GUI
         fetch — no 2s probe inline). Keyless is not the same as PRESENT: `ollama:*` picker
-        entries render only when an Ollama actually answers, so a machine with no Ollama
-        never shows phantom local models (e.g. a stray pasted string saved as a model id,
-        caught 2026-07-21)."""
+        entries render only when a server actually answers, so a machine with no local
+        server never shows phantom local models (e.g. a stray pasted string saved as a
+        model id, caught 2026-07-21).
+
+        Probes Ollama's native `/api/tags` first, then falls back to the OpenAI-compatible
+        `/v1/models`. The fallback is what lets a keyless non-Ollama local server (vLLM,
+        llama.cpp, LM Studio) be used through this provider: those serve `/v1` but 404 on
+        `/api/tags`, which alone would read as "nothing running" and cull their models.
+        """
         import time
 
         now = time.monotonic()
         cached = getattr(self, "_ollama_alive_cache", None)
         if cached and now - cached[0] < 30:
             return cached[1]
+        alive = self._probe_local_server(self._ollama_base(), timeout=0.8) is not None
+        self._ollama_alive_cache = (now, alive)
+        return alive
+
+    def _ollama_base(self) -> str:
+        """Configured local-server root with any `/v1` suffix stripped — both API flavors are
+        addressed relative to the root (`/api/tags`, `/v1/models`)."""
         profile = self.secrets.get("provider:ollama") or {}
         base = (profile.get("base_url") or "http://localhost:11434").strip().rstrip("/")
         if base.endswith("/v1"):
             base = base[: -len("/v1")]
-        try:
-            import httpx
+        return base
 
-            alive = httpx.get(base + "/api/tags", timeout=0.8).status_code == 200
-        except Exception:
-            alive = False
-        self._ollama_alive_cache = (now, alive)
-        return alive
+    def _probe_local_server(self, base: str, *, timeout: float) -> Optional[str]:
+        """Which API flavor answers at `base`: "ollama" (native `/api/tags`), "openai"
+        (`/v1/models`), or None if neither does. Never raises — a probe failure is a
+        "no" for liveness, not an error worth surfacing to the GUI."""
+        import httpx
+
+        for path, flavor in (("/api/tags", "ollama"), ("/v1/models", "openai")):
+            try:
+                if httpx.get(base + path, timeout=timeout).status_code == 200:
+                    return flavor
+            except Exception:
+                continue
+        return None
 
     def _ollama_models(self) -> list[str]:
-        """Live list of models pulled into the configured Ollama server (via its native
-        `/api/tags`), as `ollama:<name>` so they're directly selectable. Empty if Ollama isn't
-        configured or unreachable — best-effort, never raises."""
-        profile = self.secrets.get("provider:ollama")
-        if not profile:
+        """Live list of models served by the configured local server, as `ollama:<name>` so
+        they're directly selectable. Reads Ollama's native `/api/tags` when that's what
+        answers, otherwise the OpenAI-compatible `/v1/models` (vLLM, llama.cpp, LM Studio).
+        Empty if nothing is configured or reachable — best-effort, never raises."""
+        if not self.secrets.get("provider:ollama"):
             return []
-        base = (profile.get("base_url") or "http://localhost:11434").strip().rstrip("/")
-        if base.endswith("/v1"):
-            base = base[: -len("/v1")]
+        base = self._ollama_base()
+        flavor = self._probe_local_server(base, timeout=2.0)
+        if flavor is None:
+            return []
         try:
             import httpx
 
-            data = httpx.get(base + "/api/tags", timeout=2.0).json()
-            return [
-                f"ollama:{m['name']}" for m in data.get("models", []) if m.get("name")
-            ]
+            if flavor == "ollama":
+                data = httpx.get(base + "/api/tags", timeout=2.0).json()
+                names = [m.get("name") for m in data.get("models") or []]
+            else:
+                data = httpx.get(base + "/v1/models", timeout=2.0).json()
+                names = [m.get("id") for m in data.get("data") or []]
         except Exception:
             return []
+        return [f"ollama:{n}" for n in names if n]
 
     def _curated_models(self) -> list[str]:
         """The models offered in the composer's selector: every curated-matrix model

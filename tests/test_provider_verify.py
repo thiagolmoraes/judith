@@ -102,3 +102,48 @@ def test_verify_unexpected_status(monkeypatch):
     res = verify_provider_key("anthropic", api_key="sk-ant-x")
     assert res["ok"] is False
     assert "500" in res["error"]
+
+
+# -- keyless OpenAI-compatible endpoints (local vLLM / llama.cpp / LM Studio) -----
+def test_verify_openai_compat_omits_auth_header_without_key(monkeypatch):
+    """A local server that doesn't authenticate is configured with an empty key. `Bearer `
+    with no value is an invalid header that httpx rejects before sending, so the header has
+    to be omitted entirely rather than sent empty."""
+    cap: dict = {}
+    _patch_get(monkeypatch, status=200, capture=cap)
+    res = verify_provider_key(
+        "openai", api_key="", base_url="http://192.0.2.10:9001/v1"
+    )
+    assert res["ok"] is True
+    assert cap["url"] == "http://192.0.2.10:9001/v1/models"
+    assert not cap["headers"]
+
+
+def test_verify_openai_sends_auth_header_when_key_present(monkeypatch):
+    cap: dict = {}
+    _patch_get(monkeypatch, status=200, capture=cap)
+    verify_provider_key("openai", api_key="sk-x", base_url="http://192.0.2.10:9001/v1")
+    assert cap["headers"]["Authorization"] == "Bearer sk-x"
+
+
+def test_verify_local_protocol_error_does_not_blame_network(monkeypatch):
+    """LocalProtocolError is raised before any bytes leave the machine, so reporting it as
+    "couldn't reach" would send the user debugging their network for a request never made."""
+    import httpx
+
+    _patch_get(monkeypatch, raise_exc=httpx.LocalProtocolError("bad header"))
+    res = verify_provider_key(
+        "openai", api_key="", base_url="http://192.0.2.10:9001/v1"
+    )
+    assert res["ok"] is False
+    assert "Couldn't reach" not in res["error"]
+    assert "endpoint URL" in res["error"]
+
+
+def test_verify_invalid_url_has_own_message(monkeypatch):
+    import httpx
+
+    _patch_get(monkeypatch, raise_exc=httpx.InvalidURL("nope"))
+    res = verify_provider_key("openai", api_key="sk-x", base_url="http://:::bad")
+    assert res["ok"] is False
+    assert "isn't valid" in res["error"]

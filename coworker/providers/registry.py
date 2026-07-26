@@ -21,7 +21,7 @@ from typing import Any, Callable, Optional
 from .anthropic_provider import AnthropicProvider
 from .base import ProviderClient
 from .gemini_provider import GeminiProvider
-from .openai_provider import OpenAIProvider
+from .openai_provider import OpenAIProvider, resolve_api_key
 
 DEFAULT_OLLAMA_URL = "http://localhost:11434"
 
@@ -100,6 +100,12 @@ def _build_openai(profile: dict[str, Any], secrets: Any) -> ProviderClient:
     # so we just hand it the SecretStore. An optional custom endpoint (Azure OpenAI /openai/v1,
     # OpenRouter, vLLM, …) comes from the stored profile.
     base_url = ((profile or {}).get("base_url") or "").strip() or None
+    if base_url and not resolve_api_key(secrets):
+        # Custom endpoint with no key anywhere: a local server (vLLM, llama.cpp) that doesn't
+        # authenticate. The SDK still demands a non-empty string, so pass a placeholder rather
+        # than failing with "No model API key configured" — same contract as _build_ollama.
+        # Only ever applied to a user-supplied endpoint, so no placeholder can reach api.openai.com.
+        return OpenAIProvider(api_key="not-needed", base_url=base_url)
     return OpenAIProvider(secrets=secrets, base_url=base_url)
 
 
@@ -433,11 +439,24 @@ def verify_provider_key(
                 or default_base.rstrip("/")
                 or "https://api.openai.com/v1"
             )
+            # Omit the header entirely when there's no key: `Bearer ` with an empty value is
+            # an invalid header that httpx rejects locally (LocalProtocolError), so the request
+            # never leaves the machine and a keyless local server (vLLM, llama.cpp) reports as
+            # unreachable instead of being tested.
             resp = httpx.get(
                 base + "/models",
-                headers={"Authorization": f"Bearer {key}"},
+                headers={"Authorization": f"Bearer {key}"} if key else {},
                 timeout=timeout,
             )
+    except httpx.InvalidURL:
+        return {"ok": False, "error": "That endpoint URL isn't valid."}
+    except httpx.LocalProtocolError:
+        # Raised before any bytes go out (e.g. a malformed header), so "couldn't reach" would
+        # point the user at their network when the request was never actually attempted.
+        return {
+            "ok": False,
+            "error": f"Couldn't build a valid request to {d.title} — check the endpoint URL.",
+        }
     except Exception as exc:  # DNS/connection/timeout — never let it bubble to a 500
         return {
             "ok": False,
