@@ -563,3 +563,37 @@ def test_manager_key_hygiene_stamps(tmp_path, monkeypatch):
     mgr2 = SessionManager(data_dir=tmp_path)
     provs2 = {p["name"]: p for p in mgr2.get_providers()}
     assert provs2["deepseek"]["last_used_at"] == first
+
+
+def test_openai_custom_endpoint_without_key_gets_placeholder(monkeypatch):
+    """A keyless local server (vLLM, llama.cpp) reached through the OpenAI provider: the SDK
+    demands a non-empty key, so a custom endpoint with no key anywhere gets a placeholder
+    instead of raising "No model API key configured". Stock api.openai.com still raises."""
+    import pytest
+
+    from coworker.providers.registry import build_provider_client
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    local = build_provider_client(
+        "openai", {"base_url": "http://192.0.2.10:9001/v1"}, None
+    )
+    assert local._api_key == "not-needed"
+    assert local._base_url == "http://192.0.2.10:9001/v1"
+
+    # No custom endpoint => no placeholder; the missing-key error must still surface.
+    with pytest.raises(RuntimeError, match="No model API key"):
+        build_provider_client("openai", {}, None)._ensure_client()
+
+
+def test_openai_custom_endpoint_prefers_real_key_over_placeholder(monkeypatch):
+    """A configured key must win over the placeholder, so a custom endpoint that DOES
+    authenticate (Azure, OpenRouter) still receives the user's credential."""
+    from coworker.providers.registry import build_provider_client
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-real")
+    p = build_provider_client(
+        "openai", {"base_url": "https://openrouter.example/v1"}, None
+    )
+    assert p._api_key != "not-needed"
+    assert p._ensure_client().api_key == "sk-real"

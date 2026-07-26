@@ -21,7 +21,7 @@ from typing import Any, Callable, Optional
 from .anthropic_provider import AnthropicProvider
 from .base import ProviderClient
 from .gemini_provider import GeminiProvider
-from .openai_provider import OpenAIProvider
+from .openai_provider import OpenAIProvider, resolve_api_key
 
 DEFAULT_OLLAMA_URL = "http://localhost:11434"
 
@@ -95,11 +95,64 @@ def _normalize_ollama_url(url: Optional[str]) -> str:
     return base
 
 
+KEYLESS_PLACEHOLDER = "not-needed"
+
+# Stock OpenAI host, which always needs a real key even when typed in as a "custom" endpoint.
+_OFFICIAL_HOSTS = frozenset({"api.openai.com"})
+
+
+def _is_official_endpoint(base_url: str) -> bool:
+    """Whether `base_url` is just the stock vendor API written out longhand. Compared on the
+    normalized hostname so case, scheme, a default port, and a trailing `/` or `/v1` can't
+    disguise it as a custom endpoint (which would drop the key requirement and turn a missing
+    key into a 401 from the vendor instead of "add your key")."""
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(base_url if "//" in base_url else f"//{base_url}")
+    if (parts.hostname or "").lower() not in _OFFICIAL_HOSTS:
+        return False
+    return parts.path.strip("/").lower() in ("", "v1")
+
+
+def key_optional(name: str, base_url: Optional[str]) -> bool:
+    """Whether `name` may be used with no API key at all, given the endpoint it points at.
+
+    True for a provider whose endpoint the user redirected somewhere themselves: a local model
+    server (vLLM, llama.cpp, LM Studio) typically doesn't authenticate, so demanding a key
+    locks out a working setup. The official endpoints always require one, so this is false
+    without a custom `base_url` — no keyless path can reach a paid vendor API.
+
+    Every key gate (client construction, the Settings "Test" button, the "is this provider
+    configured" check) reads this one predicate so they can't disagree about what's usable.
+    """
+    d = _BY_NAME.get(name)
+    if d is None or not d.needs_key:
+        return True  # keyless by nature (Ollama)
+    if not (base_url or "").strip():
+        return False
+    default_base = next(
+        (f.default for f in d.fields if f.key == "base_url" and f.default), ""
+    )
+    host = (base_url or "").strip().rstrip("/")
+    # The stock OpenAI URL is checked separately because that descriptor has no `default` to
+    # compare against, so typing it in by hand would otherwise read as "custom".
+    if _is_official_endpoint(host):
+        return False
+    # A prefilled vendor endpoint (Z AI, DeepSeek, …) still needs that vendor's key; only an
+    # endpoint the user actually changed is treated as possibly-keyless.
+    return host.lower() != default_base.strip().rstrip("/").lower()
+
+
 def _build_openai(profile: dict[str, Any], secrets: Any) -> ProviderClient:
     # Key resolution stays in OpenAIProvider/resolve_api_key (explicit → env → SecretStore),
     # so we just hand it the SecretStore. An optional custom endpoint (Azure OpenAI /openai/v1,
     # OpenRouter, vLLM, …) comes from the stored profile.
     base_url = ((profile or {}).get("base_url") or "").strip() or None
+    if key_optional("openai", base_url) and not resolve_api_key(secrets):
+        # Custom endpoint with no key anywhere: a local server (vLLM, llama.cpp) that doesn't
+        # authenticate. The SDK still demands a non-empty string, so pass a placeholder rather
+        # than failing with "No model API key configured" — same contract as _build_ollama.
+        return OpenAIProvider(api_key=KEYLESS_PLACEHOLDER, base_url=base_url)
     return OpenAIProvider(secrets=secrets, base_url=base_url)
 
 
@@ -433,11 +486,24 @@ def verify_provider_key(
                 or default_base.rstrip("/")
                 or "https://api.openai.com/v1"
             )
+            # Omit the header entirely when there's no key: `Bearer ` with an empty value is
+            # an invalid header that httpx rejects locally (LocalProtocolError), so the request
+            # never leaves the machine and a keyless local server (vLLM, llama.cpp) reports as
+            # unreachable instead of being tested.
             resp = httpx.get(
                 base + "/models",
-                headers={"Authorization": f"Bearer {key}"},
+                headers={"Authorization": f"Bearer {key}"} if key else {},
                 timeout=timeout,
             )
+    except httpx.InvalidURL:
+        return {"ok": False, "error": "That endpoint URL isn't valid."}
+    except httpx.LocalProtocolError:
+        # Raised before any bytes go out (e.g. a malformed header), so "couldn't reach" would
+        # point the user at their network when the request was never actually attempted.
+        return {
+            "ok": False,
+            "error": f"Couldn't build a valid request to {d.title} — check the endpoint URL.",
+        }
     except Exception as exc:  # DNS/connection/timeout — never let it bubble to a 500
         return {
             "ok": False,
