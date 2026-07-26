@@ -166,6 +166,7 @@ def test_notion_uses_basic_auth_and_keeps_secret_out_of_body(secrets, monkeypatc
     cap: dict = {}
     _patch_token(monkeypatch, {"access_token": "AT"}, capture=cap)
     B.complete_byo_connect(secrets, code="CODE", state=state)
+    assert cap["url"] == B.PROVIDERS["notion"].token_url
     assert cap["headers"]["Authorization"].startswith("Basic ")
     assert "client_secret" not in cap["data"]
 
@@ -176,6 +177,7 @@ def test_google_sends_credentials_in_body_with_verifier(secrets, monkeypatch):
     cap: dict = {}
     _patch_token(monkeypatch, {"access_token": "AT"}, capture=cap)
     B.complete_byo_connect(secrets, code="CODE", state=state)
+    assert cap["url"] == B.PROVIDERS["google"].token_url
     assert cap["data"]["client_secret"] == "gsec"
     assert cap["data"]["grant_type"] == "authorization_code"
     assert cap["data"]["redirect_uri"] == REDIRECT
@@ -269,8 +271,10 @@ def test_ensure_fresh_routes_byo_profiles_locally(secrets, monkeypatch):
 
 
 # -- GitHub App -----------------------------------------------------------------
-@pytest.fixture
+@pytest.fixture(scope="module")
 def rsa_pem():
+    """Module-scoped: the key is immutable and shared by several tests, and generating
+    RSA-2048 per test is by far the slowest thing in this file."""
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric import rsa
 
@@ -331,14 +335,14 @@ def _patch_mint(monkeypatch, calls, expires_in=3600, status=201):
         .replace("+00:00", "Z")
     )
 
-    def fake_post(url, headers=None, timeout=None):
+    def fake_request(method, url, headers=None, params=None, timeout=None):
         calls.append(headers.get("Authorization", ""))
         return SimpleNamespace(
             status_code=status,
             json=lambda: {"token": f"ghs_{len(calls)}", "expires_at": expires_at},
         )
 
-    monkeypatch.setattr("httpx.post", fake_post)
+    monkeypatch.setattr("httpx.request", fake_request)
 
 
 def test_installation_token_is_cached_until_expiry(secrets, rsa_pem, monkeypatch):
@@ -374,9 +378,115 @@ def test_installation_token_empty_when_unavailable(secrets, rsa_pem, monkeypatch
     def boom(*a, **k):
         raise httpx.ConnectError("offline")
 
-    monkeypatch.setattr("httpx.post", boom)
+    monkeypatch.setattr("httpx.request", boom)
+    monkeypatch.setattr("time.sleep", lambda _s: None)  # don't wait out the backoff
     G._token_cache.clear()
     assert G.byo_installation_token(secrets, "99") == ""
+
+
+def test_transient_failures_are_retried_but_hard_failures_are_not(
+    secrets, rsa_pem, monkeypatch
+):
+    """A 429/5xx is worth another attempt; a 404 is a real answer (revoked installation)
+    and retrying it only delays the failure."""
+    _, pem = rsa_pem
+    G.set_byo_github_config(secrets, {"app_id": "1", "private_key": pem})
+    monkeypatch.setattr("time.sleep", lambda _s: None)
+
+    statuses = [503, 429, 201]
+    attempts: list[int] = []
+
+    def flaky(method, url, headers=None, params=None, timeout=None):
+        code = statuses[len(attempts)]
+        attempts.append(code)
+        return SimpleNamespace(
+            status_code=code, json=lambda: {"token": "ghs_ok", "expires_at": ""}
+        )
+
+    monkeypatch.setattr("httpx.request", flaky)
+    assert G.byo_installation_token(secrets, "99") == "ghs_ok"
+    assert attempts == [503, 429, 201]
+
+    hard: list[int] = []
+
+    def denied(method, url, headers=None, params=None, timeout=None):
+        hard.append(404)
+        return SimpleNamespace(status_code=404, json=lambda: {})
+
+    monkeypatch.setattr("httpx.request", denied)
+    G._token_cache.clear()
+    assert G.byo_installation_token(secrets, "99") == ""
+    assert len(hard) == 1  # no retry on a definitive answer
+
+
+def test_retries_give_up_after_the_bound(secrets, rsa_pem, monkeypatch):
+    """Retries are bounded — a provider stuck on 503 must not retry forever."""
+    _, pem = rsa_pem
+    G.set_byo_github_config(secrets, {"app_id": "1", "private_key": pem})
+    monkeypatch.setattr("time.sleep", lambda _s: None)
+    calls: list[int] = []
+
+    def always_503(method, url, headers=None, params=None, timeout=None):
+        calls.append(503)
+        return SimpleNamespace(status_code=503, json=lambda: {})
+
+    monkeypatch.setattr("httpx.request", always_503)
+    assert G.byo_installation_token(secrets, "99") == ""
+    assert len(calls) == G._ATTEMPTS
+
+
+def test_non_object_json_does_not_raise(secrets, rsa_pem, monkeypatch):
+    """Valid JSON can be a list or a string; `.get()` on those would raise, breaking the
+    fail-safe contract these functions promise."""
+    _, pem = rsa_pem
+    G.set_byo_github_config(secrets, {"app_id": "1", "private_key": pem})
+
+    def listy(method, url, headers=None, params=None, timeout=None):
+        return SimpleNamespace(status_code=200, json=lambda: ["not", "an", "object"])
+
+    monkeypatch.setattr("httpx.request", listy)
+    G._token_cache.clear()
+    assert G.byo_installation_token(secrets, "99") == ""
+    assert G.app_slug(secrets) is None
+
+
+def test_list_installations_maps_accounts_and_degrades(secrets, rsa_pem, monkeypatch):
+    """Backs GET /v1/connectors/github/byo-installations — the connect picker."""
+    # No App configured at all: an empty list, never an error.
+    assert G.list_byo_installations(secrets) == []
+
+    _, pem = rsa_pem
+    G.set_byo_github_config(secrets, {"app_id": "1", "private_key": pem})
+
+    def listing(method, url, headers=None, params=None, timeout=None):
+        return SimpleNamespace(
+            status_code=200,
+            json=lambda: [
+                {"id": 11, "account": {"login": "acme", "type": "Organization"}},
+                {"id": 12, "account": {"login": "me", "type": "User"}},
+                {"account": {"login": "no-id"}},  # dropped: unusable without an id
+                "junk",  # dropped: not an object
+            ],
+        )
+
+    monkeypatch.setattr("httpx.request", listing)
+    assert G.list_byo_installations(secrets) == [
+        {"installation_id": "11", "account": "acme", "account_type": "Organization"},
+        {"installation_id": "12", "account": "me", "account_type": "User"},
+    ]
+
+
+def test_install_url_built_from_app_slug(secrets, rsa_pem, monkeypatch):
+    _, pem = rsa_pem
+    G.set_byo_github_config(secrets, {"app_id": "1", "private_key": pem})
+
+    def app_meta(method, url, headers=None, params=None, timeout=None):
+        return SimpleNamespace(status_code=200, json=lambda: {"slug": "my-agent"})
+
+    monkeypatch.setattr("httpx.request", app_meta)
+    assert (
+        G.install_url(secrets) == "https://github.com/apps/my-agent/installations/new"
+    )
 
 
 def test_expiry_parse_falls_back_to_an_hour(secrets):
@@ -493,3 +603,82 @@ def test_github_byo_config_via_rest(client, rsa_pem):
     gh = c.get("/v1/connectors/byo").json()["github"]
     assert gh == {"configured": True, "app_id": "777"}
     assert pem not in c.get("/v1/connectors/byo").text
+
+
+def test_byo_installations_endpoint(client, rsa_pem, monkeypatch):
+    """The picker endpoint: an empty list when no App is configured, never a 500."""
+    c, _ = client
+    empty = c.get("/v1/connectors/github/byo-installations").json()
+    assert empty == {"ok": True, "installations": []}
+
+    _, pem = rsa_pem
+    c.post(
+        "/v1/connectors/github/byo-config",
+        json={"fields": {"app_id": "1", "private_key": pem}},
+    )
+
+    def listing(method, url, headers=None, params=None, timeout=None):
+        return SimpleNamespace(
+            status_code=200,
+            json=lambda: [
+                {"id": 7, "account": {"login": "acme", "type": "Organization"}}
+            ],
+        )
+
+    monkeypatch.setattr("httpx.request", listing)
+    body = c.get("/v1/connectors/github/byo-installations").json()
+    assert body["installations"] == [
+        {"installation_id": "7", "account": "acme", "account_type": "Organization"}
+    ]
+
+
+def test_byo_config_rejects_non_object_fields(client):
+    """`fields or {}` only guards None; a list or string would reach .get() and 500."""
+    c, _ = client
+    for bad in (["a"], "x", 3):
+        res = c.post("/v1/connectors/notion/byo-config", json={"fields": bad}).json()
+        assert res["ok"] is False, bad
+        assert "object" in res["error"]
+
+
+def test_byo_config_rejects_malformed_scopes(client):
+    c, _ = client
+    res = c.post(
+        "/v1/connectors/notion/byo-config",
+        json={"fields": {"client_id": "c", "client_secret": "s", "scopes": {"a": 1}}},
+    ).json()
+    assert res["ok"] is False and "scopes" in res["error"]
+
+
+def test_callback_survives_a_failing_gateway(client, monkeypatch):
+    """The profile is stored before the gateway reload; a listener that fails to come up
+    must not turn a successful connect into a 500 with the token already saved."""
+    c, manager = client
+    c.post(
+        "/v1/connectors/notion/byo-config",
+        json={"fields": {"client_id": "cid", "client_secret": "sec"}},
+    )
+    url = c.post("/v1/connectors/notion/byo-connect").json()["authorize_url"]
+    state = _query(url)["state"]
+    _patch_token(monkeypatch, {"access_token": "AT", "workspace_id": "ws-1"})
+
+    async def boom():
+        raise RuntimeError("listener down")
+
+    monkeypatch.setattr(manager, "refresh_gateway", boom)
+    resp = c.get(f"/oauth/callback?code=CODE&state={state}")
+    assert resp.status_code == 200
+    assert (manager.secrets.get("notion:account:ws-1") or {})["access_token"] == "AT"
+
+
+def test_callback_page_uses_the_display_title(client, monkeypatch):
+    """ "Notion connected", not "notion connected" — matching the managed callback."""
+    c, _ = client
+    c.post(
+        "/v1/connectors/notion/byo-config",
+        json={"fields": {"client_id": "cid", "client_secret": "sec"}},
+    )
+    url = c.post("/v1/connectors/notion/byo-connect").json()["authorize_url"]
+    state = _query(url)["state"]
+    _patch_token(monkeypatch, {"access_token": "AT", "workspace_id": "ws-1"})
+    assert "Notion connected" in c.get(f"/oauth/callback?code=CODE&state={state}").text

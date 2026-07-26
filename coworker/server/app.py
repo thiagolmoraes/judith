@@ -773,12 +773,15 @@ def create_app(manager: SessionManager) -> FastAPI:
         """Which connectors have a locally configured OAuth app, so the GUI can offer
         one-click while signed out. Never returns a client secret or private key."""
         from ..connectors.byo_github import byo_github_available, byo_github_config
-        from ..connectors.byo_oauth import CONNECTOR_PROVIDER, byo_config
+        from ..connectors.byo_oauth import BYO_PROFILE, CONNECTOR_PROVIDER
 
+        # Read the store once and index in memory: per-connector lookups would re-read the
+        # same profile from disk eight times on an endpoint the Settings pane polls.
+        store = manager.secrets.get(BYO_PROFILE) or {}
         oauth = {}
         for connector in CONNECTOR_PROVIDER:
-            cfg = byo_config(manager.secrets, connector)
-            if cfg.get("client_id"):
+            cfg = store.get(connector)
+            if isinstance(cfg, dict) and cfg.get("client_id"):
                 oauth[connector] = {
                     "configured": True,
                     "client_id": cfg["client_id"],
@@ -797,6 +800,10 @@ def create_app(manager: SessionManager) -> FastAPI:
     def byo_configure(name: str, body: dict) -> dict[str, Any]:
         """Store this connector's own OAuth app credentials (blank id clears them)."""
         fields = body.get("fields") if isinstance(body, dict) else None
+        # `or {}` only covers None: a list or string here would reach .get() downstream and
+        # raise, so reject a non-object outright rather than 500 on malformed input.
+        if fields is not None and not isinstance(fields, dict):
+            return {"ok": False, "error": "fields must be an object"}
         from ..connectors.byo_github import set_byo_github_config
         from ..connectors.byo_oauth import set_byo_config
 
@@ -1187,10 +1194,16 @@ def create_app(manager: SessionManager) -> FastAPI:
                 ),
                 status_code=400,
             )
-        await manager.refresh_gateway()  # hot-add, same as the managed path
+        # The profile is already stored, so a listener that fails to come up must not turn a
+        # successful connect into a 500 — the user would see a traceback and assume the token
+        # was lost. Same contract as _refresh_listeners_if_two_way and _restore_connections.
+        try:
+            await manager.refresh_gateway()  # hot-add, same as the managed path
+        except Exception:
+            pass
         return HTMLResponse(
             _browser_page(
-                f"{connector} connected",
+                f"{_connector_title(connector)} connected",
                 "You can close this tab and return to OpenWorker.",
                 connector=connector,
             )

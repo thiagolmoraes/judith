@@ -92,6 +92,51 @@ def _load_key(pem: str):
     return load_pem_private_key(pem.encode(), password=None)
 
 
+# Statuses worth a second attempt: GitHub's rate limiter and its transient 5xx. A 401/404
+# is a real answer (bad key, revoked installation) and retrying only delays the failure.
+_RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
+_ATTEMPTS = 3
+_BACKOFF = 0.5
+
+
+def _github_request(
+    method: str, url: str, *, jwt_token: str, params: Optional[dict[str, Any]] = None
+) -> Optional[dict[str, Any] | list[Any]]:
+    """One authenticated GitHub API call with bounded retries. None on any failure.
+
+    Every caller here treats a failure as "this path isn't available right now" rather than
+    an error to surface mid-turn, so transport errors, non-success statuses and unparseable
+    bodies all collapse to None.
+    """
+    import httpx
+
+    headers = {
+        "Authorization": f"Bearer {jwt_token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    for attempt in range(_ATTEMPTS):
+        try:
+            resp = httpx.request(
+                method, url, headers=headers, params=params, timeout=20
+            )
+        except httpx.HTTPError:
+            if attempt == _ATTEMPTS - 1:
+                return None
+            time.sleep(_BACKOFF * (2**attempt))
+            continue
+        if resp.status_code in _RETRY_STATUS and attempt < _ATTEMPTS - 1:
+            time.sleep(_BACKOFF * (2**attempt))
+            continue
+        if resp.status_code not in (200, 201):
+            return None
+        try:
+            return resp.json()
+        except ValueError:
+            return None
+    return None
+
+
 def app_jwt(secrets: SecretStore) -> str:
     """A signed App JWT, or "" when no usable BYO App is configured."""
     cfg = byo_github_config(secrets)
@@ -128,27 +173,13 @@ def byo_installation_token(
     jwt_token = app_jwt(secrets)
     if not jwt_token:
         return ""
-
-    import httpx
-
-    try:
-        resp = httpx.post(
-            f"{_API}/app/installations/{installation_id}/access_tokens",
-            headers={
-                "Authorization": f"Bearer {jwt_token}",
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-            },
-            timeout=20,
-        )
-    except httpx.HTTPError:
-        return ""
-    if resp.status_code not in (200, 201):
-        return ""
-    try:
-        body = resp.json()
-    except ValueError:
-        return ""
+    body = _github_request(
+        "POST",
+        f"{_API}/app/installations/{installation_id}/access_tokens",
+        jwt_token=jwt_token,
+    )
+    if not isinstance(body, dict):
+        return ""  # failed, or valid JSON that isn't an object
     token = str(body.get("token") or "")
     if not token:
         return ""
@@ -177,28 +208,12 @@ def list_byo_installations(secrets: SecretStore) -> list[dict[str, Any]]:
     jwt_token = app_jwt(secrets)
     if not jwt_token:
         return []
-
-    import httpx
-
-    try:
-        resp = httpx.get(
-            f"{_API}/app/installations",
-            headers={
-                "Authorization": f"Bearer {jwt_token}",
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-            },
-            params={"per_page": 100},
-            timeout=20,
-        )
-    except httpx.HTTPError:
-        return []
-    if resp.status_code != 200:
-        return []
-    try:
-        items = resp.json()
-    except ValueError:
-        return []
+    items = _github_request(
+        "GET",
+        f"{_API}/app/installations",
+        jwt_token=jwt_token,
+        params={"per_page": 100},
+    )
     if not isinstance(items, list):
         return []
     out: list[dict[str, Any]] = []
@@ -221,27 +236,10 @@ def app_slug(secrets: SecretStore) -> Optional[str]:
     jwt_token = app_jwt(secrets)
     if not jwt_token:
         return None
-
-    import httpx
-
-    try:
-        resp = httpx.get(
-            f"{_API}/app",
-            headers={
-                "Authorization": f"Bearer {jwt_token}",
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-            },
-            timeout=20,
-        )
-    except httpx.HTTPError:
+    body = _github_request("GET", f"{_API}/app", jwt_token=jwt_token)
+    if not isinstance(body, dict):
         return None
-    if resp.status_code != 200:
-        return None
-    try:
-        slug = resp.json().get("slug")
-    except ValueError:
-        return None
+    slug = body.get("slug")
     return str(slug) if slug else None
 
 

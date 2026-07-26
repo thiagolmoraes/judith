@@ -174,11 +174,18 @@ def set_byo_config(
     if not secret:
         return {"ok": False, "error": "client_secret required"}
     entry: dict[str, Any] = {"client_id": client_id, "client_secret": secret}
+    # Normalize to a list of strings here rather than trusting the caller: anything else
+    # (a dict, a list of ints) survives the save and only blows up later inside
+    # `" ".join(...)`, turning a bad save into a 500 on the connect endpoint.
     scopes = fields.get("scopes")
     if isinstance(scopes, str):
-        scopes = [s for s in scopes.replace(",", " ").split() if s]
-    if scopes:
-        entry["scopes"] = list(scopes)
+        scopes = scopes.replace(",", " ").split()
+    if isinstance(scopes, (list, tuple, set)):
+        cleaned = [str(s).strip() for s in scopes if str(s).strip()]
+        if cleaned:
+            entry["scopes"] = list(dict.fromkeys(cleaned))
+    elif scopes:
+        return {"ok": False, "error": "scopes must be a list or a string"}
     store[connector] = entry
     secrets.put(BYO_PROFILE, store)
     return {"ok": True, "configured": True}
@@ -296,13 +303,16 @@ def _profile_from_token(
     connector: str, provider: str, body: dict[str, Any]
 ) -> dict[str, Any]:
     """Shape a token response like the broker's profiles so tools can't tell them apart."""
-    # Slack nests the bot token; every other provider here is flat.
+    # Slack nests the bot token; every other provider here is flat. Every nested lookup is
+    # type-guarded — a provider response is untrusted input, and an unexpected shape must
+    # not raise AttributeError, which would surface as a 500 on the browser callback.
     authed = (
         body.get("authed_user") if isinstance(body.get("authed_user"), dict) else {}
     )
+    bot = body.get("bot") if isinstance(body.get("bot"), dict) else {}
     access = (
         body.get("access_token")
-        or (body.get("bot") or {}).get("bot_access_token")
+        or bot.get("bot_access_token")
         or authed.get("access_token")
         or ""
     )
