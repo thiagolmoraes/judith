@@ -2335,6 +2335,18 @@ class SessionManager:
             relay_hub = RelayHub(relay_ws_url, _relay_token)
 
         async def _github_token(installation_id: str) -> str:
+            # A locally configured GitHub App wins: it needs no cloud sign-in, and if the
+            # user went to the trouble of registering their own App, that's the identity
+            # they want the agent to act as.
+            from ..connectors.byo_github import (
+                byo_github_available,
+                byo_installation_token,
+            )
+
+            if byo_github_available(self.secrets):
+                return await asyncio.to_thread(
+                    byo_installation_token, self.secrets, installation_id
+                )
             from ..cloud import github_installation_token
 
             return await asyncio.to_thread(

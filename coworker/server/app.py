@@ -767,6 +767,74 @@ def create_app(manager: SessionManager) -> FastAPI:
             await _refresh_listeners_if_two_way(name)
         return result
 
+    # -- bring-your-own OAuth app (one-click without a cloud sign-in) ------------
+    @app.get("/v1/connectors/byo")
+    def byo_status() -> dict[str, Any]:
+        """Which connectors have a locally configured OAuth app, so the GUI can offer
+        one-click while signed out. Never returns a client secret or private key."""
+        from ..connectors.byo_github import byo_github_available, byo_github_config
+        from ..connectors.byo_oauth import CONNECTOR_PROVIDER, byo_config
+
+        oauth = {}
+        for connector in CONNECTOR_PROVIDER:
+            cfg = byo_config(manager.secrets, connector)
+            if cfg.get("client_id"):
+                oauth[connector] = {
+                    "configured": True,
+                    "client_id": cfg["client_id"],
+                    "scopes": cfg.get("scopes") or [],
+                }
+        gh = byo_github_config(manager.secrets)
+        return {
+            "oauth": oauth,
+            "github": {
+                "configured": byo_github_available(manager.secrets),
+                "app_id": gh.get("app_id") or "",
+            },
+        }
+
+    @app.post("/v1/connectors/{name}/byo-config")
+    def byo_configure(name: str, body: dict) -> dict[str, Any]:
+        """Store this connector's own OAuth app credentials (blank id clears them)."""
+        fields = body.get("fields") if isinstance(body, dict) else None
+        from ..connectors.byo_github import set_byo_github_config
+        from ..connectors.byo_oauth import set_byo_config
+
+        if name == "github":
+            return set_byo_github_config(manager.secrets, fields or {})
+        return set_byo_config(manager.secrets, name, fields or {})
+
+    @app.post("/v1/connectors/{name}/byo-connect")
+    async def byo_connect(name: str) -> dict[str, Any]:
+        """Start browser consent against the user's own OAuth app. No cloud sign-in."""
+        from ..connectors.byo_github import install_url
+        from ..connectors.byo_oauth import begin_byo_connect
+
+        if name == "github":
+            # A GitHub App is installed, not authorized: send the browser to its install
+            # page. The installation then shows up via list_byo_installations.
+            url = await asyncio.to_thread(lambda: install_url(manager.secrets))
+            if not url:
+                return {"ok": False, "error": "no BYO GitHub App configured"}
+            return {"ok": True, "authorize_url": url}
+        from ..config import load_config
+
+        port = os.environ.get("COWORKER_PORT") or load_config().port
+        redirect = f"http://127.0.0.1:{port}/oauth/callback"
+        return await asyncio.to_thread(
+            lambda: begin_byo_connect(manager.secrets, name, redirect=redirect)
+        )
+
+    @app.get("/v1/connectors/github/byo-installations")
+    async def byo_github_installations() -> dict[str, Any]:
+        """Installations of the user's own GitHub App, for the connect picker."""
+        from ..connectors.byo_github import list_byo_installations
+
+        items = await asyncio.to_thread(
+            lambda: list_byo_installations(manager.secrets)
+        )
+        return {"ok": True, "installations": items}
+
     @app.post("/v1/connectors/{name}/mcp-connect")
     async def connector_mcp_connect(name: str) -> dict[str, Any]:
         # One-click connect for an MCP-backed connector: the browser OAuth flow can
@@ -1071,6 +1139,62 @@ def create_app(manager: SessionManager) -> FastAPI:
         if out.get("ok"):
             webbrowser.open(out["authorize_url"])
         return out
+
+    @app.get("/oauth/callback")
+    async def byo_oauth_callback(code: str = "", state: str = "", error: str = ""):
+        """Provider redirect for the bring-your-own-app flow.
+
+        The broker POSTs tokens to this same path (below); a provider talking to us directly
+        redirects the browser here with `?code=`, so the two flows split by HTTP method and
+        neither needs to know about the other.
+        """
+        from fastapi.responses import HTMLResponse
+
+        from ..connectors.byo_oauth import complete_byo_connect
+        from ..connectors.setup import managed_connect_connector
+
+        if error:
+            return HTMLResponse(
+                _browser_page(
+                    "Connection failed", _CONNECT_FAILED_DETAIL, ok=False, error=error
+                ),
+                status_code=400,
+            )
+        result = await asyncio.to_thread(
+            lambda: complete_byo_connect(manager.secrets, code=code, state=state)
+        )
+        if not result.get("ok"):
+            return HTMLResponse(
+                _browser_page(
+                    "Connection failed",
+                    _CONNECT_FAILED_DETAIL,
+                    ok=False,
+                    error=result.get("error", ""),
+                ),
+                status_code=400,
+            )
+        connector = result["connector"]
+        stored = managed_connect_connector(
+            manager.secrets, connector, result["profile"]
+        )
+        if not stored.get("ok"):
+            return HTMLResponse(
+                _browser_page(
+                    "Connection failed",
+                    _CONNECT_FAILED_DETAIL,
+                    ok=False,
+                    error=stored.get("error", ""),
+                ),
+                status_code=400,
+            )
+        await manager.refresh_gateway()  # hot-add, same as the managed path
+        return HTMLResponse(
+            _browser_page(
+                f"{connector} connected",
+                "You can close this tab and return to OpenWorker.",
+                connector=connector,
+            )
+        )
 
     @app.post("/oauth/callback")
     async def managed_oauth_callback(request: Request) -> Any:
