@@ -1,0 +1,139 @@
+# yaml-language-server: $schema=https://storage.googleapis.com/coderabbit_public_assets/schema.v2.json
+# CodeRabbit configuration — https://docs.coderabbit.ai/getting-started/configure-coderabbit
+language: pt-BR
+early_access: false
+
+reviews:
+  profile: assertive
+  request_changes_workflow: false
+  high_level_summary: true
+  high_level_summary_placeholder: "@coderabbitai summary"
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  changed_files_summary: true
+  sequence_diagrams: true
+  assess_linked_issues: true
+  related_issues: true
+  related_prs: true
+  suggested_labels: true
+  suggested_reviewers: true
+
+  # deploy/hml is the working trunk; main only tracks upstream.
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - deploy/hml
+      - main
+      - "deploy/.*"
+
+  path_filters:
+    - "!**/*.lock"
+    - "!**/*.min.js"
+    - "!**/*.min.css"
+    - "!**/*.svg"
+    - "!**/*.png"
+    - "!**/*.jpg"
+    - "!**/*.ico"
+    - "!**/*.woff*"
+    - "!**/__pycache__/**"
+    - "!**/.venv/**"
+    - "!dist/**"
+    - "!build/**"
+    - "!ui-mocks/**"
+
+  path_instructions:
+    - path: "coworker/**/*.py"
+      instructions: >-
+        Python 3.10+ agent runtime. Enforce: no bare `except:`; no mutable default
+        args; `async def` functions must not call blocking I/O (use httpx.AsyncClient,
+        not requests); resources opened in async paths must use `async with`.
+        Flag any new third-party import that is absent from pyproject.toml
+        dependencies. Public functions changed in a PR should keep their type hints
+        accurate.
+
+    - path: "coworker/{secrets,permissions,workspace_trust,risk,audit}.py"
+      instructions: >-
+        Security-critical modules. Scrutinize hard: secrets or tokens must never be
+        logged, echoed into exception messages, or written to audit records in plain
+        text. Permission and trust checks must fail closed on error or on unknown
+        input. Flag any widening of a permission scope, any newly added bypass path,
+        and any comparison of secrets that is not constant-time.
+
+    - path: "coworker/server/**"
+      instructions: >-
+        FastAPI surface. Every route must validate input with a Pydantic model rather
+        than raw dict access. Check authn/authz on each new or modified endpoint.
+        Flag user-controlled values interpolated into filesystem paths, shell
+        commands, or SQL. Errors returned to clients must not leak stack traces or
+        internal paths.
+
+    - path: "coworker/{connectors,providers,mcp}/**"
+      instructions: >-
+        External integrations. Outbound HTTP calls need explicit timeouts and bounded
+        retries. Untrusted responses must be validated before use. Provider API keys
+        come from config/env only — flag any hardcoded credential or endpoint.
+
+    - path: "coworker/tools/**"
+      instructions: >-
+        Agent-invocable tools; their arguments come from model output and are
+        untrusted. Require validation of every argument, no shell=True, no eval/exec,
+        and path arguments confined to the workspace root.
+
+    - path: "tests/**/*.py"
+      instructions: >-
+        pytest. Tests must assert real behavior, not just that code runs. Flag tests
+        with no assertions, over-broad mocking that stubs out the code under test, and
+        `pytest.mark.skip` added without a reason string. Async tests need
+        pytest-asyncio markers.
+
+    - path: ".github/workflows/**"
+      instructions: >-
+        GitHub Actions. Flag `${{ github.event.* }}` interpolated into `run:` blocks
+        (script injection), actions pinned only by mutable tag on third-party repos,
+        `pull_request_target` combined with checkout of PR code, and any secret
+        exposed to a workflow triggered by forks. Permissions should be least
+        privilege.
+
+    - path: "**/*.{md,toml,yaml,yml}"
+      instructions: >-
+        Docs and config. Check that documented flags, env vars, and paths match the
+        code in the same PR. Flag placeholder credentials that look real.
+
+  abort_on_close: true
+
+  finishing_touches:
+    docstrings:
+      enabled: true
+    unit_tests:
+      enabled: false
+
+  tools:
+    ruff:
+      enabled: true
+    markdownlint:
+      enabled: true
+    yamllint:
+      enabled: true
+    actionlint:
+      enabled: true
+    gitleaks:
+      enabled: true
+    shellcheck:
+      enabled: true
+    semgrep:
+      enabled: true
+    languagetool:
+      enabled: false
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  learnings:
+    scope: local
+  issues:
+    scope: local
+  pull_requests:
+    scope: local
