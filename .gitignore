@@ -6,3 +6,8 @@ __pycache__/
 build/
 dist/
 .coverage
+
+# Desktop build artifacts (packaging/build_dmg.sh): Rust target dir and the staged
+# PyInstaller sidecar Tauri copies into the .app.
+surfaces/gui/src-tauri/target/
+surfaces/gui/src-tauri/binaries/
