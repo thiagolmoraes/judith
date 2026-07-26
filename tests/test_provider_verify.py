@@ -160,10 +160,23 @@ def test_verify_invalid_url_has_own_message(monkeypatch):
         ("anthropic", None, False),
         ("anthropic", "", False),
         # Stock OpenAI typed in by hand is not "custom" — a missing key must still be
-        # reported as such rather than as a 401 from OpenAI.
+        # reported as such rather than as a 401 from OpenAI. Matched on the normalized
+        # hostname, so case, scheme, a default port or a trailing slash can't disguise it.
         ("openai", "https://api.openai.com/v1", False),
         ("openai", "https://api.openai.com", False),
         ("openai", "https://api.openai.com/v1/", False),
+        ("openai", "https://API.OpenAI.COM/v1", False),
+        ("openai", "https://Api.OpenAI.com", False),
+        ("openai", "https://api.openai.com:443/v1", False),
+        ("openai", "http://api.openai.com/v1", False),
+        ("openai", "api.openai.com/v1", False),
+        ("openai", "https://api.openai.com/V1", False),
+        # A lookalike host is NOT the official one — hostname is matched exactly, not by prefix.
+        ("openai", "https://api.openai.com.evil.test/v1", True),
+        # A different path on the official host is a custom deployment, not the stock API.
+        ("openai", "https://api.openai.com/v2", True),
+        # Case-insensitive for prefilled vendor endpoints too.
+        ("deepseek", "https://API.DeepSeek.com", False),
         # A prefilled vendor endpoint still needs that vendor's key.
         ("deepseek", "https://api.deepseek.com", False),
         ("deepseek", "https://api.deepseek.com/", False),

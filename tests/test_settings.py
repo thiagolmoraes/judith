@@ -279,6 +279,11 @@ def test_keyless_custom_endpoint_is_testable_and_ready(tmp_path, monkeypatch):
     settings = manager.get_settings()
     assert "qwen3-14b" in settings["models"]
 
+    # The Settings pane reads get_providers(), which must agree with the picker rather than
+    # calling this provider unconfigured while its models are selectable.
+    provs = {p["name"]: p for p in manager.get_providers()}
+    assert provs["openai"]["configured"] is True
+
 
 def test_official_endpoint_still_requires_a_key(tmp_path, monkeypatch):
     """The keyless path must not weaken the stock OpenAI gate — no key means not testable and
@@ -293,6 +298,9 @@ def test_official_endpoint_still_requires_a_key(tmp_path, monkeypatch):
     assert res["ok"] is False
     assert "Enter an API key" in res["error"]
     assert manager._provider_configured("openai") is False
+    assert {p["name"]: p for p in manager.get_providers()}["openai"][
+        "configured"
+    ] is False
 
     # Typing the official URL into the custom-endpoint box must not bypass the gate either.
     manager.secrets.put("provider:openai", {"base_url": "https://api.openai.com/v1"})

@@ -97,13 +97,21 @@ def _normalize_ollama_url(url: Optional[str]) -> str:
 
 KEYLESS_PLACEHOLDER = "not-needed"
 
-# Stock OpenAI hosts, which always need a real key even when typed in as a "custom" endpoint.
-_OFFICIAL_BASES = frozenset(
-    {
-        "https://api.openai.com",
-        "https://api.openai.com/v1",
-    }
-)
+# Stock OpenAI host, which always needs a real key even when typed in as a "custom" endpoint.
+_OFFICIAL_HOSTS = frozenset({"api.openai.com"})
+
+
+def _is_official_endpoint(base_url: str) -> bool:
+    """Whether `base_url` is just the stock vendor API written out longhand. Compared on the
+    normalized hostname so case, scheme, a default port, and a trailing `/` or `/v1` can't
+    disguise it as a custom endpoint (which would drop the key requirement and turn a missing
+    key into a 401 from the vendor instead of "add your key")."""
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(base_url if "//" in base_url else f"//{base_url}")
+    if (parts.hostname or "").lower() not in _OFFICIAL_HOSTS:
+        return False
+    return parts.path.strip("/").lower() in ("", "v1")
 
 
 def key_optional(name: str, base_url: Optional[str]) -> bool:
@@ -126,14 +134,13 @@ def key_optional(name: str, base_url: Optional[str]) -> bool:
         (f.default for f in d.fields if f.key == "base_url" and f.default), ""
     )
     host = (base_url or "").strip().rstrip("/")
-    # A prefilled vendor endpoint (Z AI, DeepSeek, …) still needs that vendor's key; only an
-    # endpoint the user actually changed is treated as possibly-keyless. The stock OpenAI URL
-    # is checked explicitly because that descriptor has no `default` to compare against, and
-    # typing it by hand must not read as "custom" — otherwise a missing key would surface as a
-    # confusing 401 from OpenAI instead of "add your key".
-    if host.rstrip("/") in _OFFICIAL_BASES:
+    # The stock OpenAI URL is checked separately because that descriptor has no `default` to
+    # compare against, so typing it in by hand would otherwise read as "custom".
+    if _is_official_endpoint(host):
         return False
-    return host != default_base.strip().rstrip("/")
+    # A prefilled vendor endpoint (Z AI, DeepSeek, …) still needs that vendor's key; only an
+    # endpoint the user actually changed is treated as possibly-keyless.
+    return host.lower() != default_base.strip().rstrip("/").lower()
 
 
 def _build_openai(profile: dict[str, Any], secrets: Any) -> ProviderClient:

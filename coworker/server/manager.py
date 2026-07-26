@@ -1392,17 +1392,12 @@ class SessionManager:
         """Descriptor + per-provider status for the Settings UI. Never returns secret values;
         non-secret field values (e.g. the Ollama base URL) ARE returned so the form can prefill.
         """
-        import os
-
         out: list[dict[str, Any]] = []
         for d in provider_descriptors():
             profile = self.secrets.get(f"provider:{d.name}") or {}
-            if d.needs_key:
-                configured = bool(profile.get("api_key")) or bool(
-                    d.env_key and os.environ.get(d.env_key)
-                )
-            else:
-                configured = True  # keyless (Ollama) — usable out of the box
+            # Same predicate the composer picker uses, so the Settings pane can't call a
+            # provider unconfigured while its models are selectable.
+            configured = self._provider_configured(d.name)
             values = {
                 f.key: profile.get(f.key)
                 for f in d.fields
