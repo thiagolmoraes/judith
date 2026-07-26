@@ -95,17 +95,57 @@ def _normalize_ollama_url(url: Optional[str]) -> str:
     return base
 
 
+KEYLESS_PLACEHOLDER = "not-needed"
+
+# Stock OpenAI hosts, which always need a real key even when typed in as a "custom" endpoint.
+_OFFICIAL_BASES = frozenset(
+    {
+        "https://api.openai.com",
+        "https://api.openai.com/v1",
+    }
+)
+
+
+def key_optional(name: str, base_url: Optional[str]) -> bool:
+    """Whether `name` may be used with no API key at all, given the endpoint it points at.
+
+    True for a provider whose endpoint the user redirected somewhere themselves: a local model
+    server (vLLM, llama.cpp, LM Studio) typically doesn't authenticate, so demanding a key
+    locks out a working setup. The official endpoints always require one, so this is false
+    without a custom `base_url` — no keyless path can reach a paid vendor API.
+
+    Every key gate (client construction, the Settings "Test" button, the "is this provider
+    configured" check) reads this one predicate so they can't disagree about what's usable.
+    """
+    d = _BY_NAME.get(name)
+    if d is None or not d.needs_key:
+        return True  # keyless by nature (Ollama)
+    if not (base_url or "").strip():
+        return False
+    default_base = next(
+        (f.default for f in d.fields if f.key == "base_url" and f.default), ""
+    )
+    host = (base_url or "").strip().rstrip("/")
+    # A prefilled vendor endpoint (Z AI, DeepSeek, …) still needs that vendor's key; only an
+    # endpoint the user actually changed is treated as possibly-keyless. The stock OpenAI URL
+    # is checked explicitly because that descriptor has no `default` to compare against, and
+    # typing it by hand must not read as "custom" — otherwise a missing key would surface as a
+    # confusing 401 from OpenAI instead of "add your key".
+    if host.rstrip("/") in _OFFICIAL_BASES:
+        return False
+    return host != default_base.strip().rstrip("/")
+
+
 def _build_openai(profile: dict[str, Any], secrets: Any) -> ProviderClient:
     # Key resolution stays in OpenAIProvider/resolve_api_key (explicit → env → SecretStore),
     # so we just hand it the SecretStore. An optional custom endpoint (Azure OpenAI /openai/v1,
     # OpenRouter, vLLM, …) comes from the stored profile.
     base_url = ((profile or {}).get("base_url") or "").strip() or None
-    if base_url and not resolve_api_key(secrets):
+    if key_optional("openai", base_url) and not resolve_api_key(secrets):
         # Custom endpoint with no key anywhere: a local server (vLLM, llama.cpp) that doesn't
         # authenticate. The SDK still demands a non-empty string, so pass a placeholder rather
         # than failing with "No model API key configured" — same contract as _build_ollama.
-        # Only ever applied to a user-supplied endpoint, so no placeholder can reach api.openai.com.
-        return OpenAIProvider(api_key="not-needed", base_url=base_url)
+        return OpenAIProvider(api_key=KEYLESS_PLACEHOLDER, base_url=base_url)
     return OpenAIProvider(secrets=secrets, base_url=base_url)
 
 

@@ -147,3 +147,37 @@ def test_verify_invalid_url_has_own_message(monkeypatch):
     res = verify_provider_key("openai", api_key="sk-x", base_url="http://:::bad")
     assert res["ok"] is False
     assert "isn't valid" in res["error"]
+
+
+# -- key_optional: the single predicate every key gate reads ----------------------
+@pytest.mark.parametrize(
+    "name,base_url,expected",
+    [
+        # No custom endpoint => the official API => a key is always required.
+        ("openai", None, False),
+        ("openai", "", False),
+        ("openai", "   ", False),
+        ("anthropic", None, False),
+        ("anthropic", "", False),
+        # Stock OpenAI typed in by hand is not "custom" — a missing key must still be
+        # reported as such rather than as a 401 from OpenAI.
+        ("openai", "https://api.openai.com/v1", False),
+        ("openai", "https://api.openai.com", False),
+        ("openai", "https://api.openai.com/v1/", False),
+        # A prefilled vendor endpoint still needs that vendor's key.
+        ("deepseek", "https://api.deepseek.com", False),
+        ("deepseek", "https://api.deepseek.com/", False),
+        # An endpoint the user actually redirected: may be a keyless local server.
+        ("openai", "http://192.0.2.10:9001/v1", True),
+        ("openai", "https://my.azure.example/openai/v1", True),
+        ("deepseek", "http://192.0.2.10:9001/v1", True),
+        # Keyless by nature.
+        ("ollama", None, True),
+        # Unknown provider: no key gate to enforce.
+        ("nope", None, True),
+    ],
+)
+def test_key_optional(name, base_url, expected):
+    from coworker.providers import key_optional
+
+    assert key_optional(name, base_url) is expected

@@ -251,3 +251,50 @@ def test_native_ollama_listing_still_uses_api_tags(tmp_path, monkeypatch):
 
     assert manager._ollama_alive() is True
     assert manager._ollama_models() == ["ollama:qwen3-coder:30b"]
+
+
+def test_keyless_custom_endpoint_is_testable_and_ready(tmp_path, monkeypatch):
+    """A custom endpoint with no key must be usable end to end through the GUI path: the Test
+    button probes it, the provider counts as configured, and its models stay in the picker.
+    Building the client alone isn't enough — `verify_provider` and `_provider_configured` are
+    separate gates that would otherwise reject the same setup.
+    """
+    from types import SimpleNamespace
+
+    from coworker.server.manager import SessionManager
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("COWORKER_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setattr(
+        "httpx.get", lambda url, **kw: SimpleNamespace(status_code=200, json=lambda: {})
+    )
+
+    manager = SessionManager(data_dir=tmp_path / "data")
+    manager.secrets.put("provider:openai", {"base_url": "http://192.0.2.10:9001/v1"})
+
+    assert manager.verify_provider("openai", {})["ok"] is True
+    assert manager._provider_configured("openai") is True
+
+    manager.add_model("qwen3-14b")
+    settings = manager.get_settings()
+    assert "qwen3-14b" in settings["models"]
+
+
+def test_official_endpoint_still_requires_a_key(tmp_path, monkeypatch):
+    """The keyless path must not weaken the stock OpenAI gate — no key means not testable and
+    not configured, so the GUI keeps telling the user to add one."""
+    from coworker.server.manager import SessionManager
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("COWORKER_STATE_DIR", str(tmp_path / "state"))
+    manager = SessionManager(data_dir=tmp_path / "data")
+
+    res = manager.verify_provider("openai", {})
+    assert res["ok"] is False
+    assert "Enter an API key" in res["error"]
+    assert manager._provider_configured("openai") is False
+
+    # Typing the official URL into the custom-endpoint box must not bypass the gate either.
+    manager.secrets.put("provider:openai", {"base_url": "https://api.openai.com/v1"})
+    assert manager.verify_provider("openai", {})["ok"] is False
+    assert manager._provider_configured("openai") is False

@@ -76,6 +76,7 @@ from ..providers import (
     ProviderClient,
     ProviderRouter,
     get_descriptor,
+    key_optional,
     provider_descriptors,
     verify_provider_key,
 )
@@ -1579,7 +1580,9 @@ class SessionManager:
         if not api_key and d.env_key:
             api_key = os.environ.get(d.env_key, "").strip()
         base_url = (fields.get("base_url") or profile.get("base_url") or "").strip()
-        if d.needs_key and not api_key:
+        # A user-supplied endpoint may be a local server that doesn't authenticate, so a blank
+        # key is testable there — the probe itself decides. Official endpoints still need one.
+        if d.needs_key and not api_key and not key_optional(name, base_url):
             return {"ok": False, "error": "Enter an API key to test."}
         return verify_provider_key(name, api_key=api_key, base_url=base_url)
 
@@ -1598,9 +1601,13 @@ class SessionManager:
         if not d.needs_key:
             return True  # keyless (Ollama)
         profile = self.secrets.get(f"provider:{name}") or {}
-        return bool(profile.get("api_key")) or bool(
+        if bool(profile.get("api_key")) or bool(
             d.env_key and os.environ.get(d.env_key)
-        )
+        ):
+            return True
+        # No key anywhere: still usable if the user pointed this provider at their own endpoint
+        # (a local model server), which is configuration enough to run against.
+        return key_optional(name, profile.get("base_url"))
 
     # -- settings / prefs (model API key, default model, onboarding) -------------
     def _prefs_path(self) -> Path:

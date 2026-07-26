@@ -15,6 +15,7 @@ from .registry import (
     build_provider_client,
     detect_provider,
     get_descriptor,
+    key_optional,
     provider_descriptors,
     provider_names,
     verify_provider_key,
@@ -40,5 +41,6 @@ __all__ = [
     "get_descriptor",
     "build_provider_client",
     "detect_provider",
+    "key_optional",
     "verify_provider_key",
 ]
