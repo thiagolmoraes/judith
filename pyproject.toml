@@ -33,6 +33,12 @@ dependencies = [
     # IANA tz database for zoneinfo. Windows ships no system tz db, so without this every
     # named schedule timezone (UTC, Asia/Kolkata, …) silently falls back to local time.
     "tzdata; sys_platform == 'win32'",
+    # Signing the App JWT for a bring-your-own GitHub App (connectors/byo_github.py). Both
+    # arrive transitively today (pyjwt via mcp, cryptography via google-auth), but a direct
+    # import belongs in the direct dependencies — otherwise an upstream dropping either one
+    # breaks BYO GitHub at runtime, not at install time.
+    "pyjwt>=2.8",
+    "cryptography>=42",
 ]
 
 [project.optional-dependencies]

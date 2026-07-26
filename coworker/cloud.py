@@ -487,6 +487,13 @@ def ensure_fresh_connector_token(
     expires = float(profile.get("expires") or 0)
     if expires and expires > _now() + leeway:
         return
+    # Bring-your-own OAuth apps rotate against the provider directly — the broker knows
+    # nothing about them, and asking it would fail on the sign-in check.
+    from .connectors.byo_oauth import BYO_MODE, refresh_byo_token
+
+    if profile.get("provider_mode") == BYO_MODE:
+        refresh_byo_token(secrets, connector, profile_key=profile_key)
+        return
     refresh_managed_token(secrets, config, connector, profile_key=profile_key)
 
 
