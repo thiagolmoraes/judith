@@ -285,6 +285,30 @@ def test_keyless_custom_endpoint_is_testable_and_ready(tmp_path, monkeypatch):
     assert provs["openai"]["configured"] is True
 
 
+def test_keyless_custom_endpoint_can_be_saved(tmp_path, monkeypatch):
+    """`set_provider` treats `api_key` as required, so an endpoint-only save was rejected with
+    "missing: OpenAI API key" — the provider could never be configured at all, no matter what
+    the other gates allowed. A user-supplied endpoint exempts the key."""
+    from coworker.server.manager import SessionManager
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("COWORKER_STATE_DIR", str(tmp_path / "state"))
+    manager = SessionManager(data_dir=tmp_path / "data")
+
+    res = manager.set_provider("openai", {"base_url": "http://192.0.2.10:9001/v1"})
+    assert res["ok"] is True, res
+    stored = manager.secrets.get("provider:openai") or {}
+    assert stored["base_url"] == "http://192.0.2.10:9001/v1"
+    assert not stored.get("api_key")
+
+    # ...but with no endpoint at all (a separate, empty state dir) the key is still required.
+    monkeypatch.setenv("COWORKER_STATE_DIR", str(tmp_path / "state2"))
+    bare = SessionManager(data_dir=tmp_path / "data2")
+    res = bare.set_provider("openai", {})
+    assert res["ok"] is False
+    assert "missing" in res["error"]
+
+
 def test_official_endpoint_still_requires_a_key(tmp_path, monkeypatch):
     """The keyless path must not weaken the stock OpenAI gate — no key means not testable and
     not configured, so the GUI keeps telling the user to add one."""

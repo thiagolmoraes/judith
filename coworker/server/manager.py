@@ -1521,7 +1521,15 @@ class SessionManager:
                 profile[f.key] = val
             elif not f.required:
                 profile.pop(f.key, None)
-        missing = [f.label for f in d.fields if f.required and not profile.get(f.key)]
+        # A user-supplied endpoint may be a local server that doesn't authenticate, so the key
+        # stops being required there — otherwise an endpoint-only save is rejected and the
+        # provider can never be configured at all.
+        exempt = {"api_key"} if key_optional(name, profile.get("base_url")) else set()
+        missing = [
+            f.label
+            for f in d.fields
+            if f.required and f.key not in exempt and not profile.get(f.key)
+        ]
         if missing:
             return {"ok": False, "error": "missing: " + ", ".join(missing)}
         # A (re)pasted key stamps its save date — Settings shows "key added <date>" so stale
