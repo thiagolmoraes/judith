@@ -737,10 +737,63 @@ def test_partial_pagination_keeps_what_it_has(secrets, rsa_pem, monkeypatch):
 
     def flaky(method, url, headers=None, params=None, timeout=None):
         if int((params or {}).get("page", 1)) == 1:
-            # ids start at 1: id 0 is falsy and correctly filtered out as unusable.
+            # ids 0..99: a full page for the pagination walk, and id 0 exercises the
+            # unusable-id filter, so only 99 survive.
+            body = [{"id": i, "account": {"login": "x"}} for i in range(100)]
+            return SimpleNamespace(status_code=200, json=lambda: body)
+        return SimpleNamespace(status_code=404, json=lambda: {})
+
+    monkeypatch.setattr("httpx.request", flaky)
+    # 100 returned, minus id 0 which is correctly dropped as unusable.
+    assert len(G.list_byo_installations(secrets)) == 99
+
+
+def test_truncated_listing_is_logged(secrets, rsa_pem, monkeypatch, caplog):
+    """Hitting the page cap must say so: a silently truncated picker reads as "everything
+    is here" when it isn't."""
+    _, pem = rsa_pem
+    G.set_byo_github_config(secrets, {"app_id": "1", "private_key": pem})
+
+    def endless(method, url, headers=None, params=None, timeout=None):
+        body = [{"id": i, "account": {"login": "x"}} for i in range(1, 101)]
+        return SimpleNamespace(status_code=200, json=lambda: body)
+
+    monkeypatch.setattr("httpx.request", endless)
+    with caplog.at_level("WARNING", logger="coworker.connectors"):
+        G.list_byo_installations(secrets)
+    assert any("cap" in r.message for r in caplog.records)
+
+
+def test_failed_page_is_logged(secrets, rsa_pem, monkeypatch, caplog):
+    _, pem = rsa_pem
+    G.set_byo_github_config(secrets, {"app_id": "1", "private_key": pem})
+    monkeypatch.setattr("time.sleep", lambda _s: None)
+
+    def flaky(method, url, headers=None, params=None, timeout=None):
+        if int((params or {}).get("page", 1)) == 1:
             body = [{"id": i, "account": {"login": "x"}} for i in range(1, 101)]
             return SimpleNamespace(status_code=200, json=lambda: body)
         return SimpleNamespace(status_code=404, json=lambda: {})
 
     monkeypatch.setattr("httpx.request", flaky)
-    assert len(G.list_byo_installations(secrets)) == 100
+    with caplog.at_level("WARNING", logger="coworker.connectors"):
+        out = G.list_byo_installations(secrets)
+    assert len(out) == 100
+    assert any("failed" in r.message for r in caplog.records)
+
+
+def test_complete_listing_logs_nothing(secrets, rsa_pem, monkeypatch, caplog):
+    """A listing that finished cleanly must stay quiet — a warning on every fetch would
+    train the user to ignore the one that matters."""
+    _, pem = rsa_pem
+    G.set_byo_github_config(secrets, {"app_id": "1", "private_key": pem})
+
+    def short(method, url, headers=None, params=None, timeout=None):
+        return SimpleNamespace(
+            status_code=200, json=lambda: [{"id": 5, "account": {"login": "x"}}]
+        )
+
+    monkeypatch.setattr("httpx.request", short)
+    with caplog.at_level("WARNING", logger="coworker.connectors"):
+        assert len(G.list_byo_installations(secrets)) == 1
+    assert caplog.records == []

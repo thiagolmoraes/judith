@@ -21,10 +21,13 @@ App has. It is stored in the SecretStore like any other credential (user-only fi
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any, Optional
 
 from ..secrets import SecretStore
+
+logger = logging.getLogger("coworker.connectors")
 
 BYO_GITHUB_PROFILE = "byo_github"
 
@@ -218,6 +221,7 @@ def list_byo_installations(secrets: SecretStore) -> list[dict[str, Any]]:
     if not jwt_token:
         return []
     items: list[Any] = []
+    complete = False
     for page in range(1, _MAX_PAGES + 1):
         batch = _github_request(
             "GET",
@@ -226,10 +230,25 @@ def list_byo_installations(secrets: SecretStore) -> list[dict[str, Any]]:
             params={"per_page": 100, "page": page},
         )
         if not isinstance(batch, list):
-            break  # a failed page: return what we have rather than nothing
+            # A failed page: return what we have rather than nothing, but say so — an
+            # incomplete picker otherwise looks like the missing App was never installed.
+            logger.warning(
+                "github installations: page %d failed; listing %d found so far",
+                page,
+                len(items),
+            )
+            break
         items.extend(batch)
         if len(batch) < 100:
+            complete = True
             break
+    if not complete and len(items) >= _MAX_PAGES * 100:
+        logger.warning(
+            "github installations: stopped at the %d-page cap (%d listed); "
+            "any beyond that are not shown",
+            _MAX_PAGES,
+            len(items),
+        )
     out: list[dict[str, Any]] = []
     for it in items:
         if not isinstance(it, dict):
