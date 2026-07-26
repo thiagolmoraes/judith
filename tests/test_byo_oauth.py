@@ -647,7 +647,8 @@ def test_byo_config_rejects_malformed_scopes(client):
         "/v1/connectors/notion/byo-config",
         json={"fields": {"client_id": "c", "client_secret": "s", "scopes": {"a": 1}}},
     ).json()
-    assert res["ok"] is False and "scopes" in res["error"]
+    assert res["ok"] is False
+    assert "scopes" in res["error"]
 
 
 def test_callback_survives_a_failing_gateway(client, monkeypatch):
@@ -682,3 +683,64 @@ def test_callback_page_uses_the_display_title(client, monkeypatch):
     state = _query(url)["state"]
     _patch_token(monkeypatch, {"access_token": "AT", "workspace_id": "ws-1"})
     assert "Notion connected" in c.get(f"/oauth/callback?code=CODE&state={state}").text
+
+
+def test_list_installations_paginates(secrets, rsa_pem, monkeypatch):
+    """A picker showing only the first page would make a real installation look missing."""
+    _, pem = rsa_pem
+    G.set_byo_github_config(secrets, {"app_id": "1", "private_key": pem})
+    pages: list[int] = []
+
+    def paged(method, url, headers=None, params=None, timeout=None):
+        page = int((params or {}).get("page", 1))
+        pages.append(page)
+        # Two full pages, then a short one that ends the walk.
+        body = (
+            [
+                {"id": 100 + page * 100 + i, "account": {"login": f"a{page}"}}
+                for i in range(100)
+            ]
+            if page < 3
+            else [{"id": 999, "account": {"login": "last"}}]
+        )
+        return SimpleNamespace(status_code=200, json=lambda: body)
+
+    monkeypatch.setattr("httpx.request", paged)
+    out = G.list_byo_installations(secrets)
+    assert pages == [1, 2, 3]  # stops on the short page, doesn't keep walking
+    assert len(out) == 201
+    assert out[-1]["account"] == "last"
+
+
+def test_pagination_is_bounded(secrets, rsa_pem, monkeypatch):
+    """A server that always returns a full page must not loop forever."""
+    _, pem = rsa_pem
+    G.set_byo_github_config(secrets, {"app_id": "1", "private_key": pem})
+    pages: list[int] = []
+
+    def endless(method, url, headers=None, params=None, timeout=None):
+        pages.append(int((params or {}).get("page", 1)))
+        body = [{"id": i, "account": {"login": "x"}} for i in range(1, 101)]
+        return SimpleNamespace(status_code=200, json=lambda: body)
+
+    monkeypatch.setattr("httpx.request", endless)
+    G.list_byo_installations(secrets)
+    assert len(pages) == G._MAX_PAGES
+
+
+def test_partial_pagination_keeps_what_it_has(secrets, rsa_pem, monkeypatch):
+    """A page that fails mid-walk returns the installations already collected, rather than
+    discarding them and looking like the App has none."""
+    _, pem = rsa_pem
+    G.set_byo_github_config(secrets, {"app_id": "1", "private_key": pem})
+    monkeypatch.setattr("time.sleep", lambda _s: None)
+
+    def flaky(method, url, headers=None, params=None, timeout=None):
+        if int((params or {}).get("page", 1)) == 1:
+            # ids start at 1: id 0 is falsy and correctly filtered out as unusable.
+            body = [{"id": i, "account": {"login": "x"}} for i in range(1, 101)]
+            return SimpleNamespace(status_code=200, json=lambda: body)
+        return SimpleNamespace(status_code=404, json=lambda: {})
+
+    monkeypatch.setattr("httpx.request", flaky)
+    assert len(G.list_byo_installations(secrets)) == 100

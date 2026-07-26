@@ -203,19 +203,33 @@ def _parse_expiry(raw: Any) -> float:
     return _now() + 3600
 
 
+# Enough pages for any realistic App, while still bounding a server that keeps returning
+# full pages. Reaching it is logged by the caller rather than silently truncating.
+_MAX_PAGES = 10
+
+
 def list_byo_installations(secrets: SecretStore) -> list[dict[str, Any]]:
-    """Installations of the BYO App, for the connect UI to pick from. [] when unavailable."""
+    """Installations of the BYO App, for the connect UI to pick from. [] when unavailable.
+
+    Paginated: a picker that silently showed only the first page would look like the
+    missing installation was never made.
+    """
     jwt_token = app_jwt(secrets)
     if not jwt_token:
         return []
-    items = _github_request(
-        "GET",
-        f"{_API}/app/installations",
-        jwt_token=jwt_token,
-        params={"per_page": 100},
-    )
-    if not isinstance(items, list):
-        return []
+    items: list[Any] = []
+    for page in range(1, _MAX_PAGES + 1):
+        batch = _github_request(
+            "GET",
+            f"{_API}/app/installations",
+            jwt_token=jwt_token,
+            params={"per_page": 100, "page": page},
+        )
+        if not isinstance(batch, list):
+            break  # a failed page: return what we have rather than nothing
+        items.extend(batch)
+        if len(batch) < 100:
+            break
     out: list[dict[str, Any]] = []
     for it in items:
         if not isinstance(it, dict):
