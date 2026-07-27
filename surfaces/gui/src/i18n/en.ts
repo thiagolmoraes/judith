@@ -265,6 +265,20 @@ export const en: Catalog = {
   "root.toggleRW": "Toggle read-only / read-write",
   "rail.cantPreview": "This {kind} file can't be previewed here.",
   "access.noSources": "no sources",
+  "quickstart.connectToContinue": "Connect {names} to continue",
+  "quickstart.finishConnecting": "Finish connecting {name} in your browser.",
+  "quickstart.approveThere": "Approve it there, then come back — this page updates by itself.",
+  "quickstart.theChannel": "the channel",
+  "sched.at": "At",
+  "access.coreTag": "core",
+  "rail.working": "Working...",
+  "rail.workingOnTask": "Working on this task",
+  "quickstart.consentPre": "Allow this automation to post its digest to",
+  "quickstart.consentPost": "without asking each time. Anything else still asks first.",
+  "quickstart.waitingSignIn": "Waiting for sign-in…",
+  "quickstart.finishSignIn": "Finish signing in in your browser — this page updates by itself.",
+  "rail.soFarSuffix": "so far.",
+  "rail.withCalls": "with {calls} so far.",
   // -- tool-call one-liners (humanize.ts) -----------------------------------------
   // Assembled as pre + object + post so the UI can bold the object. Verb-object order
   // holds in Portuguese, so the shape survives translation unchanged; only the
@@ -318,6 +332,7 @@ export const en: Catalog = {
   "count.repositories": { one: "{count} repository", other: "{count} repositories" },
   "count.sessions": { one: "{count} session", other: "{count} sessions" },
   "count.files": { one: "{count} file", other: "{count} files" },
+  "count.toolCalls": { one: "{count} tool call", other: "{count} tool calls" },
   "count.folders": { one: "{count} folder", other: "{count} folders" },
   "count.runs": { one: "{count} run", other: "{count} runs" },
   "count.models": { one: "{count} model", other: "{count} models" },

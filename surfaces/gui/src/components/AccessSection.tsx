@@ -399,7 +399,7 @@ export function AccessSection({
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5 text-[12.5px] font-medium leading-tight">
                             <span className="truncate">{labelFor(r.connector, byName)}</span>
-                            {r.tier === "core" && <span className={TAG_CORE}>core</span>}
+                            {r.tier === "core" && <span className={TAG_CORE}>{t("access.coreTag")}</span>}
                           </div>
                           <div className="text-[11px] text-faint truncate" title={r.reason}>
                             {r.reason}

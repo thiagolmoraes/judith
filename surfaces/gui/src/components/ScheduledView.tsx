@@ -235,7 +235,7 @@ function NewAutomationForm({
       />
       <div className="tmpl-sched">
         <label className="tmpl-field">
-          <span>At</span>
+          <span>{t("sched.at")}</span>
           <input
             type="time"
             className="tmpl-input tmpl-time"
@@ -411,7 +411,7 @@ function TaskDetail({
         {editing ? (
           <div className="tmpl-sched sched-edit-sched">
             <label className="tmpl-field">
-              <span>At</span>
+              <span>{t("sched.at")}</span>
               <input type="time" className="tmpl-input tmpl-time" value={time} onChange={(e) => setTime(e.target.value)} />
             </label>
             <label className="tmpl-field">
@@ -500,7 +500,9 @@ function TaskDetail({
                   <span className="run-new-pill" data-testid="run-new">{t("sched.new2")}</span>
                 )}
                 {fmt(r.started_at)} · <span className={"run-" + r.status}>{r.status}</span> · {r.trigger}
-                {r.artifacts.length > 0 && <span className="dim"> · {r.artifacts.length} file(s)</span>}
+                {r.artifacts.length > 0 && (
+                  <span className="dim"> · {t("count.files", { count: r.artifacts.length })}</span>
+                )}
               </span>
               <span className="sched-run-go" aria-hidden>
                 {t("common.openArrow")}

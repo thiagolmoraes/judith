@@ -141,6 +141,17 @@ describe("tool-call one-liners", () => {
 });
 
 describe("automation summary", () => {
+  it("pluralises every count through the catalogue, not inline English", () => {
+    // `x${n === 1 ? "" : "s"}` appeared five times across these screens. Each is a rule
+    // that only holds in English and gets pt-BR's zero wrong.
+    for (const key of ["count.runs", "count.folders", "count.files", "count.toolCalls"]) {
+      expect(translate("pt-BR", key, { count: 1 }), key).toMatch(/^1 /);
+      expect(translate("pt-BR", key, { count: 2 }), key).toMatch(/^2 /);
+      // CLDR calls 0 singular in pt-BR, so each needs its explicit zero form.
+      expect(translate("pt-BR", key, { count: 0 }), key).toMatch(/^nenhum/);
+    }
+  });
+
   it("pluralises the run count in both languages", () => {
     // The summary built this with `run${n === 1 ? "" : "s"}` — an English-only rule that
     // also gets pt-BR's zero wrong.

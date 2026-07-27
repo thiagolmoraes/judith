@@ -267,6 +267,20 @@ export const ptBR: Catalog = {
   "root.toggleRW": "Alternar somente leitura / leitura e escrita",
   "rail.cantPreview": "Este arquivo {kind} não pode ser visualizado aqui.",
   "access.noSources": "nenhuma fonte",
+  "quickstart.connectToContinue": "Conecte {names} para continuar",
+  "quickstart.finishConnecting": "Conclua a conexão do {name} no navegador.",
+  "quickstart.approveThere": "Aprove por lá e volte — esta página se atualiza sozinha.",
+  "quickstart.theChannel": "o canal",
+  "sched.at": "às",
+  "access.coreTag": "essencial",
+  "rail.working": "Trabalhando...",
+  "rail.workingOnTask": "Trabalhando nesta tarefa",
+  "quickstart.consentPre": "Permitir que esta automação publique o resumo em",
+  "quickstart.consentPost": "sem perguntar toda vez. Todo o resto continua perguntando antes.",
+  "quickstart.waitingSignIn": "Aguardando o login…",
+  "quickstart.finishSignIn": "Conclua o login no navegador — esta página se atualiza sozinha.",
+  "rail.soFarSuffix": "até agora.",
+  "rail.withCalls": "com {calls} até agora.",
   // -- tool-call one-liners (humanize.ts) -----------------------------------------
   // Assembled as pre + object + post so the UI can bold the object. Verb-object order
   // holds in Portuguese, so the shape survives translation unchanged; only the
@@ -333,6 +347,11 @@ export const ptBR: Catalog = {
     zero: "nenhum arquivo",
     one: "{count} arquivo",
     other: "{count} arquivos",
+  },
+  "count.toolCalls": {
+    zero: "nenhuma chamada de ferramenta",
+    one: "{count} chamada de ferramenta",
+    other: "{count} chamadas de ferramenta",
   },
   "count.folders": {
     zero: "nenhuma pasta",

@@ -324,10 +324,13 @@ export function AutomationQuickstart({
   };
 
   const gateHint = !allConnected
-    ? `Connect ${picked?.conns
-        .filter((c) => !connState(c.name)?.connected)
-        .map((c) => connState(c.name)?.title || c.name)
-        .join(" and ")} to continue`
+    ? i18n("quickstart.connectToContinue", {
+        names:
+          picked?.conns
+            .filter((c) => !connState(c.name)?.connected)
+            .map((c) => connState(c.name)?.title || c.name)
+            .join(" and ") ?? "",
+      })
     : picked?.needsChannel && !channel
       ? i18n("quickstart.pickChannelFirst")
       : "";
@@ -456,9 +459,9 @@ export function AutomationQuickstart({
                     <span>↗</span>
                     <span className="flex-1 min-w-0">
                       <b className="text-ink font-medium">
-                        Finish connecting {c?.title || name} in your browser.
+                        {i18n("quickstart.finishConnecting", { name: c?.title || name })}
                       </b>{" "}
-                      Approve it there, then come back — this page updates by itself.
+                      {i18n("quickstart.approveThere")}
                     </span>
                     <button
                       className="text-faint underline hover:text-muted shrink-0"
@@ -487,11 +490,13 @@ export function AutomationQuickstart({
                   <>
                     <span className="inline-flex items-center gap-2 text-[12px]">
                       <Spinner />
-                      {signinPhase === "opening" ? "Opening browser…" : "Waiting for sign-in…"}
+                      {signinPhase === "opening"
+                        ? i18n("quickstart.openingBrowser")
+                        : i18n("quickstart.waitingSignIn")}
                     </span>
                     {signinPhase === "waiting" && (
                       <span className="text-[11.5px] text-faint">
-                        Finish signing in in your browser — this page updates by itself.{" "}
+                        {i18n("quickstart.finishSignIn")}{" "}
                         <button
                           className="underline hover:text-muted"
                           onClick={cancelSignin}
@@ -589,12 +594,12 @@ export function AutomationQuickstart({
                     data-testid="ob-consent"
                   />
                   <span>
-                    Allow this automation to post its digest to{" "}
+                    {i18n("quickstart.consentPre")}{" "}
                     <b className="text-ink" title={channel || undefined}>
-                      {channelLabel || "the channel"}
+                      {channelLabel || i18n("quickstart.theChannel")}
                       {channelWorkspace ? ` (${channelWorkspace})` : ""}
                     </b>{" "}
-                    without asking each time. Anything else still asks first.
+                    {i18n("quickstart.consentPost")}
                   </span>
                 </label>
               ) : picked.conns.length > 0 ? (

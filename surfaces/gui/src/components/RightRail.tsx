@@ -241,7 +241,9 @@ function ProgressSummary({ running, toolNames, todo }: { running: boolean; toolN
         ))}
         {running && (
           <div className="rail-muted">
-            {toolNames.length ? `${toolNames.length} tool call${toolNames.length === 1 ? "" : "s"} so far.` : "Working..."}
+            {toolNames.length
+              ? `${t("count.toolCalls", { count: toolNames.length })} ${t("rail.soFarSuffix")}`
+              : t("rail.working")}
           </div>
         )}
       </div>
@@ -250,7 +252,10 @@ function ProgressSummary({ running, toolNames, todo }: { running: boolean; toolN
   if (running) {
     return (
       <div className="rail-muted">
-        Working on this task{toolNames.length ? ` with ${toolNames.length} tool call${toolNames.length === 1 ? "" : "s"} so far.` : "."}
+        {t("rail.workingOnTask")}
+        {toolNames.length
+          ? ` ${t("rail.withCalls", { calls: t("count.toolCalls", { count: toolNames.length }) })}`
+          : "."}
       </div>
     );
   }
