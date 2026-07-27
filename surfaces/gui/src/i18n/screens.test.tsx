@@ -144,10 +144,19 @@ describe("automation summary", () => {
   it("pluralises every count through the catalogue, not inline English", () => {
     // `x${n === 1 ? "" : "s"}` appeared five times across these screens. Each is a rule
     // that only holds in English and gets pt-BR's zero wrong.
-    for (const key of ["count.runs", "count.folders", "count.files", "count.toolCalls"]) {
+    //
+    // Derived from the catalogue rather than a hand-written list: a fixed list only
+    // protects the keys someone remembered to add to it, which is the same "claims more
+    // than it checks" trap this test exists to close.
+    const countKeys = Object.keys(en).filter((k) => k.startsWith("count."));
+    expect(countKeys.length).toBeGreaterThan(3); // sanity: the filter still matches
+
+    for (const key of countKeys) {
+      expect(translate("en", key, { count: 1 }), key).toMatch(/^1 /);
       expect(translate("pt-BR", key, { count: 1 }), key).toMatch(/^1 /);
       expect(translate("pt-BR", key, { count: 2 }), key).toMatch(/^2 /);
-      // CLDR calls 0 singular in pt-BR, so each needs its explicit zero form.
+      // CLDR calls 0 singular in pt-BR, so each needs an explicit zero form.
+      expect(ptBR[key], `${key} has no zero form`).toHaveProperty("zero");
       expect(translate("pt-BR", key, { count: 0 }), key).toMatch(/^nenhum/);
     }
   });

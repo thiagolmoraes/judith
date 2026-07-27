@@ -384,7 +384,7 @@ export function AccessSection({
                     onClick={() => setAdding(true)}
                     data-testid="access-add-source"
                   >
-                    + Add a source…
+                    {t("access.addSource")}
                   </button>
                 )}
               </div>
