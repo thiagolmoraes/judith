@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import {
-  cloudAvailable,
   cloudLogin,
   getCloudGallery,
   getCloudGalleryDetail,
@@ -407,10 +406,15 @@ export function GalleryModal({
                 </div>
               ))}
             </div>
-          ) : !cloudAvailable(cloud) ? (
+          ) : cloud?.enabled === false ? (
             /* The Gallery genuinely is a cloud feature, so with the cloud off the honest
                thing is to say so and point at the path that still works — not to show a
-               sign-in button the backend would refuse. */
+               sign-in button the backend would refuse.
+
+               Tested on `enabled === false`, NOT `!cloudAvailable(cloud)`: a failed status
+               fetch leaves `cloud` null, which means "unknown", and reporting a transient
+               network error as "the cloud is switched off" would send the user looking for
+               a setting they never changed. Unknown keeps the sign-in path. */
             <div className={CARD + " p-5"} data-testid="gallery-unavailable">
               <div className="font-semibold text-[14px] mb-1">The Gallery needs OpenWorker Cloud</div>
               <div className="text-[12.5px] text-muted leading-relaxed">

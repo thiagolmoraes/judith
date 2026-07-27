@@ -1215,7 +1215,15 @@ export function Sidebar(props: Props) {
             }}
             aria-haspopup="menu"
             aria-expanded={appMenuOpen}
-            aria-label={cloud?.signed_in ? `Account: ${accountEmail}` : "Account: not signed in"}
+            aria-label={
+              // Mirrors the visible label exactly: announcing "not signed in" beside a row
+              // reading "Local" describes an account this install doesn't have.
+              cloud?.signed_in
+                ? `Account: ${accountEmail}`
+                : cloudAvailable(cloud)
+                  ? "Account: not signed in"
+                  : "Account: local only"
+            }
           >
             <span
               className={

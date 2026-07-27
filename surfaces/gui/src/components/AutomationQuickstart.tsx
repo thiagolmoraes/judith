@@ -389,6 +389,16 @@ export function AutomationQuickstart({
                         ? "Opening browser…"
                         : `Waiting for ${c?.title || name}…`}
                     </span>
+                  ) : !cloudAvailable(cloud) ? (
+                    /* This quickstart only offers managed (broker) connects, which need the
+                       cloud. With it off, `startConnect` would set pendingConn and nothing
+                       would happen — a dead button. Say where the working path is instead. */
+                    <span
+                      className="text-[12px] text-faint shrink-0"
+                      data-testid={`ob-connect-unavailable-${name}`}
+                    >
+                      Connect from Integrations
+                    </span>
                   ) : (
                     <button
                       className="px-3.5 py-1 rounded-full border border-line text-[12.5px] hover:bg-paper"
