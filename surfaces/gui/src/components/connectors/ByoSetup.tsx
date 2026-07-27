@@ -160,9 +160,16 @@ export function ByoSetup({
   };
 
   const clear = async () => {
+    setError(null);
     setBusy(true);
     try {
-      await setByoConfig(c.name, isGithub ? { app_id: "" } : { client_id: "" });
+      const res = await setByoConfig(c.name, isGithub ? { app_id: "" } : { client_id: "" });
+      if (!res.ok) {
+        // Same contract as save(): a refused write must say so rather than closing the
+        // form and leaving the app still configured with no explanation.
+        setError(res.error || "could not remove that app");
+        return;
+      }
       setEditing(false);
       await refresh();
     } finally {

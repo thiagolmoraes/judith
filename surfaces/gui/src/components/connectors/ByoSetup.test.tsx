@@ -261,3 +261,26 @@ describe("ByoSetup — load failure", () => {
     expect(screen.queryByTestId("byo-retry")).toBeNull();
   });
 });
+
+describe("ByoSetup — remove failure", () => {
+  it("surfaces a refused removal instead of closing silently", async () => {
+    stubFetch([
+      {
+        match: "/v1/connectors/byo",
+        method: "GET",
+        json: {
+          oauth: { notion: { configured: true, client_id: "cid-stored", scopes: [] } },
+          github: { configured: false, app_id: "" },
+          redirect_uri: REDIRECT,
+        },
+      },
+      { match: "/byo-config", method: "POST", json: { ok: false, error: "storage is read-only" } },
+    ]);
+    render(<ByoSetup c={connector("notion", "Notion")} onConnected={() => {}} />);
+
+    fireEvent.click(await screen.findByText("Remove"));
+    expect(await screen.findByText("storage is read-only")).toBeTruthy();
+    // The app is still configured, so the connect affordance must remain.
+    expect(screen.getByTestId("byo-connect")).toBeTruthy();
+  });
+});
