@@ -146,7 +146,7 @@ export const ptBR: Catalog = {
   "tool.wanted.edit": "Queria editar ",
   "tool.wanted.write": "Queria escrever ",
   "tool.wanted.sendMessage": "Queria enviar uma mensagem",
-  "tool.wanted.message": "Queria enviar mensagem ",
+  "tool.wanted.message": "Queria enviar uma mensagem para ",
   "tool.wanted.use": "Queria usar {name}",
   "tool.ranCommand": "Executou ",
   "tool.startedBackground": "Iniciou em segundo plano: ",

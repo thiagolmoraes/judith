@@ -115,6 +115,24 @@ describe("tool-call one-liners", () => {
     expect(humanizeAsk("run_shell", { command: "ls" }, pt).pre).toContain("Queria");
   });
 
+  it("reads as a whole sentence once assembled, not just per fragment", () => {
+    // Fragments can each look right and still join badly — "Queria enviar mensagem eng"
+    // was missing both the article and the preposition while every key was "translated".
+    const join = (l: { pre: string; obj?: string; post?: string }) =>
+      `${l.pre}${l.obj ?? ""}${l.post ?? ""}`;
+
+    expect(join(humanizeAsk("send_message", { target: "slack:eng" }, pt))).toBe(
+      "Queria enviar uma mensagem para eng no Slack",
+    );
+    expect(join(humanizeTool("send_message", { target: "slack:eng" }, pt))).toBe(
+      "Enviou uma mensagem no Slack para eng",
+    );
+    expect(join(humanizeApprovalTitle("send_file", { target: "slack:eng" }, pt))).toBe(
+      "Enviar um arquivo para eng",
+    );
+    expect(join(humanizeTool("read_file", { path: "/a/b.md" }, pt))).toBe("Leu b.md");
+  });
+
   it("keeps the pre/obj/post shape so the UI can still bold the object", () => {
     const line = humanizeTool("grep", { pattern: "TODO" }, pt);
     expect(line.pre).toBe("Procurou no código por ");
