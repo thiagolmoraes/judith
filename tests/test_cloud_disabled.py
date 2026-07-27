@@ -172,10 +172,23 @@ def test_no_cloud_route_500s_when_disabled(tmp_path, monkeypatch):
             ("POST", "/v1/cloud/logout"),
             ("GET", "/v1/cloud/gallery"),
             ("GET", "/v1/cloud/gallery/some-slug"),
+            ("POST", "/v1/cloud/telemetry"),
             ("POST", "/v1/connectors/notion/connect-managed"),
         ]
+        # Every /v1/cloud/* route the app registers, so a new one added without a
+        # disabled-path check shows up here rather than in the field.
+        registered = {
+            r.path
+            for r in create_app(manager).routes
+            if "/v1/cloud" in getattr(r, "path", "")
+        }
+        assert registered <= {p for _, p in routes} | {"/v1/cloud/gallery/{slug}"}, (
+            f"cloud routes missing from the sweep: {registered - {p for _, p in routes}}"
+        )
         for method, path in routes:
-            resp = c.request(method, path)
+            # A body for the POSTs that take one, so the handler actually runs instead of
+            # bouncing off request validation before reaching the disabled path.
+            resp = c.request(method, path, json={} if method == "POST" else None)
             assert resp.status_code < 500, f"{method} {path} -> {resp.status_code}"
 
 
