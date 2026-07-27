@@ -164,7 +164,7 @@ export function RightRail({
         />
       ) : (
         <>
-          <RailSection title="Progress" open={open.progress} onToggle={() => setOpen({ ...open, progress: !open.progress })}>
+          <RailSection title={t("rail.progress")} open={open.progress} onToggle={() => setOpen({ ...open, progress: !open.progress })}>
             <ProgressSummary running={running} toolNames={toolNames} todo={todo} />
           </RailSection>
 
@@ -179,12 +179,12 @@ export function RightRail({
                   <button
                     className="rail-mini-btn"
                     onClick={(e) => { e.stopPropagation(); revealArtifact(sessionId, artifacts[0].path, "reveal"); }}
-                    title="Show the folder where these files are saved"
+                    title={t("rail.showFolderTip")}
                   >
                     <Icon name="folder" size={13} />
                   </button>
                 )}
-                <button className="rail-mini-btn" onClick={(e) => { e.stopPropagation(); refreshArtifacts(); }} title="Refresh artifacts"><Icon name="refresh" size={13} /></button>
+                <button className="rail-mini-btn" onClick={(e) => { e.stopPropagation(); refreshArtifacts(); }} title={t("rail.refreshArtifacts")}><Icon name="refresh" size={13} /></button>
               </>
             }
           >
@@ -201,7 +201,7 @@ export function RightRail({
                       {a.name}
                       <span className="artifact-row-meta">{formatBytes(a.size)} · {formatTime(a.modified_at)}</span>
                     </span>
-                    <span className="artifact-open">Open</span>
+                    <span className="artifact-open">{t("common.open2")}</span>
                   </button>
                 ))}
               </div>
@@ -310,7 +310,7 @@ function ArtifactViewer({
   return (
     <div className="artifact-viewer">
       <div className="artifact-head">
-        <button className="artifact-icon-btn" onClick={onBack} aria-label="Back to artifacts" title="Back">
+        <button className="artifact-icon-btn" onClick={onBack} aria-label={t("rail.backToArtifacts")} title={t("common.back")}>
           <Icon name="arrowLeft" size={16} />
         </button>
         <div className="artifact-heading">
@@ -325,8 +325,8 @@ function ArtifactViewer({
                 await onReload();
                 setReloadKey((k) => k + 1);
               }}
-              aria-label="Reload preview"
-              title="Reload"
+              aria-label={t("rail.reloadPreview")}
+              title={t("common.reload")}
             >
               <Icon name="refresh" size={16} />
             </button>
@@ -346,16 +346,16 @@ function ArtifactViewer({
           <button
             className="artifact-icon-btn"
             onClick={() => navigator.clipboard?.writeText(artifact.abs_path || artifact.path)}
-            aria-label="Copy path"
-            title="Copy full path"
+            aria-label={t("rail.copyPath")}
+            title={t("rail.copyFullPath")}
           >
             <Icon name="copy" size={16} />
           </button>
           <button
             className="artifact-icon-btn"
             onClick={() => revealArtifact(sessionId, artifact.path, "reveal")}
-            aria-label="Show in folder"
-            title="Show in folder"
+            aria-label={t("rail.showInFolder")}
+            title={t("rail.showInFolder")}
           >
             <Icon name="folder" size={16} />
           </button>

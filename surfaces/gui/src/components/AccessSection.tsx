@@ -241,7 +241,7 @@ export function AccessSection({
         </button>
       </div>
       {open && (
-        <div className="rail-section-body" role="region" aria-label="Session access">
+        <div className="rail-section-body" role="region" aria-label={t("access.sessionAccess")}>
           {connectFor ? (
             <ConnectInline
               c={connectFor}
@@ -315,7 +315,7 @@ export function AccessSection({
                       <Toggle
                         checked={c.enabled}
                         onChange={(next) => toggleSession(c.connector, next)}
-                        title="Enabled for this session — tap to mute here"
+                        title={t("access.enabledTapToMute")}
                       />
                     </div>
                   ))}
@@ -334,7 +334,7 @@ export function AccessSection({
                   <div className="mt-1.5">
                     <input
                       className="w-full px-2.5 py-1.5 rounded-lg border border-line bg-panel text-[12.5px] outline-none focus:border-accent"
-                      placeholder="Search connectors…"
+                      placeholder={t("access.searchConnectors")}
                       value={query}
                       onChange={(e) => setQuery(e.target.value)}
                       onKeyDown={(e) => {
@@ -489,6 +489,7 @@ function ConnectInline({
   onDone: () => void;
   onBack: () => void;
 }) {
+  const { t } = useI18n();
   useEffect(() => {
     const t = setInterval(async () => {
       try {
@@ -506,7 +507,7 @@ function ConnectInline({
       <button
         className="inline-flex items-center gap-1 text-[12px] text-faint hover:text-ink mb-2"
         onClick={onBack}
-        aria-label="Back to sources"
+        aria-label={t("access.backToSources")}
       >
         <Icon name="arrowLeft" size={13} /> Connect {c.title}
       </button>
@@ -553,7 +554,7 @@ function ChannelsInline({
       <button
         className="inline-flex items-center gap-1 text-[12px] text-faint hover:text-ink mb-2"
         onClick={onBack}
-        aria-label="Back to sources"
+        aria-label={t("access.backToSources")}
       >
         <Icon name="arrowLeft" size={13} /> {label} channels
       </button>
@@ -573,14 +574,14 @@ function ChannelsInline({
               {s.collision && (
                 <span
                   className="text-[10.5px] text-warnInk bg-warnSoft/70 border border-warnInk/15 rounded px-1 shrink-0"
-                  title="This channel is also this session's Inbox-routing target — inbound and outbound collide."
+                  title={t("access.inboxCollision")}
                 >
                   ⚠
                 </span>
               )}
               <button
                 className="w-5 h-5 grid place-items-center text-faint hover:text-danger shrink-0"
-                title="Stop listening"
+                title={t("access.stopListening")}
                 onClick={() => onRemove(s.channel)}
               >
                 ×
@@ -593,7 +594,7 @@ function ChannelsInline({
       <div className="flex items-center gap-1.5">
         <ChannelPicker value={draft} onChange={onDraft} recent={recent} onSubmit={onAdd} />
         <button className={BTN_ACCENT} disabled={!draft.trim()} onClick={onAdd}>
-          Add
+          {t("common.add")}
         </button>
       </div>
       {error && (

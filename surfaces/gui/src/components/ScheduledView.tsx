@@ -164,21 +164,21 @@ export function ScheduledView({ onOpenRun, onRunNow, initialOpenId }: Props) {
         )
       ) : (
         <div className="flex flex-col gap-2.5">
-          {tasks.map((t) => (
+          {tasks.map((task) => (
             <div
               className={CARD + " sched-card px-4 py-3 cursor-pointer hover:border-lineStrong transition-colors"}
-              key={t.id}
-              onClick={() => setOpenId(t.id)}
+              key={task.id}
+              onClick={() => setOpenId(task.id)}
             >
               <div className="flex items-center justify-between gap-2.5 mb-1">
-                <span className="text-[13.5px] font-semibold truncate">{t.title}</span>
+                <span className="text-[13.5px] font-semibold truncate">{task.title}</span>
                 <button
                   className="sched-card-del"
-                  title="Delete automation"
-                  aria-label={`Delete ${t.title}`}
+                  title={t("sched.deleteAutomation")}
+                  aria-label={`Delete ${task.title}`}
                   onClick={async (e) => {
                     e.stopPropagation();
-                    await deleteAutomation(t.id);
+                    await deleteAutomation(task.id);
                     refresh();
                   }}
                 >
@@ -187,8 +187,8 @@ export function ScheduledView({ onOpenRun, onRunNow, initialOpenId }: Props) {
               </div>
               <div className="flex items-center gap-1.5 text-[12px] text-muted">
                 <Icon name="clock" size={13} className="text-faint shrink-0" />
-                {t.enabled ? t.schedule : "Paused"} · next {fmt(t.next_run)} · {t.run_count} run{t.run_count === 1 ? "" : "s"}
-                {t.last_status ? ` · last ${t.last_status}` : ""}
+                {task.enabled ? task.schedule : "Paused"} · next {fmt(task.next_run)} · {task.run_count} run{task.run_count === 1 ? "" : "s"}
+                {task.last_status ? ` · last ${task.last_status}` : ""}
               </div>
             </div>
           ))}
@@ -222,13 +222,13 @@ function NewAutomationForm({
       </div>
       <input
         className="tmpl-input"
-        placeholder="Title (e.g. Daily standup notes)"
+        placeholder={t("sched.titlePlaceholder")}
         value={title}
         onChange={(e) => setTitle(e.target.value)}
       />
       <textarea
         className="tmpl-input tmpl-textarea"
-        placeholder="What should it do each run? (e.g. Summarize today's calendar and open tasks.)"
+        placeholder={t("sched.instructionsPlaceholder")}
         value={instructions}
         onChange={(e) => setInstructions(e.target.value)}
       />
@@ -380,7 +380,7 @@ function TaskDetail({
               className="tmpl-input sched-edit-title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Title"
+              placeholder={t("sched.titleField")}
             />
           ) : (
             <h2 className="text-[18px] font-semibold tracking-tight">{task.title}</h2>
@@ -398,9 +398,9 @@ function TaskDetail({
                 <button className="btn-primary sm" onClick={() => onRunNow(id, task.title)}>
                   ▶ Run now
                 </button>
-                <button className="btn sm" onClick={startEdit}>Edit</button>
+                <button className="btn sm" onClick={startEdit}>{t("common.edit")}</button>
                 <button className="btn sm danger-btn" onClick={remove}>
-                  <Icon name="trash" size={14} /> Delete
+                  <Icon name="trash" size={14} /> {t("common.delete")}
                 </button>
               </>
             )}
@@ -458,13 +458,13 @@ function TaskDetail({
                   </span>
                   <button
                     className="link"
-                    title="This automation will ask for approval again"
+                    title={t("sched.willAskAgain")}
                     onClick={async () => {
                       await updateAutomation(id, { revoke: rule.entry });
                       refresh();
                     }}
                   >
-                    Revoke
+                    {t("sched.revoke")}
                   </button>
                 </div>
               ))}
@@ -472,7 +472,7 @@ function TaskDetail({
           </>
         )}
 
-        <div className="sa-sub">Runs</div>
+        <div className="sa-sub">{t("sched.runs")}</div>
         <div className="dim" style={{ marginBottom: 8, fontSize: 12.5 }}>
           {t("sched.runIsConversation")}
         </div>
@@ -488,7 +488,7 @@ function TaskDetail({
                 title: task.title,
               })
             }
-            title="Open this run's conversation"
+            title={t("sched.openRunConversation")}
           >
             <div className="sched-run-row">
               <span>
@@ -499,7 +499,7 @@ function TaskDetail({
                 {r.artifacts.length > 0 && <span className="dim"> · {r.artifacts.length} file(s)</span>}
               </span>
               <span className="sched-run-go" aria-hidden>
-                Open ›
+                {t("common.openArrow")}
               </span>
             </div>
             {r.result_text && <div className="sched-run-peek">{r.result_text}</div>}

@@ -389,7 +389,7 @@ export function AutomationQuickstart({
           {/* §30: the card names its template — without this it starts abruptly after the grid. */}
           <div className="flex items-baseline gap-2 pb-2.5 mb-1 border-b border-line">
             <span className="text-[11px] uppercase tracking-[0.05em] text-accent font-semibold">
-              Set up
+              {i18n("common.setUp")}
             </span>
             <span className="text-[14px] font-semibold">{tpl(picked.title)}</span>
             <span className="ml-auto text-[12px] text-faint max-sm:hidden">
@@ -456,7 +456,7 @@ export function AutomationQuickstart({
                       onClick={() => setConnFlow(null)}
                       data-testid="ob-connect-cancel"
                     >
-                      Cancel
+                      {i18n("common.cancel")}
                     </button>
                   </div>
                 )}
@@ -488,7 +488,7 @@ export function AutomationQuickstart({
                           onClick={cancelSignin}
                           data-testid="ob-signin-cancel"
                         >
-                          Cancel
+                          {i18n("common.cancel")}
                         </button>
                       </span>
                     )}
@@ -538,7 +538,7 @@ export function AutomationQuickstart({
                   </p>
                 </>
               )}
-              <label className={label}>When</label>
+              <label className={label}>{i18n("common.when")}</label>
               <div className="flex gap-2">
                 <div className="flex-1 min-w-0">
                   <SelectMenu
@@ -551,7 +551,7 @@ export function AutomationQuickstart({
                 <input
                   className="w-28 px-3 py-2 rounded-lg border border-line bg-panel text-[13.5px] outline-none focus:border-accent"
                   type="time"
-                  aria-label="Time"
+                  aria-label={i18n("common.time")}
                   value={time}
                   onChange={(e) => setTime(e.target.value)}
                 />
@@ -603,7 +603,7 @@ export function AutomationQuickstart({
               className="text-[12.5px] text-faint hover:text-muted"
               onClick={() => setPickedKey(null)}
             >
-              Cancel
+              {i18n("common.cancel")}
             </button>
             {/* A silently-disabled primary reads as a bug — always name the missing piece. */}
             {gateHint && (

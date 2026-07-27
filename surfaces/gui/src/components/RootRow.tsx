@@ -34,7 +34,7 @@ export function RootRow({
       <span className="root-text" title={root.path}>
         <span className="root-label">
           {label}
-          {root.primary && !scratchPrimary && <span className="root-tag"> main</span>}
+          {root.primary && !scratchPrimary && <span className="root-tag"> {t("root.main")}</span>}
           {branch && (
             <span className="root-tag root-branch">
               {" "}
@@ -44,7 +44,7 @@ export function RootRow({
         </span>
         <span className="root-path">{root.path}</span>
       </span>
-      {!root.exists && <span className="root-tag warn">missing</span>}
+      {!root.exists && <span className="root-tag warn">{t("root.missing")}</span>}
       <button
         className={"root-access" + (root.writable ? " rw" : " ro")}
         onClick={() => onToggle(root)}
@@ -54,7 +54,7 @@ export function RootRow({
         {root.writable ? t("access.readWrite") : t("access.readOnly")}
       </button>
       {!root.primary && (
-        <button className="root-x" onClick={() => onRemove(root.path)} disabled={busy} title="Remove">
+        <button className="root-x" onClick={() => onRemove(root.path)} disabled={busy} title={t("common.remove2")}>
           ×
         </button>
       )}
