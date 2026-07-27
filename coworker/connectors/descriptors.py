@@ -704,7 +704,7 @@ DESCRIPTORS: list[ConnectorDescriptor] = [
         fields=[],
         instructions=[
             "One click connects via monday.com sign-in in your browser.",
-            "Sign-in is fully local — tokens stay on this Mac.",
+            "Sign-in is fully local — tokens stay on this device.",
         ],
         available=True,
     ),
