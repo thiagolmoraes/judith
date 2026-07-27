@@ -32,6 +32,8 @@ import {
   type DictationDownloadProgress,
   type DictationStatus,
 } from "../tauri";
+import { LOCALES, LOCALE_NAMES } from "../i18n";
+import { useI18n } from "../i18n/useLocale";
 import { useThemePref } from "../theme";
 import { Icon } from "./Icon";
 import { PanelHead } from "./IntegrationsView";
@@ -386,6 +388,31 @@ function PersonasSection({ onOpenPersona }: { onOpenPersona?: (id: string) => vo
   );
 }
 
+// -- Interface language ---------------------------------------------------------
+// Only the interface: the model answers in whatever language you write to it, which the
+// help text says outright so nobody expects this to steer replies.
+function LanguageCard() {
+  const { locale, setLocale, t } = useI18n();
+  return (
+    <div className={CARD + " p-4 mb-4"} data-testid="language-card">
+      <div className={FIELD_LABEL}>{t("settings.language.title")}</div>
+      <div className="seg mt-2.5" role="radiogroup" aria-label={t("settings.language.title")}>
+        {LOCALES.map((code) => (
+          <button
+            key={code}
+            className={code === locale ? "active" : ""}
+            data-testid={`locale-${code}`}
+            onClick={() => void setLocale(code)}
+          >
+            {LOCALE_NAMES[code]}
+          </button>
+        ))}
+      </div>
+      <div className={FIELD_HELP}>{t("settings.language.help")}</div>
+    </div>
+  );
+}
+
 // -- Appearance + app behaviour ------------------------------------------------
 function AppearanceSection() {
   const [theme, setTheme] = useThemePref();
@@ -422,6 +449,8 @@ function AppearanceSection() {
         </div>
         <div className={FIELD_HELP}>Auto follows your Mac&rsquo;s appearance.</div>
       </div>
+
+      <LanguageCard />
 
       <SidebarCard />
 

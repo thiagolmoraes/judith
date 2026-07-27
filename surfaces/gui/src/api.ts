@@ -758,6 +758,10 @@ export interface ModelSettings {
   // bounded per-persona cards. Defaults to "flat" (absent → flat) so the GUI is robust to an older
   // backend that hasn't shipped the field yet.
   nav_layout?: "flat" | "grouped";
+  // Interface language, and the set the sidecar recognises. Optional so an older backend
+  // without the field simply leaves the GUI in English.
+  locale?: string;
+  locales?: string[];
   // Sidebar: sessions shown per group before "Show more" (default 5, 1–50).
   sessions_peek?: number;
   // Curated-matrix display names ({full id → "GLM-5.2 · via Together"}); custom models absent.
@@ -841,6 +845,18 @@ export async function setNavLayout(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ nav_layout: layout }),
+  });
+  return res.json();
+}
+
+/** Persist the interface language; read back from getSettings. */
+export async function setLocale(
+  locale: string,
+): Promise<{ ok: boolean; locale?: string; error?: string }> {
+  const res = await fetch(`${httpBase()}/v1/settings/locale`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ locale }),
   });
   return res.json();
 }

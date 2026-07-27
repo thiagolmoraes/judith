@@ -330,3 +330,47 @@ def test_official_endpoint_still_requires_a_key(tmp_path, monkeypatch):
     manager.secrets.put("provider:openai", {"base_url": "https://api.openai.com/v1"})
     assert manager.verify_provider("openai", {})["ok"] is False
     assert manager._provider_configured("openai") is False
+
+
+def test_locale_defaults_to_english_and_persists(tmp_path, monkeypatch):
+    """Interface language lives in prefs so it survives a restart and other surfaces can
+    read it — the GUI holds the catalogues, the sidecar holds the choice."""
+    from coworker.server.manager import SessionManager
+
+    monkeypatch.setenv("COWORKER_STATE_DIR", str(tmp_path / "state"))
+    manager = SessionManager(data_dir=tmp_path / "data")
+
+    settings = manager.get_settings()
+    assert settings["locale"] == "en"
+    assert "pt-BR" in settings["locales"]
+
+    assert manager.set_locale("pt-BR") == {"ok": True, "locale": "pt-BR"}
+    assert manager.get_settings()["locale"] == "pt-BR"
+
+    # A fresh manager over the same state reads the stored choice back.
+    assert (
+        SessionManager(data_dir=tmp_path / "data").get_settings()["locale"] == "pt-BR"
+    )
+
+
+def test_unknown_locale_is_refused(tmp_path, monkeypatch):
+    from coworker.server.manager import SessionManager
+
+    monkeypatch.setenv("COWORKER_STATE_DIR", str(tmp_path / "state"))
+    manager = SessionManager(data_dir=tmp_path / "data")
+
+    for bad in ("xx", "", "pt"):  # "pt" is close but not a shipped catalogue
+        res = manager.set_locale(bad)
+        assert res["ok"] is False
+        assert "unknown locale" in res["error"]
+    assert manager.get_settings()["locale"] == "en"
+
+
+def test_stale_locale_pref_falls_back(tmp_path, monkeypatch):
+    """A pref naming a catalogue that no longer ships must not blank the UI."""
+    from coworker.server.manager import SessionManager
+
+    monkeypatch.setenv("COWORKER_STATE_DIR", str(tmp_path / "state"))
+    manager = SessionManager(data_dir=tmp_path / "data")
+    manager._prefs["locale"] = "kl-GL"
+    assert manager.get_settings()["locale"] == "en"

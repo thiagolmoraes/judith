@@ -1540,6 +1540,12 @@ def create_app(manager: SessionManager) -> FastAPI:
     def settings_set_nav_layout(body: dict) -> dict[str, Any]:
         return manager.set_nav_layout(str((body or {}).get("nav_layout", "")))
 
+    @app.post("/v1/settings/locale")
+    def settings_set_locale(body: dict) -> dict[str, Any]:
+        """Interface language. The GUI holds the catalogues; this only persists the choice
+        so it survives a restart and so other surfaces can read it."""
+        return manager.set_locale(str((body or {}).get("locale", "")))
+
     @app.post("/v1/settings/sessions-peek")
     def settings_set_sessions_peek(body: dict) -> dict[str, Any]:
         # Sidebar: sessions shown per group before "Show more" (owner ask, 2026-07-03).
