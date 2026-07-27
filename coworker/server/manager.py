@@ -1804,6 +1804,8 @@ class SessionManager:
             "experimental_connectors": experimental_enabled(self.secrets),
             "surfaces": self._surfaces(),
             "nav_layout": self._nav_layout(),
+            "locale": self._locale(),
+            "locales": list(self.LOCALES),
             "sessions_peek": self.sessions_peek(),
             "scratch_base": self._prefs.get("scratch_base")
             or self.DEFAULT_SCRATCH_BASE,
@@ -1832,6 +1834,26 @@ class SessionManager:
             self._prefs["show_code"] = bool(code)
         self._save_prefs()
         return {"ok": True, "surfaces": self._surfaces()}
+
+    # Languages the interface is translated into. English is the source language, so it is
+    # always available; a locale only belongs here once its catalogue is filled in.
+    LOCALES = ("en", "pt-BR")
+    DEFAULT_LOCALE = "en"
+
+    def _locale(self) -> str:
+        """Interface language. Unknown or unset falls back to English rather than failing:
+        a stale pref from a removed translation must not leave the UI blank."""
+        value = str(self._prefs.get("locale") or "").strip()
+        return value if value in self.LOCALES else self.DEFAULT_LOCALE
+
+    def set_locale(self, locale: str) -> dict[str, Any]:
+        """Set + persist the interface language."""
+        value = str(locale or "").strip()
+        if value not in self.LOCALES:
+            return {"ok": False, "error": f"unknown locale: {value or '(empty)'}"}
+        self._prefs["locale"] = value
+        self._save_prefs()
+        return {"ok": True, "locale": value}
 
     def _nav_layout(self) -> str:
         """Sidebar layout: ``"flat"`` (default) or ``"grouped"`` (by persona). Persisted in
