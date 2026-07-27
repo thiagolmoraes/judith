@@ -159,7 +159,7 @@ describe("ApprovalCard — §35 shapes", () => {
     );
     expect(screen.getByText(/Run a command — fetch semiconductor stock data/)).toBeTruthy();
     expect(screen.getByText(/python3 fetch\.py/)).toBeTruthy();
-    expect(screen.getByText(/stays on this Mac/)).toBeTruthy();
+    expect(screen.getByText(/stays on this device/)).toBeTruthy();
     expect(screen.getByText("Always allow this command")).toBeTruthy();
   });
 });
@@ -213,7 +213,7 @@ describe("InboxItemCard — Allow every time on parked run approvals", () => {
     expect(screen.getByText("fetch_data.py")).toBeTruthy();
     expect(screen.queryByText("Run `send_message`?")).toBeNull();
     expect(screen.getByText(/import json/)).toBeTruthy();
-    expect(screen.getByText(/stays on this Mac/)).toBeTruthy();
+    expect(screen.getByText(/stays on this device/)).toBeTruthy();
     // §35 labels; resolution vocabulary unchanged (works on every approver path).
     fireEvent.click(screen.getByText("Allow once"));
     expect(onResolve).toHaveBeenCalledWith("i1", "allow");

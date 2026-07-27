@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
+  cloudAvailable,
   announceCloudChanged,
   AUTOMATIONS_CHANGED,
   CLOUD_CHANGED,
@@ -1136,7 +1137,9 @@ export function Sidebar(props: Props) {
                 data-testid="account-menu"
                 role="menu"
               >
-                {cloud?.signed_in ? (
+                {/* Nothing about the cloud when it's switched off: the sign-in route
+                    refuses, so both the prompt and the button would be dead ends. */}
+                {!cloudAvailable(cloud) ? null : cloud?.signed_in ? (
                   <div
                     className="px-3 py-1.5 mb-1 text-[11px] text-faint truncate border-b border-line"
                     title={`${accountEmail} · OpenWorker Cloud`}
@@ -1226,7 +1229,11 @@ export function Sidebar(props: Props) {
               {cloud?.signed_in ? accountName.slice(0, 1).toUpperCase() : "?"}
             </span>
             <span className={"truncate " + (cloud?.signed_in ? "" : "text-muted")}>
-              {cloud?.signed_in ? accountName : "Not signed in"}
+              {cloud?.signed_in
+                ? accountName
+                : cloudAvailable(cloud)
+                  ? "Not signed in"
+                  : "Local"}
             </span>
             {cloud?.signed_in && (
               <span

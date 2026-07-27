@@ -72,7 +72,7 @@ export function scopeNote(
     return { text: `leaves this Mac → ${names[platform] || platform || "a connected chat"}`, external: true };
   }
   const overwrite = name === "write_file" && args?.overwrite;
-  return { text: "stays on this Mac" + (overwrite ? " · overwrites the existing file" : ""), external: false };
+  return { text: "stays on this device" + (overwrite ? " · overwrites the existing file" : ""), external: false };
 }
 
 // The proposed content/command, straight from the tool call's ARGS — the file/action

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  cloudAvailable,
   cloudLogin,
   getCloudGallery,
   getCloudGalleryDetail,
@@ -405,6 +406,17 @@ export function GalleryModal({
                   <div className="h-3 w-72 max-w-full rounded bg-line/60" />
                 </div>
               ))}
+            </div>
+          ) : !cloudAvailable(cloud) ? (
+            /* The Gallery genuinely is a cloud feature, so with the cloud off the honest
+               thing is to say so and point at the path that still works — not to show a
+               sign-in button the backend would refuse. */
+            <div className={CARD + " p-5"} data-testid="gallery-unavailable">
+              <div className="font-semibold text-[14px] mb-1">The Gallery needs OpenWorker Cloud</div>
+              <div className="text-[12.5px] text-muted leading-relaxed">
+                OpenWorker Cloud is switched off on this install. Installing personas from a
+                folder or a Git URL — on the Personas page — works without it.
+              </div>
             </div>
           ) : cloud && !cloud.signed_in ? (
             <div className={CARD + " p-5 flex items-center gap-4"} data-testid="gallery-signin">
