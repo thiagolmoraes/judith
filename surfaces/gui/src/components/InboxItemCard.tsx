@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { useI18n } from "../i18n/useLocale";
 import type { InboxItem } from "../api";
 import { humanizeApprovalTitle } from "../humanize";
 import { PreviewBlock, scopeNote, TitleText } from "./ApprovalCard";
@@ -36,6 +37,7 @@ export function InboxItemCard({
   chip?: ReactNode; // optional "go to session" affordance (shown in the Inbox list, not inline)
   compact?: boolean;
 }) {
+  const { t } = useI18n();
   const [answer, setAnswer] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const options = item.options || [];
@@ -72,7 +74,7 @@ export function InboxItemCard({
           older rows fall back to the raw kind/title/body treatment below. */}
       {item.kind === "approval" && item.data?.tool ? (
         <div className="flex items-center justify-between gap-3">
-          <TitleText line={humanizeApprovalTitle(item.data.tool, item.data.arguments)} />
+          <TitleText line={humanizeApprovalTitle(item.data.tool, item.data.arguments, t)} />
           {(() => {
             const s = scopeNote(item.data.tool, item.data.arguments);
             return (
