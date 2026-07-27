@@ -15,6 +15,21 @@ def _allow_managed_state(state: str = "s") -> None:
     cloud._pending_managed_states[state] = cloud._now()
 
 
+def _enable_cloud(monkeypatch) -> None:
+    """Turn the cloud on for a test. It ships off, so anything exercising a cloud route
+    has to say so — which is the point: the default must be provably local-only."""
+    from coworker.config import Config, load_config
+
+    real = load_config
+
+    def enabled(*args, **kwargs) -> Config:
+        cfg = real(*args, **kwargs)
+        cfg.cloud_enabled = True
+        return cfg
+
+    monkeypatch.setattr("coworker.config.load_config", enabled)
+
+
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("COWORKER_STATE_DIR", str(tmp_path / "state"))
@@ -25,13 +40,30 @@ def client(tmp_path, monkeypatch):
         yield c
 
 
-def test_cloud_status_signed_out(client):
+def test_cloud_status_signed_out(client, monkeypatch):
+    """With the cloud on, a signed-out install reports the local telemetry default."""
+    _enable_cloud(monkeypatch)
     body = client.get("/v1/cloud/status").json()
     assert body == {
+        "enabled": True,
         "signed_in": False,
         "account": "",
         "user_id": "",
         "telemetry_enabled": True,  # local default; nothing is sent while signed out
+    }
+
+
+def test_cloud_status_reports_disabled(client):
+    """Cloud off (the default): the GUI keys its sign-in prompts off this, so it must read
+    as unavailable rather than merely signed out — and telemetry must report off, since
+    nothing can be sent without a token."""
+    body = client.get("/v1/cloud/status").json()
+    assert body == {
+        "enabled": False,
+        "signed_in": False,
+        "account": "",
+        "user_id": "",
+        "telemetry_enabled": False,
     }
 
 
@@ -206,7 +238,8 @@ def test_delete_persona_after_gallery_install(client, monkeypatch):
     assert "sales" not in {p["id"] for p in body["personas"]}
 
 
-def test_cloud_status_carries_telemetry_pref_and_toggle_flips_it(client):
+def test_cloud_status_carries_telemetry_pref_and_toggle_flips_it(client, monkeypatch):
+    _enable_cloud(monkeypatch)
     assert client.get("/v1/cloud/status").json()["telemetry_enabled"] is True
     body = client.post("/v1/cloud/telemetry", json={"enabled": False}).json()
     assert body["ok"] and body["telemetry_enabled"] is False

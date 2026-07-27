@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  cloudAvailable,
   addMcpServer,
   allowUser,
   connectConnector,
@@ -822,7 +823,10 @@ export function ConnectSetup({
           )}
         </div>
       )}
-      {c.managed && !c.mcp && !manualOnly && (
+      {/* The managed block is cloud-only: with the cloud switched off its button can't
+          work and its sign-in prompt is a dead end, so drop it and leave the manual
+          fields (and the modal's "Your own app" tab) as the ways in. */}
+      {c.managed && !c.mcp && !manualOnly && cloudAvailable(cloud) && (
         <div className="space-y-2" data-testid="managed-connect">
           {c.managed_paused ? (
             // One-click temporarily off (e.g. Google pending CASA verification):

@@ -22,3 +22,16 @@ auto_allow = ["write_file", "replace_in_file", "apply_patch", "apply_unified_dif
 # Server (openworker-server) bind address.
 host = "127.0.0.1"
 port = 8765
+
+# OpenWorker Cloud: sign-in, managed one-click connectors, the Slack/GitHub inbound relay,
+# and product telemetry. Off by default — nothing reaches the cloud and the app never asks
+# you to create an account.
+#
+# What still works with it off: every connector via a manual token, bring-your-own OAuth
+# apps (Settings ▸ Connectors ▸ "Your own app"), Slack inbound over Socket Mode, and the
+# MCP-backed one-click connectors, whose OAuth runs entirely on this machine.
+#
+# What needs it on: GitHub inbound (@-mentions and the agent label), which only arrives
+# over the managed relay. Global config only — a workspace's `.coworker/config.toml`
+# cannot switch this on.
+cloud_enabled = false

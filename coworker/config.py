@@ -39,6 +39,12 @@ class Config:
     port: int = 8765
     # Web search provider: "duckduckgo" (keyless default) | "tavily" | "brave" (need a key).
     web_search_provider: str = "duckduckgo"
+    # Master switch for everything that talks to OpenWorker Cloud: sign-in, managed
+    # connectors, telemetry, the relay. Off ⇒ the GUI offers no sign-in and the cloud
+    # routes refuse, so a local-only install never has an account dangled at it. The
+    # non-cloud paths (manual tokens, bring-your-own OAuth apps, Slack Socket Mode) are
+    # unaffected; managed-only GitHub inbound is the one thing that needs this on.
+    cloud_enabled: bool = False
     # OpenWorker Cloud (sign-in + managed connectors). Config, never constants:
     # dev/staging/BYO-VPC deployments point these at their own instances.
     cloud_base_url: str = "https://api.openworker.com"
@@ -67,6 +73,7 @@ _FIELDS = {
     "host",
     "port",
     "web_search_provider",
+    "cloud_enabled",
     "cloud_base_url",
     "cloud_auth_domain",
     "cloud_client_id",
@@ -77,7 +84,10 @@ _FIELDS = {
 # These fields change what consequential actions can run without a prompt, so the normal
 # workspace override pass never applies them. `allowed_commands` is added separately only
 # for a canonically trusted workspace; `auto_allow` remains user-global only.
-_GLOBAL_ONLY_FIELDS = {"allowed_commands", "auto_allow"}
+# `cloud_enabled` is global-only for the same reason: a cloned repository must not be able
+# to switch the cloud back on from its `.coworker/config.toml` and start reaching the
+# network on the user's behalf.
+_GLOBAL_ONLY_FIELDS = {"allowed_commands", "auto_allow", "cloud_enabled"}
 _WORKSPACE_FIELDS = _FIELDS - _GLOBAL_ONLY_FIELDS
 
 
