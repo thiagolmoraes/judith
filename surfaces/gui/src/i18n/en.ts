@@ -287,6 +287,7 @@ export const en: Catalog = {
   "rail.showingFirstRows": "Showing first {shown} of {total} rows.",
   "rail.pdfError": "Could not render PDF: {error}",
   "rail.sheetError": "Could not parse spreadsheet: {error}",
+  "access.channelsCount": "Channels · {count}",
   // -- tool-call one-liners (humanize.ts) -----------------------------------------
   // Assembled as pre + object + post so the UI can bold the object. Verb-object order
   // holds in Portuguese, so the shape survives translation unchanged; only the

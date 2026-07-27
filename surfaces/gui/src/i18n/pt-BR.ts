@@ -289,6 +289,7 @@ export const ptBR: Catalog = {
   "rail.showingFirstRows": "Mostrando as primeiras {shown} de {total} linhas.",
   "rail.pdfError": "Não foi possível renderizar o PDF: {error}",
   "rail.sheetError": "Não foi possível ler a planilha: {error}",
+  "access.channelsCount": "Canais · {count}",
   // -- tool-call one-liners (humanize.ts) -----------------------------------------
   // Assembled as pre + object + post so the UI can bold the object. Verb-object order
   // holds in Portuguese, so the shape survives translation unchanged; only the

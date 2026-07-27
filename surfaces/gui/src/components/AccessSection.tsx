@@ -307,7 +307,9 @@ export function AccessSection({
                               setChannelsFor(c.connector);
                             }}
                           >
-                            Channels · {channelsOf(c.connector).length}
+                            {t("access.channelsCount", {
+                              count: channelsOf(c.connector).length,
+                            })}
                             <Icon name="chevronRight" size={10} />
                           </button>
                         )}
