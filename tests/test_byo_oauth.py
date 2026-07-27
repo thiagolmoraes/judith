@@ -507,6 +507,8 @@ def client(tmp_path, monkeypatch):
     from coworker.server.manager import SessionManager
 
     monkeypatch.setenv("COWORKER_STATE_DIR", str(tmp_path / "state"))
+    # The connect route opens the system browser; a test must never actually launch one.
+    monkeypatch.setattr("webbrowser.open", lambda _url: True)
     B._pending.clear()
     G._token_cache.clear()
     manager = SessionManager(data_dir=tmp_path / "data")
@@ -797,3 +799,28 @@ def test_complete_listing_logs_nothing(secrets, rsa_pem, monkeypatch, caplog):
     with caplog.at_level("WARNING", logger="coworker.connectors"):
         assert len(G.list_byo_installations(secrets)) == 1
     assert caplog.records == []
+
+
+def test_connect_opens_the_system_browser(client, monkeypatch):
+    """The sidecar opens the browser itself, matching /v1/cloud/login and the managed
+    connect — the GUI only polls afterwards, so it never sees the URL."""
+    c, _ = client
+    opened: list[str] = []
+    monkeypatch.setattr("webbrowser.open", lambda url: opened.append(url))
+    c.post(
+        "/v1/connectors/notion/byo-config",
+        json={"fields": {"client_id": "cid", "client_secret": "sec"}},
+    )
+    res = c.post("/v1/connectors/notion/byo-connect").json()
+    assert res["ok"] is True
+    assert opened == [res["authorize_url"]]
+
+
+def test_failed_connect_opens_nothing(client, monkeypatch):
+    """No app configured: report the error rather than launching a browser at a URL that
+    was never built."""
+    c, _ = client
+    opened: list[str] = []
+    monkeypatch.setattr("webbrowser.open", lambda url: opened.append(url))
+    assert c.post("/v1/connectors/notion/byo-connect").json()["ok"] is False
+    assert opened == []

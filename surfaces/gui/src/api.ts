@@ -549,6 +549,64 @@ export async function connectManaged(
   return res.json();
 }
 
+// -- bring-your-own OAuth app --------------------------------------------------
+// One-click connects normally run through OpenWorker's broker, which needs a cloud
+// sign-in. Registering your own OAuth app with the provider gives the same browser
+// consent flow with no sign-in, and the agent acts as your app.
+
+export interface ByoOAuthEntry {
+  configured: boolean;
+  client_id: string;
+  scopes: string[];
+}
+
+export interface ByoStatus {
+  /** Per-connector app config. Never carries the client secret. */
+  oauth: Record<string, ByoOAuthEntry>;
+  github: { configured: boolean; app_id: string };
+}
+
+export async function getByoStatus(): Promise<ByoStatus> {
+  const res = await fetch(`${httpBase()}/v1/connectors/byo`);
+  return res.json();
+}
+
+/** Store a connector's own OAuth app credentials. A blank client_id (or app_id, for
+ * GitHub) clears them; a blank secret on re-submit keeps the stored one. */
+export async function setByoConfig(
+  name: string,
+  fields: Record<string, string | string[]>,
+): Promise<{ ok: boolean; configured?: boolean; error?: string }> {
+  const res = await fetch(`${httpBase()}/v1/connectors/${encodeURIComponent(name)}/byo-config`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fields }),
+  });
+  return res.json();
+}
+
+/** Start browser consent against the user's own app. Returns the URL to open — for
+ * GitHub that's the App's install page, since an App is installed, not authorized. */
+export async function byoConnect(
+  name: string,
+): Promise<{ ok: boolean; authorize_url?: string; error?: string }> {
+  const res = await fetch(`${httpBase()}/v1/connectors/${encodeURIComponent(name)}/byo-connect`, {
+    method: "POST",
+  });
+  return res.json();
+}
+
+export interface ByoInstallation {
+  installation_id: string;
+  account: string;
+  account_type: string;
+}
+
+export async function getByoInstallations(): Promise<ByoInstallation[]> {
+  const res = await fetch(`${httpBase()}/v1/connectors/github/byo-installations`);
+  return (await res.json()).installations ?? [];
+}
+
 /** One-click connect for an MCP-backed connector (monday, asana, jira): the sidecar
  * opens the vendor's sign-in in the browser (local OAuth, no cloud account needed);
  * poll getConnectors until the card flips to connected. */
