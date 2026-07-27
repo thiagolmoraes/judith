@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useI18n } from "../i18n/useLocale";
 import type { ApprovalDecision, Item } from "../types";
 import { shortArgs } from "./ApprovalCard";
 import { humanizeAsk, humanizeTool, type HumanLine } from "../humanize";
@@ -156,6 +157,7 @@ function LineText({ line }: { line: HumanLine }) {
 }
 
 function StepRow({ tool, approval }: { tool: ToolItem; approval?: ApprovalItem }) {
+  const { t } = useI18n();
   const [raw, setRaw] = useState(false);
   const running = tool.status === "…";
   const failed = tool.status !== "ok" && !running;
@@ -165,7 +167,7 @@ function StepRow({ tool, approval }: { tool: ToolItem; approval?: ApprovalItem }
         <span className={"w-3.5 text-center text-[10px] shrink-0 " + (failed ? "text-danger" : running ? "text-accent" : "text-ok")}>
           {running ? <span className="spinner" data-testid="step-running" /> : "●"}
         </span>
-        <LineText line={humanizeTool(tool.name, tool.args)} />
+        <LineText line={humanizeTool(tool.name, tool.args, t)} />
         {approval && approvalChip(approval.resolved)}
         {!!tool.standingRule && (
           <span
@@ -216,6 +218,7 @@ function TurnGroup({
   // the header as the live line; expanded → the small quiet line under the steps.
   streamingText?: string;
 }) {
+  const { t } = useI18n();
   // Turns start COLLAPSED, running or not (owner call 2026-07-14) — the header's live
   // line is the pulse; expanding is opt-in.
   const rows = buildRows(items);
@@ -276,7 +279,7 @@ function TurnGroup({
             ) : row.type === "ask" ? (
               <div className="flex items-baseline gap-2 px-2 py-0.5" key={i} data-testid="turn-ask">
                 <span className={"w-3.5 text-center text-[10px] shrink-0 " + (row.approval.resolved === "deny" ? "text-danger" : "text-ok")}>●</span>
-                <LineText line={humanizeAsk(row.approval.name, row.approval.args)} />
+                <LineText line={humanizeAsk(row.approval.name, row.approval.args, t)} />
                 {approvalChip(row.approval.resolved)}
               </div>
             ) : (
