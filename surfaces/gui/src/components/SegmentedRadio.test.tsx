@@ -79,10 +79,39 @@ describe("SegmentedRadio", () => {
     expect(document.activeElement).toBe(screen.getByTestId("theme-dark"));
   });
 
-  it("still selects on click", () => {
+  it("still selects on click, and takes focus with it", () => {
+    // WKWebView (Tauri on macOS) deliberately doesn't focus a button on click. Without an
+    // explicit focus the roving tabindex moves to the clicked option while focus stays
+    // behind, so the next Tab leaves from the wrong element.
     const onChange = setup("light");
     fireEvent.click(screen.getByTestId("theme-auto"));
     expect(onChange).toHaveBeenCalledWith("auto");
+    expect(document.activeElement).toBe(screen.getByTestId("theme-auto"));
+  });
+
+  it("declares its orientation so the primary arrow pair is unambiguous", () => {
+    setup("light");
+    expect(
+      screen.getByRole("radiogroup").getAttribute("aria-orientation"),
+    ).toBe("horizontal");
+  });
+
+  it("omits per-option test ids when no prefix is given", () => {
+    // The prefix is optional; groups that only need a container id shouldn't emit
+    // `data-testid="undefined"` on every option.
+    render(
+      <SegmentedRadio
+        label="Bare"
+        value="light"
+        options={OPTIONS}
+        onChange={() => {}}
+        groupTestId="bare"
+      />,
+    );
+    const group = screen.getByTestId("bare");
+    for (const button of group.querySelectorAll("button")) {
+      expect(button.hasAttribute("data-testid")).toBe(false);
+    }
   });
 
   it("ignores unrelated keys", () => {

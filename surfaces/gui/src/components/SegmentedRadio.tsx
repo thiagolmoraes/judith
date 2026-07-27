@@ -75,7 +75,15 @@ export function SegmentedRadio<T extends string>({
   };
 
   return (
-    <div className={className} role="radiogroup" aria-label={label} data-testid={groupTestId}>
+    <div
+      className={className}
+      role="radiogroup"
+      aria-label={label}
+      // The group is laid out in a row, so Left/Right are the primary pair. Up/Down stay
+      // handled as well, since the pattern permits both.
+      aria-orientation="horizontal"
+      data-testid={groupTestId}
+    >
       {options.map((option, i) => {
         const selected = option.value === value;
         return (
@@ -91,7 +99,15 @@ export function SegmentedRadio<T extends string>({
             tabIndex={selected ? 0 : -1}
             className={selected ? "active" : ""}
             data-testid={option.testId ?? (testIdPrefix ? `${testIdPrefix}-${option.value}` : undefined)}
-            onClick={() => onChange(option.value)}
+            onClick={(event) => {
+              onChange(option.value);
+              // WKWebView — which Tauri uses on macOS — deliberately does not focus a
+              // button on click, matching native macOS behaviour. Without this the roving
+              // tabindex moves to the clicked option while focus stays behind, so the next
+              // Tab leaves from the wrong place. Focusing explicitly keeps the two in step
+              // on every platform.
+              event.currentTarget.focus();
+            }}
             onKeyDown={onKeyDown}
           >
             {option.label}

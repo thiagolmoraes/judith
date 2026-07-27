@@ -650,6 +650,7 @@ function TokenSavingsCard() {
         label="PDF fallback"
         className="seg mt-2"
         groupTestId="pdf-fallback"
+        testIdPrefix="pdf-fallback"
         value={pdf.pdf_fallback === "images" ? "images" : "text"}
         options={[
           { value: "text" as const, label: "Extract text" },
