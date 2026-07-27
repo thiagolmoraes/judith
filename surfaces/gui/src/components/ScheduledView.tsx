@@ -187,8 +187,9 @@ export function ScheduledView({ onOpenRun, onRunNow, initialOpenId }: Props) {
               </div>
               <div className="flex items-center gap-1.5 text-[12px] text-muted">
                 <Icon name="clock" size={13} className="text-faint shrink-0" />
-                {task.enabled ? task.schedule : "Paused"} · next {fmt(task.next_run)} · {task.run_count} run{task.run_count === 1 ? "" : "s"}
-                {task.last_status ? ` · last ${task.last_status}` : ""}
+                {task.enabled ? task.schedule : t("sched.paused")} · {t("sched.next")}{" "}
+                {fmt(task.next_run)} · {t("count.runs", { count: task.run_count })}
+                {task.last_status ? ` · ${t("sched.last")} ${task.last_status}` : ""}
               </div>
             </div>
           ))}

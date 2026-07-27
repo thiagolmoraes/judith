@@ -227,6 +227,9 @@ export const en: Catalog = {
   "sched.willAskAgain": "This automation will ask for approval again",
   "common.open2": "Open",
   "sched.deleteNamed": "Delete {title}",
+  "sched.paused": "Paused",
+  "sched.next": "next",
+  "sched.last": "last",
   // -- tool-call one-liners (humanize.ts) -----------------------------------------
   // Assembled as pre + object + post so the UI can bold the object. Verb-object order
   // holds in Portuguese, so the shape survives translation unchanged; only the
@@ -279,5 +282,6 @@ export const en: Catalog = {
   // -- counts ----------------------------------------------------------------------
   "count.repositories": { one: "{count} repository", other: "{count} repositories" },
   "count.sessions": { one: "{count} session", other: "{count} sessions" },
+  "count.runs": { one: "{count} run", other: "{count} runs" },
   "count.models": { one: "{count} model", other: "{count} models" },
 };

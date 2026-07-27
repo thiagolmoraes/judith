@@ -139,3 +139,15 @@ describe("tool-call one-liners", () => {
     expect(line.obj).toContain("TODO");
   });
 });
+
+describe("automation summary", () => {
+  it("pluralises the run count in both languages", () => {
+    // The summary built this with `run${n === 1 ? "" : "s"}` — an English-only rule that
+    // also gets pt-BR's zero wrong.
+    expect(translate("en", "count.runs", { count: 1 })).toBe("1 run");
+    expect(translate("en", "count.runs", { count: 2 })).toBe("2 runs");
+    expect(translate("pt-BR", "count.runs", { count: 1 })).toBe("1 execução");
+    expect(translate("pt-BR", "count.runs", { count: 2 })).toBe("2 execuções");
+    expect(translate("pt-BR", "count.runs", { count: 0 })).toBe("nenhuma execução");
+  });
+});
