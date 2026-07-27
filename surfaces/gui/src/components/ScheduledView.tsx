@@ -175,7 +175,7 @@ export function ScheduledView({ onOpenRun, onRunNow, initialOpenId }: Props) {
                 <button
                   className="sched-card-del"
                   title={t("sched.deleteAutomation")}
-                  aria-label={`Delete ${task.title}`}
+                  aria-label={t("sched.deleteNamed", { title: task.title })}
                   onClick={async (e) => {
                     e.stopPropagation();
                     await deleteAutomation(task.id);

@@ -228,6 +228,7 @@ export const ptBR: Catalog = {
   "sched.revoke": "Revogar",
   "sched.willAskAgain": "Esta automação vai pedir aprovação de novo",
   "common.open2": "Abrir",
+  "sched.deleteNamed": "Excluir {title}",
   // -- tool-call one-liners (humanize.ts) -----------------------------------------
   // Assembled as pre + object + post so the UI can bold the object. Verb-object order
   // holds in Portuguese, so the shape survives translation unchanged; only the

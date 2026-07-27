@@ -170,7 +170,7 @@ export function RightRail({
 
           {showArtifacts && (
           <RailSection
-            title={`Artifacts${artifacts.length ? ` (${artifacts.length})` : ""}`}
+            title={`${t("rail.artifacts")}${artifacts.length ? ` (${artifacts.length})` : ""}`}
             open={open.artifacts}
             onToggle={() => setOpen({ ...open, artifacts: !open.artifacts })}
             action={
@@ -346,7 +346,7 @@ function ArtifactViewer({
           <button
             className="artifact-icon-btn"
             onClick={() => navigator.clipboard?.writeText(artifact.abs_path || artifact.path)}
-            aria-label={t("rail.copyPath")}
+            aria-label={t("rail.copyFullPath")}
             title={t("rail.copyFullPath")}
           >
             <Icon name="copy" size={16} />
