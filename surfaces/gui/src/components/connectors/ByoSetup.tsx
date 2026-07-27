@@ -99,11 +99,16 @@ export function ByoSetup({
   const [clientSecret, setClientSecret] = useState("");
   const [scopes, setScopes] = useState("");
 
+  // `status === null` alone can't say whether the fetch is in flight or failed — treating
+  // both as "loading" leaves a network error stuck on "Checking…" with no way out.
+  const [loadFailed, setLoadFailed] = useState(false);
   const refresh = async () => {
+    setLoadFailed(false);
     try {
       setStatus(await getByoStatus());
     } catch {
       setStatus(null);
+      setLoadFailed(true);
     }
   };
   useEffect(() => {
@@ -180,7 +185,20 @@ export function ByoSetup({
         click-and-approve, no cloud sign-in, and the agent acts as your app.
       </p>
 
-      {status === null ? (
+      {loadFailed ? (
+        <div className="rounded-lg border border-line bg-paper px-3 py-2.5 flex items-center gap-3">
+          <span className="text-[12.5px] text-muted flex-1">
+            Couldn't read the current setup.
+          </span>
+          <button
+            className={PILL_LINE}
+            onClick={() => void refresh()}
+            data-testid="byo-retry"
+          >
+            Retry
+          </button>
+        </div>
+      ) : status === null ? (
         <div className="text-[12px] text-faint py-2 text-center">Checking…</div>
       ) : showForm ? (
         <>

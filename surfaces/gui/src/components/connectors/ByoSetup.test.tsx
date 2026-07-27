@@ -227,3 +227,37 @@ describe("ByoSetup — GitHub", () => {
     expect(screen.getByText(/install page/)).toBeTruthy();
   });
 });
+
+describe("ByoSetup — load failure", () => {
+  it("offers a retry instead of hanging on Checking…", async () => {
+    // A failed status fetch left `status` null, which the render also uses for "still
+    // loading" — so a network error looked identical to a slow one, forever.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("offline");
+      }),
+    );
+    render(<ByoSetup c={connector("notion", "Notion")} onConnected={() => {}} />);
+
+    expect(await screen.findByTestId("byo-retry")).toBeTruthy();
+    expect(screen.queryByText("Checking…")).toBeNull();
+  });
+
+  it("recovers when the retry succeeds", async () => {
+    let attempt = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        attempt += 1;
+        if (attempt === 1) throw new Error("offline");
+        return { ok: true, json: async () => EMPTY } as Response;
+      }),
+    );
+    render(<ByoSetup c={connector("notion", "Notion")} onConnected={() => {}} />);
+
+    fireEvent.click(await screen.findByTestId("byo-retry"));
+    expect(await screen.findByTestId("byo-client-id")).toBeTruthy();
+    expect(screen.queryByTestId("byo-retry")).toBeNull();
+  });
+});
