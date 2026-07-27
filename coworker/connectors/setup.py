@@ -13,6 +13,7 @@ from ..secrets import SecretStore
 from .catalog_copy import about_for, access_for
 from .descriptors import get_descriptor, list_descriptors
 from .tool_defs import patch_tool_settings, tool_dicts
+from ..i18n import t
 
 _EXPERIMENTAL_KEY = "experimental:settings"
 
@@ -313,14 +314,14 @@ def connect_connector(
 ) -> dict[str, Any]:
     d = get_descriptor(name)
     if d is None or not d.available:
-        return {"ok": False, "error": "unknown or unavailable connector"}
+        return {"ok": False, "error": t("error.unknownConnector")}
     if d.experimental:
         if not experimental_enabled(secrets):
-            return {"ok": False, "error": "experimental connectors are disabled"}
+            return {"ok": False, "error": t("error.experimentalDisabled")}
         if not acknowledged:
             return {
                 "ok": False,
-                "error": "risk acknowledgment required",
+                "error": t("error.riskAcknowledgement"),
                 "risk_notice": d.risk_notice,
             }
 
@@ -341,7 +342,7 @@ def connect_connector(
     raw = {f.key: _resolved(f) for f in d.fields}
     missing = [f.label for f in d.fields if f.required and not raw.get(f.key)]
     if missing:
-        return {"ok": False, "error": "missing: " + ", ".join(missing)}
+        return {"ok": False, "error": t("error.missingFields", fields=", ".join(missing))}
 
     allowed = sorted(
         {u.strip() for u in raw.get("allowed_users", "").split(",") if u.strip()}
@@ -396,7 +397,7 @@ def managed_connect_connector(
     """
     d = get_descriptor(name)
     if d is None or not d.available:
-        return {"ok": False, "error": "unknown or unavailable connector"}
+        return {"ok": False, "error": t("error.unknownConnector")}
     if not d.managed:
         return {"ok": False, "error": f"{name} does not support managed connect"}
     if d.account_field:

@@ -26,6 +26,7 @@ import time
 from typing import Any, Optional
 
 from ..secrets import SecretStore
+from ..i18n import t
 
 logger = logging.getLogger("coworker.connectors")
 
@@ -77,11 +78,11 @@ def set_byo_github_config(
         existing.get("private_key") or ""
     )
     if not key:
-        return {"ok": False, "error": "private_key required"}
+        return {"ok": False, "error": t("error.privateKeyRequired")}
     try:
         _load_key(key)
     except Exception as exc:  # malformed PEM / wrong key type
-        return {"ok": False, "error": f"private key not usable: {type(exc).__name__}"}
+        return {"ok": False, "error": t("error.privateKeyUnusable", reason=type(exc).__name__)}
     secrets.put(BYO_GITHUB_PROFILE, {"app_id": app_id, "private_key": key})
     _token_cache.clear()
     return {"ok": True, "configured": True}
