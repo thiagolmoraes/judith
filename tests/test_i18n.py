@@ -229,6 +229,56 @@ def test_locale_is_not_read_from_disk_on_every_call(state, monkeypatch):
     assert reads == 1
 
 
+@pytest.mark.parametrize(
+    "content", ["{not json", "[]", "42", '"pt-BR"', '{"locale": "kl-GL"}']
+)
+def test_fallback_paths_are_cached_too(state, monkeypatch, content):
+    """The fallbacks were the gap: a corrupt prefs file is exactly when a page would
+    re-read it once per t() call — 14 blocking reads to render one callback page — since
+    only the happy path populated the cache."""
+    import pathlib
+
+    (state / "prefs.json").write_text(content, encoding="utf-8")
+    i18n.invalidate_locale_cache()
+
+    reads = 0
+    real = pathlib.Path.read_text
+
+    def counting(self, *args, **kwargs):
+        nonlocal reads
+        if self.name == "prefs.json":
+            reads += 1
+        return real(self, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "read_text", counting)
+    for _ in range(14):
+        assert current_locale() == DEFAULT_LOCALE
+    assert reads == 1
+
+
+def test_undecodable_prefs_are_cached_too(state, monkeypatch):
+    """UnicodeDecodeError raises from read_text itself, so it takes a different path
+    through the cache than a JSON error."""
+    import pathlib
+
+    (state / "prefs.json").write_bytes(b"\xff\xfe not utf-8")
+    i18n.invalidate_locale_cache()
+
+    reads = 0
+    real = pathlib.Path.read_text
+
+    def counting(self, *args, **kwargs):
+        nonlocal reads
+        if self.name == "prefs.json":
+            reads += 1
+        return real(self, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "read_text", counting)
+    for _ in range(14):
+        assert current_locale() == DEFAULT_LOCALE
+    assert reads == 1
+
+
 def test_cache_notices_a_locale_change(state):
     """Keyed on the file's mtime and size rather than a timeout, so switching language
     applies on the next call with no staleness window."""

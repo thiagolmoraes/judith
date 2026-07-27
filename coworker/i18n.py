@@ -206,29 +206,43 @@ def current_locale(prefs: Optional[dict[str, Any]] = None) -> str:
     are produced deep inside request handlers, and a parameter on each would be a far
     larger change than the translation itself. Unreadable or unknown → English.
     """
-    key: tuple[int, int] | None = None
-    if prefs is None:
-        global _cache
-        path = _state_dir() / "prefs.json"
-        try:
-            stat = path.stat()
-            key = (stat.st_mtime_ns, stat.st_size)
-            if _cache is not None and _cache[:2] == key:
-                return _cache[2]
-            prefs = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            # ValueError covers JSONDecodeError and UnicodeDecodeError alike — a prefs
-            # file that isn't valid UTF-8 must degrade to English, not raise in a handler.
-            return DEFAULT_LOCALE
-    # Valid JSON is not necessarily an object: `[]`, `"pt-BR"` and `42` all parse, and
-    # .get() on any of them raises. A corrupt pref is a fallback, never a 500.
+    if prefs is not None:
+        return _from_prefs(prefs)
+
+    global _cache
+    path = _state_dir() / "prefs.json"
+    try:
+        stat = path.stat()
+    except OSError:
+        # No prefs file yet (or unreadable): nothing to key a cache entry on.
+        return DEFAULT_LOCALE
+    key = (stat.st_mtime_ns, stat.st_size)
+    if _cache is not None and _cache[:2] == key:
+        return _cache[2]
+
+    try:
+        resolved = _from_prefs(json.loads(path.read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        # ValueError covers JSONDecodeError and UnicodeDecodeError alike — a prefs file
+        # that isn't valid UTF-8 must degrade to English, not raise in a handler.
+        resolved = DEFAULT_LOCALE
+    # Cached on EVERY outcome, including the fallbacks: a corrupt prefs file is exactly
+    # when a page would otherwise re-read it once per t() call, which is the blocking I/O
+    # this cache exists to prevent.
+    _cache = (key[0], key[1], resolved)
+    return resolved
+
+
+def _from_prefs(prefs: Any) -> str:
+    """The locale named by an already-parsed prefs object, or English.
+
+    Valid JSON is not necessarily an object: `[]`, `"pt-BR"` and `42` all parse, and
+    .get() on any of them raises. A corrupt pref is a fallback, never a 500.
+    """
     if not isinstance(prefs, dict):
         return DEFAULT_LOCALE
     value = str(prefs.get("locale") or "").strip()
-    resolved = value if value in LOCALES else DEFAULT_LOCALE
-    if key is not None:
-        _cache = (key[0], key[1], resolved)
-    return resolved
+    return value if value in LOCALES else DEFAULT_LOCALE
 
 
 def t(key: str, /, locale: Optional[str] = None, **params: Any) -> str:
