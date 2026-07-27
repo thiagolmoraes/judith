@@ -162,12 +162,95 @@ def test_missing_fields_error_keeps_its_values(client):
 
 
 # -- the boundary ---------------------------------------------------------------
-def test_tool_result_errors_stay_english():
+def test_tool_result_errors_stay_english(state):
     """Connector tool errors are serialized into tool results for the model, never
-    rendered. Translating them would degrade the model's reasoning for no user benefit,
-    so the table must not grow keys for them."""
-    from coworker.connectors import integration_tools
+    rendered. Translating them would degrade the model's reasoning for no user benefit.
 
-    source = open(integration_tools.__file__, encoding="utf-8").read()
-    assert "i18n import t" not in source
-    assert "from ..i18n" not in source
+    Asserted by calling the code with pt-BR active rather than by grepping the module for
+    an import: a future change could translate these through some other path and a
+    source-text check would stay green while the behaviour broke.
+    """
+    from coworker.connectors.integration_tools import _profile
+    from coworker.secrets import SecretStore
+
+    _set_locale(state, "pt-BR")
+    i18n.invalidate_locale_cache()
+    assert current_locale() == "pt-BR"  # the locale really is active
+
+    profile, err = _profile(SecretStore(state / "secrets.json"), "notion", "token")
+    assert profile is None
+    # English, in the shape the model consumes — no {"ok": False} envelope either.
+    assert err == {"error": "notion is not connected; missing token"}
+
+
+# -- prefs robustness -----------------------------------------------------------
+@pytest.mark.parametrize(
+    "content",
+    ["[]", '"pt-BR"', "42", "null", "{not json", '{"locale": 7}'],
+)
+def test_malformed_prefs_fall_back_without_raising(state, content):
+    """Valid JSON isn't necessarily an object: `[]`, `"pt-BR"` and `42` all parse, and
+    calling .get() on them raises — inside a request handler that is a 500 over a
+    cosmetic string."""
+    (state / "prefs.json").write_text(content, encoding="utf-8")
+    i18n.invalidate_locale_cache()
+    assert current_locale() == DEFAULT_LOCALE
+
+
+def test_undecodable_prefs_fall_back(state):
+    """Not valid UTF-8 — UnicodeDecodeError isn't a JSONDecodeError, so a narrower
+    except would let it escape."""
+    (state / "prefs.json").write_bytes(b"\xff\xfe not utf-8")
+    i18n.invalidate_locale_cache()
+    assert current_locale() == DEFAULT_LOCALE
+
+
+# -- the read cache -------------------------------------------------------------
+def test_locale_is_not_read_from_disk_on_every_call(state, monkeypatch):
+    """`t()` runs inside async route handlers, several times per rendered page. Reading
+    prefs.json on each call would block the event loop."""
+    import pathlib
+
+    _set_locale(state, "pt-BR")
+    i18n.invalidate_locale_cache()
+
+    reads = 0
+    real = pathlib.Path.read_text
+
+    def counting(self, *args, **kwargs):
+        nonlocal reads
+        if self.name == "prefs.json":
+            reads += 1
+        return real(self, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "read_text", counting)
+    for _ in range(25):
+        assert current_locale() == "pt-BR"
+    assert reads == 1
+
+
+def test_cache_notices_a_locale_change(state):
+    """Keyed on the file's mtime and size rather than a timeout, so switching language
+    applies on the next call with no staleness window."""
+    import os
+    import time
+
+    _set_locale(state, "pt-BR")
+    i18n.invalidate_locale_cache()
+    assert current_locale() == "pt-BR"
+
+    _set_locale(state, "en")
+    # Bump mtime explicitly: two writes inside one filesystem tick can share a timestamp,
+    # which would make this test flaky rather than the cache wrong.
+    stat = (state / "prefs.json").stat()
+    os.utime(state / "prefs.json", ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000))
+    time.sleep(0.001)
+    assert current_locale() == "en"
+
+
+def test_explicit_prefs_bypass_the_cache(state):
+    """Passing prefs in is the escape hatch for callers that already hold them."""
+    _set_locale(state, "en")
+    i18n.invalidate_locale_cache()
+    assert current_locale({"locale": "pt-BR"}) == "pt-BR"
+    assert current_locale() == "en"  # the file still wins when nothing is passed

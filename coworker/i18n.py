@@ -74,9 +74,11 @@ _MESSAGES: dict[str, dict[str, str]] = {
         "en": "Sign-in complete. You can close this tab and return to OpenWorker.",
         "pt-BR": "Login concluído. Você pode fechar esta aba e voltar para o OpenWorker.",
     },
+    # Platform-neutral: this flow runs on Windows too, and the page has no way to know
+    # which — claiming "your Mac" is simply wrong half the time.
     "page.footer": {
-        "en": "Served locally by OpenWorker on your Mac",
-        "pt-BR": "Servido localmente pelo OpenWorker no seu Mac",
+        "en": "Served locally by OpenWorker on this device",
+        "pt-BR": "Servido localmente pelo OpenWorker neste dispositivo",
     },
     "page.nothingWaiting.title": {
         "en": "Nothing waiting for this sign-in",
@@ -182,6 +184,21 @@ def _state_dir() -> Path:
     return state_dir()
 
 
+# (mtime_ns, size, locale) for the last prefs.json read. `t()` is called from async route
+# handlers — several times while rendering one page — so hitting the disk on each call
+# would block the event loop. Keying the cache on the file's stat rather than a timeout
+# means a locale change applies on the very next call, with no staleness window: a stat is
+# cheap enough to do per call, a read is not.
+_cache: tuple[int, int, str] | None = None
+
+
+def invalidate_locale_cache() -> None:
+    """Drop the cached locale. Tests that rewrite prefs.json within the same stat
+    granularity need this; normal use is covered by the mtime/size check."""
+    global _cache
+    _cache = None
+
+
 def current_locale(prefs: Optional[dict[str, Any]] = None) -> str:
     """The interface language, from the same pref the GUI writes.
 
@@ -189,15 +206,29 @@ def current_locale(prefs: Optional[dict[str, Any]] = None) -> str:
     are produced deep inside request handlers, and a parameter on each would be a far
     larger change than the translation itself. Unreadable or unknown → English.
     """
+    key: tuple[int, int] | None = None
     if prefs is None:
+        global _cache
+        path = _state_dir() / "prefs.json"
         try:
-            prefs = json.loads(
-                (_state_dir() / "prefs.json").read_text(encoding="utf-8")
-            )
-        except (OSError, json.JSONDecodeError):
+            stat = path.stat()
+            key = (stat.st_mtime_ns, stat.st_size)
+            if _cache is not None and _cache[:2] == key:
+                return _cache[2]
+            prefs = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            # ValueError covers JSONDecodeError and UnicodeDecodeError alike — a prefs
+            # file that isn't valid UTF-8 must degrade to English, not raise in a handler.
             return DEFAULT_LOCALE
-    value = str((prefs or {}).get("locale") or "").strip()
-    return value if value in LOCALES else DEFAULT_LOCALE
+    # Valid JSON is not necessarily an object: `[]`, `"pt-BR"` and `42` all parse, and
+    # .get() on any of them raises. A corrupt pref is a fallback, never a 500.
+    if not isinstance(prefs, dict):
+        return DEFAULT_LOCALE
+    value = str(prefs.get("locale") or "").strip()
+    resolved = value if value in LOCALES else DEFAULT_LOCALE
+    if key is not None:
+        _cache = (key[0], key[1], resolved)
+    return resolved
 
 
 def t(key: str, /, locale: Optional[str] = None, **params: Any) -> str:
