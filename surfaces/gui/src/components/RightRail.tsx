@@ -413,6 +413,7 @@ function ArtifactViewer({
 const MAX_TABLE_ROWS = 500;
 
 function GridTable({ rows, note }: { rows: unknown[][]; note?: string }) {
+  const { t } = useI18n();
   const [head, ...body] = rows;
   return (
     <div className="artifact-tablewrap">
@@ -431,7 +432,9 @@ function GridTable({ rows, note }: { rows: unknown[][]; note?: string }) {
       {(note || body.length > MAX_TABLE_ROWS) && (
         <div className="rail-muted artifact-table-note">
           {note}
-          {body.length > MAX_TABLE_ROWS ? ` Showing first ${MAX_TABLE_ROWS} of ${body.length} rows.` : ""}
+          {body.length > MAX_TABLE_ROWS
+            ? ` ${t("rail.showingFirstRows", { shown: MAX_TABLE_ROWS, total: body.length })}`
+            : ""}
         </div>
       )}
     </div>
@@ -525,7 +528,7 @@ function PdfViewer({ dataUrl }: { dataUrl: string }) {
     };
   }, [dataUrl]);
 
-  if (error) return <div className="rail-error artifact-table-note">Could not render PDF: {error}</div>;
+  if (error) return <div className="rail-error artifact-table-note">{t("rail.pdfError", { error })}</div>;
   return (
     <div className="artifact-pdfjs">
       {loading && <div className="rail-muted artifact-table-note">{t("rail.renderingPdf")}</div>}
@@ -563,7 +566,7 @@ function SheetViewer({ dataUrl }: { dataUrl: string }) {
     };
   }, [dataUrl]);
 
-  if (error) return <div className="rail-error artifact-table-note">Could not parse spreadsheet: {error}</div>;
+  if (error) return <div className="rail-error artifact-table-note">{t("rail.sheetError", { error })}</div>;
   if (!sheets) return <div className="rail-muted artifact-table-note">{t("rail.parsingSheet")}</div>;
   const sheet = sheets[active];
   return (

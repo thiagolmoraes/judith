@@ -279,6 +279,14 @@ export const en: Catalog = {
   "quickstart.finishSignIn": "Finish signing in in your browser — this page updates by itself.",
   "rail.soFarSuffix": "so far.",
   "rail.withCalls": "with {calls} so far.",
+  "access.connectNamed": "Connect {name}",
+  "access.connectingMakes": "Connecting makes {name} available to all your coworkers — the toggle in this list controls just this session.",
+  "access.platformChannels": "{platform} channels",
+  "access.subscribedChannels": "Subscribed channels · {count}",
+  "access.notListening": "Not listening to any {platform} channel yet.",
+  "rail.showingFirstRows": "Showing first {shown} of {total} rows.",
+  "rail.pdfError": "Could not render PDF: {error}",
+  "rail.sheetError": "Could not parse spreadsheet: {error}",
   // -- tool-call one-liners (humanize.ts) -----------------------------------------
   // Assembled as pre + object + post so the UI can bold the object. Verb-object order
   // holds in Portuguese, so the shape survives translation unchanged; only the

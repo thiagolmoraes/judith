@@ -509,7 +509,7 @@ function ConnectInline({
         onClick={onBack}
         aria-label={t("access.backToSources")}
       >
-        <Icon name="arrowLeft" size={13} /> Connect {c.title}
+        <Icon name="arrowLeft" size={13} /> {t("access.connectNamed", { name: c.title })}
       </button>
       {c.blurb && <p className="text-[12px] text-muted mb-1 leading-relaxed">{c.blurb}</p>}
       <div className="-mx-2">
@@ -518,8 +518,7 @@ function ConnectInline({
       {/* Scope semantics, stated once (owner ask 2026-07-13): connecting is account-level,
           the toggle above is what scopes it to a session. */}
       <p className="text-[10.5px] text-faint mt-2 leading-snug">
-        Connecting makes {c.title} available to all your coworkers — the toggle in this list
-        controls just this session.
+        {t("access.connectingMakes", { name: c.title })}
       </p>
     </div>
   );
@@ -556,12 +555,14 @@ function ChannelsInline({
         onClick={onBack}
         aria-label={t("access.backToSources")}
       >
-        <Icon name="arrowLeft" size={13} /> {label} channels
+        <Icon name="arrowLeft" size={13} /> {t("access.platformChannels", { platform: label })}
       </button>
-      <div className={`${SEC_H} mb-1.5`}>Subscribed channels · {channels.length}</div>
+      <div className={`${SEC_H} mb-1.5`}>
+        {t("access.subscribedChannels", { count: channels.length })}
+      </div>
       {channels.length === 0 ? (
         <div className="text-[12px] text-faint py-0.5">
-          Not listening to any {label} channel yet.
+          {t("access.notListening", { platform: label })}
         </div>
       ) : (
         <div className="space-y-1">

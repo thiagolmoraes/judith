@@ -281,6 +281,14 @@ export const ptBR: Catalog = {
   "quickstart.finishSignIn": "Conclua o login no navegador — esta página se atualiza sozinha.",
   "rail.soFarSuffix": "até agora.",
   "rail.withCalls": "com {calls} até agora.",
+  "access.connectNamed": "Conectar {name}",
+  "access.connectingMakes": "Conectar deixa o {name} disponível para todos os seus coworkers — o botão nesta lista controla apenas esta sessão.",
+  "access.platformChannels": "Canais do {platform}",
+  "access.subscribedChannels": "Canais inscritos · {count}",
+  "access.notListening": "Ainda não escutando nenhum canal do {platform}.",
+  "rail.showingFirstRows": "Mostrando as primeiras {shown} de {total} linhas.",
+  "rail.pdfError": "Não foi possível renderizar o PDF: {error}",
+  "rail.sheetError": "Não foi possível ler a planilha: {error}",
   // -- tool-call one-liners (humanize.ts) -----------------------------------------
   // Assembled as pre + object + post so the UI can bold the object. Verb-object order
   // holds in Portuguese, so the shape survives translation unchanged; only the
