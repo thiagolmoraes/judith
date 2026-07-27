@@ -396,10 +396,15 @@ function LanguageCard() {
   return (
     <div className={CARD + " p-4 mb-4"} data-testid="language-card">
       <div className={FIELD_LABEL}>{t("settings.language.title")}</div>
+      {/* role="radio" + aria-checked on each option, not just the group: a bare
+          radiogroup of plain buttons announces the labels but never which one is
+          selected, so a screen-reader user can't tell the current language. */}
       <div className="seg mt-2.5" role="radiogroup" aria-label={t("settings.language.title")}>
         {LOCALES.map((code) => (
           <button
             key={code}
+            role="radio"
+            aria-checked={code === locale}
             className={code === locale ? "active" : ""}
             data-testid={`locale-${code}`}
             onClick={() => void setLocale(code)}
@@ -442,7 +447,13 @@ function AppearanceSection() {
         <div className={FIELD_LABEL}>Theme</div>
         <div className="seg mt-2.5" role="radiogroup" aria-label="Appearance">
           {(["light", "dark", "auto"] as const).map((p) => (
-            <button key={p} className={p === theme ? "active" : ""} onClick={() => setTheme(p)}>
+            <button
+              key={p}
+              role="radio"
+              aria-checked={p === theme}
+              className={p === theme ? "active" : ""}
+              onClick={() => setTheme(p)}
+            >
               {p === "light" ? "Light" : p === "dark" ? "Dark" : "Auto"}
             </button>
           ))}
@@ -648,12 +659,16 @@ function TokenSavingsCard() {
       <div className="mt-3 text-[13px] text-ink">PDFs on models without native PDF support</div>
       <div className="seg mt-2" role="radiogroup" aria-label="PDF fallback" data-testid="pdf-fallback">
         <button
+          role="radio"
+          aria-checked={pdf.pdf_fallback === "text"}
           className={pdf.pdf_fallback === "text" ? "active" : ""}
           onClick={() => save({ pdf_fallback: "text" })}
         >
           Extract text
         </button>
         <button
+          role="radio"
+          aria-checked={pdf.pdf_fallback === "images"}
           className={pdf.pdf_fallback === "images" ? "active" : ""}
           onClick={() => save({ pdf_fallback: "images" })}
         >
