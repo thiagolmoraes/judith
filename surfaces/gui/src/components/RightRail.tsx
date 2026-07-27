@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useI18n } from "../i18n/useLocale";
 // Emits the asset URL only; the worker itself loads lazily with the pdfjs chunk.
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import {
@@ -76,6 +77,7 @@ export function RightRail({
   openAccessKey = 0,
   onOpenIntegrations,
 }: Props) {
+  const { t } = useI18n();
   const [open, setOpen] = useState<Record<Panel, boolean>>({
     progress: true,
     artifacts: true,
@@ -187,7 +189,7 @@ export function RightRail({
             }
           >
             {artifacts.length === 0 ? (
-              <div className="rail-muted">No previewable files yet.</div>
+              <div className="rail-muted">{t("rail.noPreview")}</div>
             ) : (
               <div className="artifact-list">
                 {artifacts.slice(0, 16).map((a) => (
@@ -227,6 +229,7 @@ export function RightRail({
 }
 
 function ProgressSummary({ running, toolNames, todo }: { running: boolean; toolNames: string[]; todo: TodoItem[] }) {
+  const { t } = useI18n();
   if (todo.length) {
     return (
       <div className="rail-todo-list">
@@ -253,7 +256,7 @@ function ProgressSummary({ running, toolNames, todo }: { running: boolean; toolN
   }
   return (
     <div className="rail-muted">
-      For longer multi-step tasks, progress will appear here while OpenWorker plans, uses tools, waits for approval, and produces artifacts.
+      {t("rail.progressHint")}
     </div>
   );
 }
@@ -298,6 +301,7 @@ function ArtifactViewer({
   onReload: () => Promise<void>;
   onBack: () => void;
 }) {
+  const { t } = useI18n();
   const [reloadKey, setReloadKey] = useState(0);
   const isHtml = content?.kind === "html" && !content.error;
   // Best viewed in a real app: spreadsheets, PDFs, and Office docs (pptx/docx can't preview inline)
@@ -310,7 +314,7 @@ function ArtifactViewer({
           <Icon name="arrowLeft" size={16} />
         </button>
         <div className="artifact-heading">
-          <div className="artifact-title"><span>Artifacts</span><span className="artifact-sep">/</span><span>{artifact.name}</span></div>
+          <div className="artifact-title"><span>{t("rail.artifacts")}</span><span className="artifact-sep">/</span><span>{artifact.name}</span></div>
           <div className="artifact-path">{artifact.path}</div>
         </div>
         <div className="rail-actions">
@@ -331,8 +335,8 @@ function ArtifactViewer({
             <button
               className="artifact-icon-btn"
               onClick={() => revealArtifact(sessionId, artifact.path, "open")}
-              aria-label="Open in default app"
-              title="Open in default app"
+              aria-label={t("rail.openDefault")}
+              title={t("rail.openDefault")}
             >
               <Icon name="panelOpen" size={16} />
             </button>
@@ -359,7 +363,7 @@ function ArtifactViewer({
       </div>
       <div className="artifact-preview">
         {!content ? (
-          <div className="rail-muted">Loading...</div>
+          <div className="rail-muted">{t("common.loadingDots")}</div>
         ) : content.error ? (
           <div className="rail-error">{content.error}</div>
         ) : content.kind === "html" ? (
@@ -386,7 +390,7 @@ function ArtifactViewer({
             <Icon name="panelOpen" size={28} />
             <p>This {/\.pptx?$/i.test(artifact.name) ? "PowerPoint" : "Word"} file can’t be previewed here.</p>
             <button className="btn sm" onClick={() => revealArtifact(sessionId, artifact.path, "open")}>
-              Open in default app
+              {t("rail.openDefault")}
             </button>
           </div>
         ) : (
@@ -461,8 +465,9 @@ function parseCsv(text: string): string[][] {
 }
 
 function CsvTable({ text }: { text: string }) {
+  const { t } = useI18n();
   const rows = parseCsv(text);
-  if (!rows.length) return <div className="rail-muted artifact-table-note">Empty file.</div>;
+  if (!rows.length) return <div className="rail-muted artifact-table-note">{t("rail.emptyFile")}</div>;
   return <GridTable rows={rows} />;
 }
 
@@ -471,6 +476,7 @@ function CsvTable({ text }: { text: string }) {
 // WKWebView has no inline PDF plugin (<embed> shows a gray pane in the Tauri shell), so we
 // rasterize pages with pdf.js onto stacked canvases — same lazy-chunk pattern as SheetViewer.
 function PdfViewer({ dataUrl }: { dataUrl: string }) {
+  const { t } = useI18n();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const holder = useRef<HTMLDivElement | null>(null);
@@ -513,13 +519,14 @@ function PdfViewer({ dataUrl }: { dataUrl: string }) {
   if (error) return <div className="rail-error artifact-table-note">Could not render PDF: {error}</div>;
   return (
     <div className="artifact-pdfjs">
-      {loading && <div className="rail-muted artifact-table-note">Rendering PDF…</div>}
+      {loading && <div className="rail-muted artifact-table-note">{t("rail.renderingPdf")}</div>}
       <div ref={holder} />
     </div>
   );
 }
 
 function SheetViewer({ dataUrl }: { dataUrl: string }) {
+  const { t } = useI18n();
   const [sheets, setSheets] = useState<{ name: string; rows: unknown[][] }[] | null>(null);
   const [error, setError] = useState("");
   const [active, setActive] = useState(0);
@@ -548,7 +555,7 @@ function SheetViewer({ dataUrl }: { dataUrl: string }) {
   }, [dataUrl]);
 
   if (error) return <div className="rail-error artifact-table-note">Could not parse spreadsheet: {error}</div>;
-  if (!sheets) return <div className="rail-muted artifact-table-note">Parsing spreadsheet…</div>;
+  if (!sheets) return <div className="rail-muted artifact-table-note">{t("rail.parsingSheet")}</div>;
   const sheet = sheets[active];
   return (
     <div className="sheet-viewer">
@@ -561,7 +568,7 @@ function SheetViewer({ dataUrl }: { dataUrl: string }) {
           ))}
         </div>
       )}
-      {sheet.rows.length ? <GridTable rows={sheet.rows} /> : <div className="rail-muted artifact-table-note">Empty sheet.</div>}
+      {sheet.rows.length ? <GridTable rows={sheet.rows} /> : <div className="rail-muted artifact-table-note">{t("rail.emptySheet")}</div>}
     </div>
   );
 }

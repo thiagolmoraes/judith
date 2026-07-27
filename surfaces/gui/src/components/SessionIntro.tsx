@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useI18n } from "../i18n/useLocale";
 import { getConnectors, getSessionConnections } from "../api";
 import type { Attachment } from "../types";
 import { ConnectorIcon } from "../connectors/ConnectorIcon";
@@ -30,6 +31,7 @@ export function SessionIntro({
   onOpenSessionSettings: () => void;
   onPrefill: (text: string, attachments?: Attachment[]) => void;
 }) {
+  const { t } = useI18n();
   const { roots, busy, error, addRoot } = useRoots(sessionId);
   const [live, setLive] = useState<Set<string>>(new Set());
   const [byName, setByName] = useState<ConnectorMap>({});
@@ -65,20 +67,19 @@ export function SessionIntro({
   return (
     <div className="intro">
       <h1 className="greeting">
-        <span className="mark">✦</span> What should we produce?
+        <span className="mark">✦</span> {t("intro.title")}
       </h1>
       <p className="intro-lede">
-        Pick a task to start — I'll do the work and save the result. Or just type what you need
-        below.
+        {t("intro.sub")}
       </p>
 
       <div className="intro-tasks">
         <button className="task-card" data-testid="intro-task-folder" onClick={pickFolder}>
           <span className="task-card-body">
-            <span className="task-card-title">Analyze the files in a directory</span>
-            <span className="task-card-sub">I'll read them and summarize what matters</span>
+            <span className="task-card-title">{t("intro.folder.title")}</span>
+            <span className="task-card-sub">{t("intro.folder.sub")}</span>
           </span>
-          <span className="task-card-act">Pick a folder →</span>
+          <span className="task-card-act">{t("intro.folder.cta")}</span>
         </button>
         {addingFolder && (
           <div className="intro-addfolder">
@@ -102,10 +103,10 @@ export function SessionIntro({
           onClick={() => (hubspotReady ? onPrefill(HUBSPOT_PROMPT) : onOpenSessionSettings())}
         >
           <span className="task-card-body">
-            <span className="task-card-title">Create a report from my HubSpot leads</span>
+            <span className="task-card-title">{t("intro.hubspot.title")}</span>
             <span className="task-card-sub">
               {dot("hubspot", hubspotReady)}
-              Sources, stages, and who needs follow-up
+              {t("intro.hubspot.sub")}
             </span>
           </span>
           <span className="task-card-act">{hubspotReady ? "Start →" : "Configure ›"}</span>
@@ -117,11 +118,11 @@ export function SessionIntro({
           onClick={() => (ghSlackReady ? onPrefill(GH_SLACK_PROMPT) : onOpenSessionSettings())}
         >
           <span className="task-card-body">
-            <span className="task-card-title">Automate a weekly GitHub progress report to Slack</span>
+            <span className="task-card-title">{t("intro.ghslack.title")}</span>
             <span className="task-card-sub">
               {dot("github", live.has("github"))}
               {dot("slack", live.has("slack"))}
-              Repo activity, summarized and posted every Friday
+              {t("intro.ghslack.sub")}
             </span>
           </span>
           <span className="task-card-act">{ghSlackReady ? "Start →" : "Configure ›"}</span>

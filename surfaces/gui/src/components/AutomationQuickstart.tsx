@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useI18n } from "../i18n/useLocale";
 import {
   cloudAvailable,
   cloudLogin,
@@ -59,6 +60,27 @@ interface QuickTemplate {
   time: string;
   instructions: (ctx: { repo: string; channel: string; deliver: "app" | "slack" }) => string;
 }
+
+/** Template copy is authored in English in the TEMPLATES table above; this maps a source
+ * string to its catalogue key so the data stays the single place it's written, the same
+ * way the connector catalogue is handled server-side. Unknown text falls through. */
+const TPL_KEY: Record<string, string> = {
+  "GitHub digest": "tpl.githubDigest.title",
+  "Merged PRs and commits, posted to your team's Slack.": "tpl.githubDigest.blurb",
+  "Pipeline digest": "tpl.pipelineDigest.title",
+  "Deals that moved — and deals going quiet — posted to Slack.": "tpl.pipelineDigest.blurb",
+  "Morning brief": "tpl.morningBrief.title",
+  "Calendar and unread email, summarized before your day starts.": "tpl.morningBrief.blurb",
+  "Morning news briefing": "tpl.newsBriefing.title",
+  "A 5-bullet tech & world news digest, saved as markdown.": "tpl.newsBriefing.blurb",
+  "Inbox digest": "tpl.inboxDigest.title",
+  "One short digest of your unread email.": "tpl.inboxDigest.blurb",
+  "Folder cleanup": "tpl.folderCleanup.title",
+  "Sort recent Downloads into tidy folders by type.": "tpl.folderCleanup.blurb",
+  Weekly: "sched.weekly",
+  Daily: "sched.daily",
+  Weekdays: "sched.weekdays",
+};
 
 const TEMPLATES: QuickTemplate[] = [
   {
@@ -161,6 +183,10 @@ export function AutomationQuickstart({
     permissions?: { tool: string; target: string; access: "read" | "write" }[];
   }) => void;
 }) {
+  const { t: i18n } = useI18n();
+  // `t` is taken by the template loop variable below, so the translator is `i18n` here
+  // and `tpl` maps authored English copy to its key.
+  const tpl = (text: string) => (TPL_KEY[text] ? i18n(TPL_KEY[text]) : text);
   const [pickedKey, setPickedKey] = useState<string | null>(null);
   const picked = TEMPLATES.find((t) => t.key === pickedKey) || null;
 
@@ -307,7 +333,7 @@ export function AutomationQuickstart({
   return (
     <div className="mb-4">
       <div className="text-[11px] uppercase tracking-[0.05em] text-faint mb-2.5">
-        Start from a template
+        {i18n("sched.fromTemplate")}
       </div>
       {/* Equal-height cards (owner ask 2026-07-12): 1fr rows + h-full — <button> grid items
           don't stretch like divs. */}
@@ -324,8 +350,8 @@ export function AutomationQuickstart({
             }
             onClick={() => pick(t)}
           >
-            <span className="text-[13.5px] font-semibold">{t.title}</span>
-            <span className="text-[12px] text-muted leading-relaxed flex-1">{t.blurb}</span>
+            <span className="text-[13.5px] font-semibold">{tpl(t.title)}</span>
+            <span className="text-[12px] text-muted leading-relaxed flex-1">{tpl(t.blurb)}</span>
             <span className="flex items-center gap-1.5 mt-1">
               {t.conns.map((c) => {
                 const cs = connState(c.name);
@@ -345,7 +371,9 @@ export function AutomationQuickstart({
                 );
               })}
               <span className="text-[11px] text-faint ml-0.5">
-                {t.conns.length === 0 ? `No connections needed · ${t.cadence}` : t.cadence}
+                {t.conns.length === 0
+                  ? `${i18n("sched.noConnectionsNeeded")} · ${tpl(t.cadence)}`
+                  : tpl(t.cadence)}
               </span>
             </span>
           </button>
@@ -363,10 +391,10 @@ export function AutomationQuickstart({
             <span className="text-[11px] uppercase tracking-[0.05em] text-accent font-semibold">
               Set up
             </span>
-            <span className="text-[14px] font-semibold">{picked.title}</span>
+            <span className="text-[14px] font-semibold">{tpl(picked.title)}</span>
             <span className="ml-auto text-[12px] text-faint max-sm:hidden">
               {picked.conns.length ? "Connections, delivery & schedule" : "Delivery & schedule"} ·{" "}
-              {picked.cadence}
+              {tpl(picked.cadence)}
             </span>
           </div>
           {picked.conns.map(({ name, why }) => {
@@ -397,7 +425,7 @@ export function AutomationQuickstart({
                       className="text-[12px] text-faint shrink-0"
                       data-testid={`ob-connect-unavailable-${name}`}
                     >
-                      Connect from Integrations
+                      {i18n("quickstart.connectFrom")}
                     </span>
                   ) : (
                     <button
@@ -405,7 +433,7 @@ export function AutomationQuickstart({
                       onClick={() => startConnect(name)}
                       data-testid={`ob-connect-${name}`}
                     >
-                      Connect
+                      {i18n("common.connect2")}
                     </button>
                   )}
                 </div>
@@ -442,9 +470,9 @@ export function AutomationQuickstart({
               data-testid="ob-cloudpane"
             >
               <span className="block text-[13px] text-ink font-medium">
-                One sign-in unlocks every one-click connection
+                {i18n("quickstart.oneSignIn")}
               </span>
-              Connections are brokered by OpenWorker Cloud — your tokens stay on this device.
+              {i18n("quickstart.brokered")}
               <div className="flex items-center gap-3 mt-2">
                 {signinPhase ? (
                   <>
@@ -471,7 +499,7 @@ export function AutomationQuickstart({
                     onClick={signInThenConnect}
                     data-testid="ob-cloud-signin"
                   >
-                    Sign in to OpenWorker Cloud
+                    {i18n("cloud.signIn")}
                   </button>
                 )}
               </div>
@@ -482,7 +510,7 @@ export function AutomationQuickstart({
             <div className={picked.conns.length ? "bg-paper rounded-xl px-4 py-3.5 mt-3" : ""} data-testid="ob-recipe">
               {picked.needsRepo && (
                 <>
-                  <label className={label}>Repository</label>
+                  <label className={label}>{i18n("quickstart.repository")}</label>
                   <input
                     className={input}
                     placeholder="owner/repo"
@@ -494,7 +522,7 @@ export function AutomationQuickstart({
               )}
               {picked.needsChannel && (
                 <>
-                  <label className={label}>Post to channel</label>
+                  <label className={label}>{i18n("quickstart.postToChannel")}</label>
                   <div data-testid="ob-channel">
                     <ChannelPicker
                       value={channel}
@@ -506,7 +534,7 @@ export function AutomationQuickstart({
                     />
                   </div>
                   <p className="text-[11px] text-warnInk mt-1">
-                    The bot must be a member of the channel — invite @OpenWorker in Slack if it isn't.
+                    {i18n("quickstart.botMustBeMember")}
                   </p>
                 </>
               )}
@@ -530,7 +558,7 @@ export function AutomationQuickstart({
               </div>
               {picked.deliver && (
                 <>
-                  <label className={label}>Deliver to</label>
+                  <label className={label}>{i18n("quickstart.deliverTo")}</label>
                   <SelectMenu
                     ariaLabel="Deliver to"
                     value={deliver}
@@ -562,8 +590,9 @@ export function AutomationQuickstart({
                 </label>
               ) : picked.conns.length > 0 ? (
                 <p className="text-[12.5px] text-muted mt-3">
-                  This automation only <b className="text-ink">reads</b> on schedule — reading
-                  never needs approval.
+                  {i18n("quickstart.readsOnly.pre")}
+                  <b className="text-ink">{i18n("quickstart.readsOnly.bold")}</b>
+                  {i18n("quickstart.readsOnly.post")}
                 </p>
               ) : null}
             </div>
