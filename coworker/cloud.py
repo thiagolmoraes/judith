@@ -33,6 +33,7 @@ import httpx
 
 from .config import Config
 from .secrets import SecretStore
+from .i18n import t
 
 CLOUD_AUTH_PROFILE = "cloud:auth"
 LOGIN_SCOPES = "openid profile email offline_access"
@@ -86,7 +87,7 @@ def begin_login(config: Config) -> dict[str, Any]:
     # chokepoint can't cover it — refuse here too, or the route would still work for
     # anyone calling it directly with the cloud switched off.
     if not config.cloud_enabled:
-        return {"ok": False, "error": "OpenWorker Cloud is disabled"}
+        return {"ok": False, "error": t("error.cloudDisabled")}
     verifier = _b64url(_secrets.token_bytes(48))
     challenge = _b64url(hashlib.sha256(verifier.encode()).digest())
     port = os.environ.get("COWORKER_PORT") or config.port

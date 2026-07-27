@@ -80,6 +80,7 @@ from ..providers import (
     provider_descriptors,
     verify_provider_key,
 )
+from ..i18n import t
 from ..secrets import SecretStore, state_dir
 from ..sessions import SessionRecord
 from ..skills import SkillLoader
@@ -1434,7 +1435,7 @@ class SessionManager:
                 "-e",
                 'tell application "System Events" to activate',
                 "-e",
-                'POSIX path of (choose folder with prompt "Give the coworker access to a folder")',
+                f'POSIX path of (choose folder with prompt "{t("picker.folderPrompt")}")',
             ]
         elif sys.platform == "win32":
             # WinForms folder dialog via PowerShell — no extra deps. -STA is required
@@ -1442,7 +1443,7 @@ class SessionManager:
             ps = (
                 "Add-Type -AssemblyName System.Windows.Forms; "
                 "$f = New-Object System.Windows.Forms.FolderBrowserDialog; "
-                "$f.Description = 'Give the coworker access to a folder'; "
+                f"$f.Description = '{t('picker.folderPrompt')}'; "
                 "if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) "
                 "{ [Console]::Out.Write($f.SelectedPath) }"
             )

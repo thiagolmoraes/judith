@@ -130,7 +130,7 @@ def _browser_page(
         "</style></head><body>"
         '<div class="card"><div class="mark"><i></i>OpenWorker</div>'
         f"{icon}<h1>{_html.escape(title)}</h1><p>{_html.escape(detail)}</p>{err}</div>"
-        '<div class="foot">Served locally by OpenWorker on your Mac</div>'
+        '<div class="foot">' + _html.escape(t("page.footer")) + "</div>"
         "</body></html>"
     )
 
@@ -156,11 +156,6 @@ def _byo_redirect_uri() -> str:
     return f"http://127.0.0.1:{port}/oauth/callback"
 
 
-_CONNECT_FAILED_DETAIL = (
-    "Something went wrong finishing this connection. "
-    "Close this tab and try again from OpenWorker."
-)
-
 from ..attachments import (
     MAX_ATTACHMENTS as _MAX_ATTACHMENTS,
     MAX_IMAGE_CHARS,
@@ -169,6 +164,7 @@ from ..attachments import (
     build_user_content,
 )
 from ..engine import ApprovalOutcome
+from ..i18n import t
 from ..inbox import VIS_INBOX, VIS_INLINE, args_preview
 from ..permissions import Mode
 from ..providers import AssistantTurn
@@ -720,8 +716,8 @@ def create_app(manager: SessionManager) -> FastAPI:
         if error:
             return HTMLResponse(
                 _browser_page(
-                    "Sign-in failed",
-                    "The service reported an error. Return to OpenWorker and try again.",
+                    t("page.signInFailed.title"),
+                    t("page.serviceError.detail"),
                     ok=False,
                     error=error,
                 ),
@@ -730,16 +726,16 @@ def create_app(manager: SessionManager) -> FastAPI:
         if not code or not mcp_oauth.deliver_callback(code, state or None):
             return HTMLResponse(
                 _browser_page(
-                    "Nothing waiting for this sign-in",
-                    "The sign-in may have timed out. Return to OpenWorker and start it again.",
+                    t("page.nothingWaiting.title"),
+                    t("page.timedOut.detail"),
                     ok=False,
                 ),
                 status_code=400,
             )
         return HTMLResponse(
             _browser_page(
-                "Connected",
-                "Sign-in complete. You can close this tab and return to OpenWorker.",
+                t("page.connected.title"),
+                t("page.signInComplete.detail"),
                 ok=True,
             )
         )
@@ -1109,13 +1105,10 @@ def create_app(manager: SessionManager) -> FastAPI:
         from .. import cloud
         from ..config import load_config
 
-        signin_failed_detail = (
-            "Close this tab and try signing in again from OpenWorker."
-        )
         if error:
             return HTMLResponse(
                 _browser_page(
-                    "Sign-in failed", signin_failed_detail, ok=False, error=error
+                    t("page.signInFailed.title"), t("page.signInFailed.detail"), ok=False, error=error
                 ),
                 status_code=400,
             )
@@ -1125,8 +1118,8 @@ def create_app(manager: SessionManager) -> FastAPI:
         if not result.get("ok"):
             return HTMLResponse(
                 _browser_page(
-                    "Sign-in failed",
-                    signin_failed_detail,
+                    t("page.signInFailed.title"),
+                    t("page.signInFailed.detail"),
                     ok=False,
                     error=result.get("error", ""),
                 ),
@@ -1150,9 +1143,8 @@ def create_app(manager: SessionManager) -> FastAPI:
         asyncio.get_running_loop().create_task(_restore_connections())
         return HTMLResponse(
             _browser_page(
-                "Signed in",
-                "You're signed in to OpenWorker Cloud. "
-                "You can close this tab and return to OpenWorker.",
+                t("page.signedIn.title"),
+                t("page.signedIn.detail"),
             )
         )
 
@@ -1204,7 +1196,7 @@ def create_app(manager: SessionManager) -> FastAPI:
         if error:
             return HTMLResponse(
                 _browser_page(
-                    "Connection failed", _CONNECT_FAILED_DETAIL, ok=False, error=error
+                    t("page.connectFailed.title"), t("page.connectFailed.detail"), ok=False, error=error
                 ),
                 status_code=400,
             )
@@ -1214,8 +1206,8 @@ def create_app(manager: SessionManager) -> FastAPI:
         if not result.get("ok"):
             return HTMLResponse(
                 _browser_page(
-                    "Connection failed",
-                    _CONNECT_FAILED_DETAIL,
+                    t("page.connectFailed.title"),
+                    t("page.connectFailed.detail"),
                     ok=False,
                     error=result.get("error", ""),
                 ),
@@ -1228,8 +1220,8 @@ def create_app(manager: SessionManager) -> FastAPI:
         if not stored.get("ok"):
             return HTMLResponse(
                 _browser_page(
-                    "Connection failed",
-                    _CONNECT_FAILED_DETAIL,
+                    t("page.connectFailed.title"),
+                    t("page.connectFailed.detail"),
                     ok=False,
                     error=stored.get("error", ""),
                 ),
@@ -1244,8 +1236,8 @@ def create_app(manager: SessionManager) -> FastAPI:
             pass
         return HTMLResponse(
             _browser_page(
-                f"{_connector_title(connector)} connected",
-                "You can close this tab and return to OpenWorker.",
+                t("page.connectorConnected.title", connector=_connector_title(connector)),
+                t("page.connected.detail"),
                 connector=connector,
             )
         )
@@ -1266,8 +1258,8 @@ def create_app(manager: SessionManager) -> FastAPI:
         if not cloud.consume_managed_state(data.get("app_state", "")):
             return HTMLResponse(
                 _browser_page(
-                    "Connection failed",
-                    _CONNECT_FAILED_DETAIL,
+                    t("page.connectFailed.title"),
+                    t("page.connectFailed.detail"),
                     ok=False,
                     error="unknown or expired connection attempt",
                 ),
@@ -1276,8 +1268,8 @@ def create_app(manager: SessionManager) -> FastAPI:
         if data.get("error"):
             return HTMLResponse(
                 _browser_page(
-                    "Connection failed",
-                    _CONNECT_FAILED_DETAIL,
+                    t("page.connectFailed.title"),
+                    t("page.connectFailed.detail"),
                     ok=False,
                     error=data["error"],
                 ),
@@ -1295,8 +1287,8 @@ def create_app(manager: SessionManager) -> FastAPI:
             if not result.get("ok"):
                 return HTMLResponse(
                     _browser_page(
-                        "Connection failed",
-                        _CONNECT_FAILED_DETAIL,
+                        t("page.connectFailed.title"),
+                        t("page.connectFailed.detail"),
                         ok=False,
                         error=result.get("error", ""),
                     ),
@@ -1304,16 +1296,16 @@ def create_app(manager: SessionManager) -> FastAPI:
                 )
             return HTMLResponse(
                 _browser_page(
-                    "GitHub connected",
-                    "You can close this tab and return to OpenWorker.",
+                    t("page.connectorConnected.title", connector="GitHub"),
+                    t("page.connected.detail"),
                     connector="github",
                 )
             )
         if not connector or not data.get("access_token"):
             return HTMLResponse(
                 _browser_page(
-                    "Connection failed",
-                    _CONNECT_FAILED_DETAIL,
+                    t("page.connectFailed.title"),
+                    t("page.connectFailed.detail"),
                     ok=False,
                     error="missing fields",
                 ),
@@ -1358,8 +1350,8 @@ def create_app(manager: SessionManager) -> FastAPI:
         if not result.get("ok"):
             return HTMLResponse(
                 _browser_page(
-                    "Connection failed",
-                    _CONNECT_FAILED_DETAIL,
+                    t("page.connectFailed.title"),
+                    t("page.connectFailed.detail"),
                     ok=False,
                     error=result.get("error", ""),
                 ),
@@ -1367,8 +1359,8 @@ def create_app(manager: SessionManager) -> FastAPI:
             )
         return HTMLResponse(
             _browser_page(
-                f"{_connector_title(connector)} connected",
-                "You can close this tab and return to OpenWorker.",
+                t("page.connectorConnected.title", connector=_connector_title(connector)),
+                t("page.connected.detail"),
                 connector=connector,
             )
         )
@@ -1855,7 +1847,7 @@ def create_app(manager: SessionManager) -> FastAPI:
                 {
                     "type": "error",
                     "data": {
-                        "error": "no valid workspace — choose a project folder first"
+                        "error": t("error.noWorkspace")
                     },
                 }
             )

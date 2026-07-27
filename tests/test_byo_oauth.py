@@ -287,10 +287,30 @@ def rsa_pem():
 
 
 def test_github_rejects_malformed_private_key(secrets):
-    """Validate at save time so a bad paste fails in the form, not later at mint time."""
+    """Validate at save time so a bad paste fails in the form, not later at mint time.
+
+    The message names the fix rather than the exception class: "ValueError" tells the user
+    nothing, whereas the common mistake is pasting only the key body without the armour
+    lines.
+    """
     res = G.set_byo_github_config(secrets, {"app_id": "1", "private_key": "not-a-pem"})
-    assert res["ok"] is False and "private key" in res["error"]
+    assert res["ok"] is False
+    assert "BEGIN" in res["error"]
+    assert "ValueError" not in res["error"]
     assert G.byo_github_available(secrets) is False
+
+
+def test_github_key_errors_do_not_swallow_unrelated_faults(secrets, monkeypatch):
+    """Only the three exceptions load_pem_private_key documents are treated as "bad
+    paste". A MemoryError or a bug in our own code is a real fault and must surface."""
+    import pytest as _pytest
+
+    def boom(_pem):
+        raise MemoryError("not a key problem")
+
+    monkeypatch.setattr(G, "_load_key", boom)
+    with _pytest.raises(MemoryError):
+        G.set_byo_github_config(secrets, {"app_id": "1", "private_key": "whatever"})
 
 
 def test_github_jwt_claims_match_github_requirements(secrets, rsa_pem):
