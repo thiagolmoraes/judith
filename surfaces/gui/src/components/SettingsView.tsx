@@ -379,7 +379,7 @@ function PersonasSection({ onOpenPersona }: { onOpenPersona?: (id: string) => vo
         <span className="min-w-0 flex-1">
           <span className="block text-[13.5px] font-medium">{t("settings.personas.browse")}</span>
           <span className="block text-[12px] text-muted">
-            Curated coworkers from the OpenWorker team — see what each can do before installing.
+            {t("settings.personas.galleryHelp")}
           </span>
         </span>
         <span className="text-[12.5px] text-accent shrink-0">{t("common.open")}</span>
@@ -443,7 +443,7 @@ function AppearanceSection() {
       <div className={CARD + " p-4 mb-4"}>
         <div className={FIELD_LABEL}>{t("settings.theme")}</div>
         <SegmentedRadio
-          label="Appearance"
+          label={t("settings.theme")}
           value={theme}
           options={[
             { value: "light" as const, label: t("settings.theme.light") },
@@ -491,7 +491,7 @@ function AppearanceSection() {
         <div className={FIELD_LABEL + " mb-2"}>{t("settings.setupUpdates")}</div>
         <div className="flex items-center gap-2">
           <button className={BTN_BORDERED} onClick={runSetupAgain}>
-            Run setup again
+            {t("settings.runSetupAgain")}
           </button>
           {desktop && <UpdateInline />}
         </div>
@@ -523,9 +523,7 @@ function TrustedWorkspacesCard() {
   return (
     <div className={CARD + " p-4 mb-4"} data-testid="trusted-workspaces-card">
       <div className={FIELD_LABEL}>{t("settings.trustedWorkspaces")}</div>
-      <div className={FIELD_HELP}>
-        Trusted projects may manage their command allowances in .coworker/config.toml.
-      </div>
+      <div className={FIELD_HELP}>{t("settings.trustedWorkspaces.help")}</div>
       {workspaces === null ? (
         <div className="text-[12px] text-muted mt-3">{t("common.loading")}</div>
       ) : workspaces.length === 0 ? (

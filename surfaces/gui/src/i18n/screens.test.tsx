@@ -61,7 +61,49 @@ describe("tool-call one-liners", () => {
     expect(humanizeTool("todo_write", { todos: [1, 2, 3] }, pt).pre).toBe(
       "Atualizou o plano — 3 itens",
     );
-    expect(humanizeTool("some_mcp_tool", {}, pt).pre).toContain("Usou");
+    // Assert the interpolated name, not just the verb: `Usou {name}` with a dropped
+    // placeholder would still contain "Usou".
+    expect(humanizeTool("some_mcp_tool", {}, pt).pre).toBe("Usou some_mcp_tool");
+  });
+
+  it("translates run_shell, the most common line of all", () => {
+    // This one shipped untranslated in the first pass and the suite didn't notice,
+    // because it tested every path except the one users see most.
+    expect(humanizeTool("run_shell", { command: "ls -la" }, pt)).toMatchObject({
+      pre: "Executou ",
+      obj: "ls -la",
+    });
+    expect(
+      humanizeTool("run_shell", { command: "npm test", run_in_background: true }, pt).pre,
+    ).toBe("Iniciou em segundo plano: ");
+  });
+
+  it("translates todo statuses rather than passing them through", () => {
+    const line = humanizeTool(
+      "todo_write",
+      { todos: [{ content: "ship it", status: "in_progress" }] },
+      pt,
+    );
+    expect(line.post).toBe(" → em andamento");
+  });
+
+  it("keeps an unknown todo status readable instead of dropping it", () => {
+    // A status added server-side must still render — spaced, not underscored.
+    const line = humanizeTool(
+      "todo_write",
+      { todos: [{ content: "x", status: "waiting_on_review" }] },
+      pt,
+    );
+    expect(line.post).toBe(" → waiting on review");
+  });
+
+  it("translates the no-path fallbacks in both approval forms", () => {
+    // `tool.aFile` / `tool.files` existed but four call sites still used the English
+    // literals, so a pending edit read "Editar files" in a Portuguese UI.
+    expect(humanizeApprovalTitle("write_file", {}, pt).obj).toBe("um arquivo");
+    expect(humanizeApprovalTitle("apply_patch", {}, pt).obj).toBe("arquivos");
+    expect(humanizeAsk("write_file", {}, pt).obj).toBe("um arquivo");
+    expect(humanizeAsk("apply_patch", {}, pt).obj).toBe("arquivos");
   });
 
   it("uses the infinitive for pending approvals, past tense for history", () => {

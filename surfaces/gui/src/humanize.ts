@@ -44,7 +44,9 @@ export function humanizeTool(name: string, args: any, t: Translate = EN): HumanL
     case "run_shell": {
       const cmd = trunc(String(a.command ?? ""), 60);
       const desc = typeof a.description === "string" && a.description.trim() ? a.description.trim() : "";
-      const pre = a.run_in_background ? "Started in the background: " : "Ran ";
+      const pre = a.run_in_background
+        ? t("tool.startedBackground")
+        : t("tool.ranCommand");
       return {
         pre,
         obj: cmd,
@@ -73,7 +75,15 @@ export function humanizeTool(name: string, args: any, t: Translate = EN): HumanL
       const items = Array.isArray(a.todos) ? a.todos : Array.isArray(a.items) ? a.items : [];
       if (items.length === 1) {
         const it = items[0] || {};
-        const status = String(it.status || "").replace(/_/g, " ");
+        // Known statuses go through the catalogue; anything else keeps the raw value
+        // with underscores spaced, so a new status added server-side still renders.
+        const raw = String(it.status || "");
+        const statusKeys: Record<string, string> = {
+          pending: "todo.status.pending",
+          in_progress: "todo.status.inProgress",
+          completed: "todo.status.completed",
+        };
+        const status = raw ? (statusKeys[raw] ? t(statusKeys[raw]) : raw.replace(/_/g, " ")) : "";
         return {
           pre: t("tool.updatedPlan"),
           obj: `“${trunc(String(it.content ?? ""), 70)}”`,
@@ -119,11 +129,17 @@ export function humanizeApprovalTitle(name: string, args: any, t: Translate = EN
   const a = args && typeof args === "object" ? args : {};
   switch (name) {
     case "write_file":
-      return { pre: t("tool.pending.write"), obj: baseName(String(a.path ?? "a file")) };
+      return {
+        pre: t("tool.pending.write"),
+        obj: baseName(String(a.path ?? t("tool.aFile"))),
+      };
     case "replace_in_file":
     case "apply_patch":
     case "apply_unified_diff":
-      return { pre: t("tool.pending.edit"), obj: a.path ? baseName(String(a.path)) : "files" };
+      return {
+        pre: t("tool.pending.edit"),
+        obj: a.path ? baseName(String(a.path)) : t("tool.files"),
+      };
     case "run_shell": {
       const desc = typeof a.description === "string" && a.description.trim() ? a.description.trim() : "";
       return {
@@ -159,11 +175,17 @@ export function humanizeAsk(name: string, args: any, t: Translate = EN): HumanLi
     case "run_shell":
       return { pre: t("tool.wanted.run"), obj: trunc(String(a.command ?? ""), 60) };
     case "write_file":
-      return { pre: t("tool.wanted.write"), obj: baseName(String(a.path ?? "a file")) };
+      return {
+        pre: t("tool.wanted.write"),
+        obj: baseName(String(a.path ?? t("tool.aFile"))),
+      };
     case "replace_in_file":
     case "apply_patch":
     case "apply_unified_diff":
-      return { pre: t("tool.wanted.edit"), obj: a.path ? baseName(String(a.path)) : "files" };
+      return {
+        pre: t("tool.wanted.edit"),
+        obj: a.path ? baseName(String(a.path)) : t("tool.files"),
+      };
     case "send_message": {
       const { platform, tail } = messageTarget(String(a.target ?? ""));
       if (!tail) return { pre: t("tool.wanted.sendMessage") };
