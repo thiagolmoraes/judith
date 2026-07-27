@@ -230,6 +230,16 @@ export const en: Catalog = {
   "sched.paused": "Paused",
   "sched.next": "next",
   "sched.last": "last",
+  "sched.createAutomation": "Create automation",
+  "sched.creating": "Creating…",
+  "quickstart.pickChannelFirst": "Pick a channel to post to first",
+  "quickstart.deliver.inApp": "In the app",
+  "tpl.why.digestPosts": "Where the digest posts",
+  "tpl.why.digestSummarizes": "What the digest summarizes",
+  "tpl.why.pipelineActivity": "Pipeline and deal activity",
+  "tpl.why.overnight": "What arrived overnight",
+  "tpl.why.unreadEmail": "Your unread email",
+  "sched.activeNext": "Active · next {when}",
   // -- tool-call one-liners (humanize.ts) -----------------------------------------
   // Assembled as pre + object + post so the UI can bold the object. Verb-object order
   // holds in Portuguese, so the shape survives translation unchanged; only the

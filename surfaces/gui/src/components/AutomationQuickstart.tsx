@@ -77,6 +77,11 @@ const TPL_KEY: Record<string, string> = {
   "One short digest of your unread email.": "tpl.inboxDigest.blurb",
   "Folder cleanup": "tpl.folderCleanup.title",
   "Sort recent Downloads into tidy folders by type.": "tpl.folderCleanup.blurb",
+  "Where the digest posts": "tpl.why.digestPosts",
+  "What the digest summarizes": "tpl.why.digestSummarizes",
+  "Pipeline and deal activity": "tpl.why.pipelineActivity",
+  "What arrived overnight": "tpl.why.overnight",
+  "Your unread email": "tpl.why.unreadEmail",
   Weekly: "sched.weekly",
   Daily: "sched.daily",
   Weekdays: "sched.weekdays",
@@ -323,7 +328,7 @@ export function AutomationQuickstart({
         .map((c) => connState(c.name)?.title || c.name)
         .join(" and ")} to continue`
     : picked?.needsChannel && !channel
-      ? "Pick a channel to post to first"
+      ? i18n("quickstart.pickChannelFirst")
       : "";
 
   const label = "block text-[12px] text-muted mt-3 mb-1";
@@ -406,7 +411,7 @@ export function AutomationQuickstart({
                   {c && <ConnectorBadge connector={c} size={26} title={c.title} />}
                   <span className="min-w-0 flex-1">
                     <span className="block text-[13.5px] font-medium">{c?.title || name}</span>
-                    <span className="block text-[11.5px] text-faint">{why}</span>
+                    <span className="block text-[11.5px] text-faint">{tpl(why)}</span>
                   </span>
                   {c?.connected ? (
                     <span className="text-[12.5px] text-ok">✓ Connected</span>
@@ -563,7 +568,7 @@ export function AutomationQuickstart({
                     ariaLabel="Deliver to"
                     value={deliver}
                     options={[
-                      { value: "app", label: "In the app" },
+                      { value: "app", label: i18n("quickstart.deliver.inApp") },
                       { value: "slack", label: "Slack DM (connect Slack later)" },
                     ]}
                     onChange={(v) => setDeliver(v as "app" | "slack")}
@@ -620,7 +625,7 @@ export function AutomationQuickstart({
               onClick={create}
               data-testid="ob-create"
             >
-              {busy ? "Creating…" : "Create automation"}
+              {busy ? i18n("sched.creating") : i18n("sched.createAutomation")}
             </button>
           </div>
         </div>

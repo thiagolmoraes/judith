@@ -268,7 +268,7 @@ function NewAutomationForm({
             })
           }
         >
-          {busy ? "Creating…" : "Create automation"}
+          {busy ? t("sched.creating") : t("sched.createAutomation")}
         </button>
         <button className="link" onClick={onCancel}>cancel</button>
       </div>
@@ -390,7 +390,7 @@ function TaskDetail({
             {editing ? (
               <>
                 <button className="btn-primary sm" disabled={saving || !title.trim() || !instructions.trim()} onClick={saveEdit}>
-                  {saving ? "Saving…" : "Save"}
+                  {saving ? t("common.saving") : t("common.save")}
                 </button>
                 <button className="link" onClick={() => setEditing(false)}>cancel</button>
               </>
@@ -429,7 +429,10 @@ function TaskDetail({
               <input type="checkbox" checked={task.enabled} onChange={toggle} />
               <span className="slider" />
             </label>{" "}
-            {task.enabled ? `Active · next ${fmt(task.next_run)}` : "Paused"} · {task.schedule}
+            {task.enabled
+              ? t("sched.activeNext", { when: fmt(task.next_run) })
+              : t("sched.paused")}{" "}
+            · {task.schedule}
           </div>
         )}
 
