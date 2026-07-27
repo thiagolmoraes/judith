@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  cloudAvailable,
   cloudLogin,
   connectManaged,
   getCloudStatus,
@@ -388,6 +389,16 @@ export function AutomationQuickstart({
                         ? "Opening browser…"
                         : `Waiting for ${c?.title || name}…`}
                     </span>
+                  ) : !cloudAvailable(cloud) ? (
+                    /* This quickstart only offers managed (broker) connects, which need the
+                       cloud. With it off, `startConnect` would set pendingConn and nothing
+                       would happen — a dead button. Say where the working path is instead. */
+                    <span
+                      className="text-[12px] text-faint shrink-0"
+                      data-testid={`ob-connect-unavailable-${name}`}
+                    >
+                      Connect from Integrations
+                    </span>
                   ) : (
                     <button
                       className="px-3.5 py-1 rounded-full border border-line text-[12.5px] hover:bg-paper"
@@ -425,7 +436,7 @@ export function AutomationQuickstart({
             );
           })}
 
-          {pendingConn && !cloud?.signed_in && (
+          {pendingConn && !cloud?.signed_in && cloudAvailable(cloud) && (
             <div
               className="bg-accentSoft/50 rounded-xl px-4 py-3 mt-3 text-[12.5px] text-muted"
               data-testid="ob-cloudpane"
@@ -433,7 +444,7 @@ export function AutomationQuickstart({
               <span className="block text-[13px] text-ink font-medium">
                 One sign-in unlocks every one-click connection
               </span>
-              Connections are brokered by OpenWorker Cloud — your tokens stay on this Mac.
+              Connections are brokered by OpenWorker Cloud — your tokens stay on this device.
               <div className="flex items-center gap-3 mt-2">
                 {signinPhase ? (
                   <>
