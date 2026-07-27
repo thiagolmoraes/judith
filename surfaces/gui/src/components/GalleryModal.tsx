@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  cloudAvailable,
   cloudLogin,
   getCloudGallery,
   getCloudGalleryDetail,
@@ -98,6 +99,9 @@ export function GalleryModal({
   }, [onClose]);
 
   const signIn = async () => {
+    // Belt and braces: the sign-in card is only rendered when the cloud is available, but
+    // guarding the action too means a stray caller can't fire a request the route refuses.
+    if (!cloudAvailable(cloud)) return;
     setSigningIn(true);
     await cloudLogin(); // sidecar opens the browser; poll for completion
     setTimeout(() => {

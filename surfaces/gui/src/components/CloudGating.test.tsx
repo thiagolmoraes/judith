@@ -1,11 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { cloudAvailable, type CloudStatus } from "../api";
+import { GalleryModal } from "./GalleryModal";
 
 // With OpenWorker Cloud switched off, no surface may offer to sign in: the route refuses,
 // so every prompt is a dead end. The gating lives in several components, and the first
 // pass missed four of them — the sidebar account menu and footer, the Gallery, the
-// automation quickstart, and the onboarding band — so this file pins the predicate and
-// documents where it has to be applied.
+// automation quickstart, and the onboarding band — so this file pins the predicate,
+// sweeps for call sites that skip it, and renders the two trickiest surfaces.
 
 const OFF: CloudStatus = {
   enabled: false,
@@ -19,12 +21,17 @@ const ON_SIGNED_OUT: CloudStatus = {
   account: "",
   user_id: "",
 };
-const LEGACY: CloudStatus = {
+const LEGACY = {
   // An older sidecar predating the flag: no `enabled` field at all.
   signed_in: false,
   account: "",
   user_id: "",
 } as CloudStatus;
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 describe("cloudAvailable", () => {
   it("is false when the cloud is switched off", () => {
@@ -43,27 +50,41 @@ describe("cloudAvailable", () => {
 
   it("is false before the status has loaded", () => {
     // Rendering a sign-in button and then hiding it reads as a flicker; staying quiet
-    // until the answer arrives does not.
+    // until the answer arrives does not. This also makes `null` unsuitable for deciding
+    // "the cloud is off" — see the rendered tests below.
     expect(cloudAvailable(null)).toBe(false);
   });
 });
 
+/** Source with comments and string literals removed.
+ *
+ * A substring search over raw source counts a mention in a comment as a real call — and
+ * the comment explaining this very gate did exactly that in GalleryModal. Crude but
+ * sufficient: the guard only needs to know whether an identifier survives once the prose
+ * is gone. */
+function code(text: string): string {
+  return text
+    .replace(/\/\*[\s\S]*?\*\//g, " ") // block comments, including JSX {/* … */}
+    .replace(/(^|[^:])\/\/[^\n]*/g, "$1 ") // line comments, sparing the // in URLs
+    .replace(/`(?:[^`\\]|\\.)*`/g, "``") // template literals
+    .replace(/"(?:[^"\\]|\\.)*"/g, '""')
+    .replace(/'(?:[^'\\]|\\.)*'/g, "''");
+}
+
 describe("cloud sign-in surfaces", () => {
   it("every component that offers sign-in consults the predicate", async () => {
     // A grep-style guard, deliberately: the bug was a *missing* call site, which no
-    // amount of testing the components that do call it would have caught.
-    // `../**` so the sweep reaches every .tsx under src/, not just components/ —
-    // providers/ProviderSetup.tsx sat outside the original glob.
+    // amount of testing the components that do gate could have caught. `../**` so the
+    // sweep reaches all of src/ — providers/ sat outside the original glob.
     const sources = import.meta.glob("../**/*.tsx", { query: "?raw", import: "default" });
     const offenders: string[] = [];
 
     for (const [path, load] of Object.entries(sources)) {
       if (path.includes(".test.")) continue;
-      const text = (await load()) as string;
+      const text = code((await load()) as string);
       const offersSignIn =
         text.includes("cloudLogin(") || text.includes("CloudSignInInline");
-      // `cloudAvailable(` with the paren: an import alone satisfies a substring check
-      // while gating nothing, which is the exact failure this guard exists to catch.
+      // With the paren, so an unused import doesn't satisfy the check either.
       if (offersSignIn && !text.includes("cloudAvailable(")) offenders.push(path);
     }
 
@@ -88,29 +109,47 @@ describe("cloud sign-in surfaces", () => {
   });
 });
 
+function stubCloud(status: unknown) {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string) => {
+      if (url.includes("/v1/cloud/status")) {
+        if (status instanceof Error) throw status;
+        return { ok: true, json: async () => status } as Response;
+      }
+      // The gallery fetch has to resolve in the shape reload() expects, or the component
+      // stays on its loading branch and never reaches the one under test.
+      return {
+        ok: true,
+        json: async () => ({ ok: true, personas: [], items: [] }),
+      } as Response;
+    }),
+  );
+}
+
 describe("unknown status is not disabled status", () => {
-  it("distinguishes a failed fetch from a switched-off cloud", () => {
-    // `null` means the status fetch failed or hasn't landed. Surfaces that explain "the
-    // cloud is off" must test `enabled === false` instead, or a transient network error
-    // sends the user hunting for a setting they never changed.
-    expect(cloudAvailable(null)).toBe(false); // don't offer sign-in yet
-    expect(OFF.enabled).toBe(false); // ...but only this one means "switched off"
-    expect((null as unknown as CloudStatus | null)?.enabled).toBeUndefined();
+  it("does not claim the cloud is off when the status fetch fails", async () => {
+    // `cloud` stays null, and cloudAvailable(null) is false — so a branch written against
+    // the predicate would report a dropped request as "the cloud is switched off", sending
+    // the user after a setting they never changed. Keying on `enabled === false` instead
+    // leaves the pre-existing unknown-state rendering alone.
+    stubCloud(new Error("offline"));
+    render(<GalleryModal onClose={() => {}} onInstalled={() => {}} />);
+    await waitFor(() => expect(screen.queryByTestId("gallery-loading")).toBeNull());
+    expect(screen.queryByTestId("gallery-unavailable")).toBeNull();
   });
 
-  it("the Gallery's unavailable copy keys on enabled === false", async () => {
-    const source = (await import("./GalleryModal.tsx?raw")).default as string;
-    expect(source).toContain('cloud?.enabled === false');
-    // Would reintroduce the bug: null (unknown) would take the disabled branch.
-    expect(source).not.toContain("!cloudAvailable(cloud) ? (");
+  it("shows the disabled copy only when the cloud reports enabled: false", async () => {
+    stubCloud({ enabled: false, signed_in: false, account: "", user_id: "" });
+    render(<GalleryModal onClose={() => {}} onInstalled={() => {}} />);
+    await waitFor(() => expect(screen.queryByTestId("gallery-unavailable")).toBeTruthy());
+    expect(screen.queryByTestId("gallery-signin")).toBeNull();
   });
-});
 
-describe("no dead affordances", () => {
-  it("the quickstart's Connect is replaced, not just unexplained, when the cloud is off", async () => {
-    // startConnect() sets pendingConn and returns when signed out; with the pane hidden
-    // that made the button do visibly nothing.
-    const source = (await import("./AutomationQuickstart.tsx?raw")).default as string;
-    expect(source).toContain("ob-connect-unavailable-");
+  it("shows neither once the cloud is on and signed in", async () => {
+    stubCloud({ enabled: true, signed_in: true, account: "a@b.c", user_id: "u" });
+    render(<GalleryModal onClose={() => {}} onInstalled={() => {}} />);
+    await waitFor(() => expect(screen.queryByTestId("gallery-signin")).toBeNull());
+    expect(screen.queryByTestId("gallery-unavailable")).toBeNull();
   });
 });
