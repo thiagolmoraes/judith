@@ -25,7 +25,12 @@ function stubFetch(routes: { match: string; method?: string; json: any }[]) {
 const connector = (name: string, title: string): Connector =>
   ({ name, title, fields: [], tools: [] }) as unknown as Connector;
 
-const EMPTY = { oauth: {}, github: { configured: false, app_id: "" } };
+const REDIRECT = "http://127.0.0.1:50055/oauth/callback";
+const EMPTY = {
+  oauth: {},
+  github: { configured: false, app_id: "" },
+  redirect_uri: REDIRECT,
+};
 
 afterEach(() => {
   cleanup();
@@ -49,8 +54,9 @@ describe("ByoSetup — unconfigured", () => {
 
     await screen.findByTestId("byo-client-id");
     expect(screen.getByTestId("byo-client-secret")).toBeTruthy();
-    // The exact callback URL matters — providers reject a mismatched redirect.
-    expect(screen.getByText(/127\.0\.0\.1:8765\/oauth\/callback/)).toBeTruthy();
+    // The exact callback URL matters, and it must come from the server: the packaged
+    // sidecar binds a random port, so a hardcoded one would never match.
+    expect(screen.getByTestId("byo-redirect-uri").textContent).toBe(REDIRECT);
   });
 
   it("asks GitHub for an App id and private key, not a client secret", async () => {
@@ -104,8 +110,9 @@ describe("ByoSetup — unconfigured", () => {
 
 describe("ByoSetup — configured", () => {
   const CONFIGURED = {
-    oauth: { notion: { configured: true, client_id: "cid-stored", scopes: [] } },
+    oauth: { notion: { configured: true, client_id: "cid-stored", scopes: ["a", "b"] } },
     github: { configured: false, app_id: "" },
+    redirect_uri: REDIRECT,
   };
 
   it("shows the stored app and offers connect rather than the form", async () => {
@@ -171,9 +178,52 @@ describe("ByoSetup — configured", () => {
     render(<ByoSetup c={connector("notion", "Notion")} onConnected={() => {}} />);
 
     fireEvent.click(await screen.findByText("Change"));
-    expect(screen.getByTestId("byo-client-id")).toBeTruthy();
-    // The stored secret is masked, signalling that leaving it blank keeps it.
+    // Prefilled from what's stored: retyping an identifier that was just on screen, only
+    // to rotate a secret, is needless friction.
+    expect((screen.getByTestId("byo-client-id") as HTMLInputElement).value).toBe("cid-stored");
+    expect((screen.getByTestId("byo-scopes") as HTMLInputElement).value).toBe("a b");
+    // The secret stays blank and masked — blank means "keep the stored one".
     const secret = screen.getByTestId("byo-client-secret") as HTMLInputElement;
+    expect(secret.value).toBe("");
     expect(secret.placeholder).toContain("leave blank to keep");
+  });
+});
+
+describe("ByoSetup — GitHub", () => {
+  const GH = {
+    oauth: {},
+    github: { configured: true, app_id: "424242" },
+    redirect_uri: REDIRECT,
+  };
+
+  it("prefills the App id when changing a stored App", async () => {
+    stubFetch([{ match: "/v1/connectors/byo", json: GH }]);
+    render(<ByoSetup c={connector("github", "GitHub")} onConnected={() => {}} />);
+
+    fireEvent.click(await screen.findByText("Change"));
+    expect((screen.getByTestId("byo-app-id") as HTMLInputElement).value).toBe("424242");
+    // The key is write-only: it's never returned, so it can't be prefilled.
+    expect((screen.getByTestId("byo-private-key") as HTMLTextAreaElement).value).toBe("");
+  });
+
+  it("clears a stored App with a blank app_id", async () => {
+    const calls = stubFetch([
+      { match: "/v1/connectors/byo", method: "GET", json: GH },
+      { match: "/byo-config", method: "POST", json: { ok: true, configured: false } },
+    ]);
+    render(<ByoSetup c={connector("github", "GitHub")} onConnected={() => {}} />);
+
+    fireEvent.click(await screen.findByText("Remove"));
+    await waitFor(() => {
+      const post = calls.find((c) => c.url.includes("/byo-config"));
+      expect(post?.body.fields).toEqual({ app_id: "" });
+    });
+  });
+
+  it("explains that connect opens the App's install page", async () => {
+    stubFetch([{ match: "/v1/connectors/byo", json: GH }]);
+    render(<ByoSetup c={connector("github", "GitHub")} onConnected={() => {}} />);
+    await screen.findByTestId("byo-connect");
+    expect(screen.getByText(/install page/)).toBeTruthy();
   });
 });

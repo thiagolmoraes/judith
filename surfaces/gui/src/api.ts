@@ -564,6 +564,10 @@ export interface ByoStatus {
   /** Per-connector app config. Never carries the client secret. */
   oauth: Record<string, ByoOAuthEntry>;
   github: { configured: boolean; app_id: string };
+  /** The loopback URI the user must register with their provider. Comes from the server
+   * because the packaged sidecar binds a random port — hardcoding one here would have
+   * people register a redirect that never matches. */
+  redirect_uri: string;
 }
 
 export async function getByoStatus(): Promise<ByoStatus> {

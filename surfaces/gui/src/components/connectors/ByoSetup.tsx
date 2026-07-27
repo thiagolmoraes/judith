@@ -201,8 +201,10 @@ export function ByoSetup({
             {!isGithub && (
               <div className="text-[11.5px] text-faint">
                 Set the redirect URI to{" "}
-                <code className="text-ink">http://127.0.0.1:8765/oauth/callback</code> — the
-                provider rejects anything that doesn't match exactly.
+                <code className="text-ink" data-testid="byo-redirect-uri">
+                  {status.redirect_uri}
+                </code>{" "}
+                — the provider rejects anything that doesn't match exactly.
               </div>
             )}
           </div>
@@ -290,7 +292,17 @@ export function ByoSetup({
             </span>
             <button
               className="text-[12px] text-accent hover:underline shrink-0"
-              onClick={() => setEditing(true)}
+              onClick={() => {
+                // Prefill from what's stored: the identifier is on screen right above,
+                // and making the user retype it from memory just to rotate a secret is
+                // needless friction. The secret itself stays blank — blank means "keep".
+                if (isGithub) setAppId(status.github.app_id);
+                else {
+                  setClientId(status.oauth[c.name]?.client_id ?? "");
+                  setScopes((status.oauth[c.name]?.scopes ?? []).join(" "));
+                }
+                setEditing(true);
+              }}
             >
               Change
             </button>

@@ -143,6 +143,19 @@ def _connector_title(name: str) -> str:
     return d.title if d else (name[:1].upper() + name[1:])
 
 
+def _byo_redirect_uri() -> str:
+    """The loopback URI a bring-your-own OAuth app must be told to allow.
+
+    Single source of truth for both the value we send at consent time and the one the GUI
+    tells the user to register — the packaged sidecar binds a random port, so these
+    drifting apart means the provider rejects the redirect.
+    """
+    from ..config import load_config
+
+    port = os.environ.get("COWORKER_PORT") or load_config().port
+    return f"http://127.0.0.1:{port}/oauth/callback"
+
+
 _CONNECT_FAILED_DETAIL = (
     "Something went wrong finishing this connection. "
     "Close this tab and try again from OpenWorker."
@@ -794,6 +807,10 @@ def create_app(manager: SessionManager) -> FastAPI:
                 "configured": byo_github_available(manager.secrets),
                 "app_id": gh.get("app_id") or "",
             },
+            # The redirect the provider must be told to allow. Computed here rather than
+            # written into the GUI: the packaged sidecar binds a random port, so a
+            # hardcoded one would have the user register a URI that never matches.
+            "redirect_uri": _byo_redirect_uri(),
         }
 
     @app.post("/v1/connectors/{name}/byo-config")
@@ -831,10 +848,7 @@ def create_app(manager: SessionManager) -> FastAPI:
                 return {"ok": False, "error": "no BYO GitHub App configured"}
             webbrowser.open(url)
             return {"ok": True, "authorize_url": url}
-        from ..config import load_config
-
-        port = os.environ.get("COWORKER_PORT") or load_config().port
-        redirect = f"http://127.0.0.1:{port}/oauth/callback"
+        redirect = _byo_redirect_uri()
         out = await asyncio.to_thread(
             lambda: begin_byo_connect(manager.secrets, name, redirect=redirect)
         )
