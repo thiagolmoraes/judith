@@ -25,7 +25,10 @@ import logging
 import time
 from typing import Any, Optional
 
+from cryptography.exceptions import UnsupportedAlgorithm
+
 from ..secrets import SecretStore
+from ..i18n import t
 
 logger = logging.getLogger("coworker.connectors")
 
@@ -77,11 +80,15 @@ def set_byo_github_config(
         existing.get("private_key") or ""
     )
     if not key:
-        return {"ok": False, "error": "private_key required"}
+        return {"ok": False, "error": t("error.privateKeyRequired")}
     try:
         _load_key(key)
-    except Exception as exc:  # malformed PEM / wrong key type
-        return {"ok": False, "error": f"private key not usable: {type(exc).__name__}"}
+    except (ValueError, TypeError, UnsupportedAlgorithm):
+        # The three `load_pem_private_key` documents: ValueError for a structure it can't
+        # decode, TypeError for a password mismatch, UnsupportedAlgorithm for a key type
+        # this OpenSSL build lacks. Anything else is a real fault and should surface, not
+        # be reported to the user as "bad paste".
+        return {"ok": False, "error": t("error.privateKeyUnusable")}
     secrets.put(BYO_GITHUB_PROFILE, {"app_id": app_id, "private_key": key})
     _token_cache.clear()
     return {"ok": True, "configured": True}

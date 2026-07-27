@@ -38,6 +38,7 @@ from typing import Any, Optional
 from urllib.parse import urlencode
 
 from ..secrets import SecretStore
+from ..i18n import t
 
 BYO_PROFILE = "byo_oauth"
 # Marks a profile as refreshed locally rather than through the cloud broker.
@@ -159,7 +160,7 @@ def set_byo_config(
     provider dashboards.
     """
     if connector not in CONNECTOR_PROVIDER:
-        return {"ok": False, "error": f"{connector} has no BYO OAuth path"}
+        return {"ok": False, "error": t("error.noByoPath", connector=connector)}
     store = dict(secrets.get(BYO_PROFILE) or {})
     client_id = str(fields.get("client_id") or "").strip()
     if not client_id:
@@ -172,7 +173,7 @@ def set_byo_config(
         # "keep the stored one" rather than wiping a working credential.
         secret = str((store.get(connector) or {}).get("client_secret") or "").strip()
     if not secret:
-        return {"ok": False, "error": "client_secret required"}
+        return {"ok": False, "error": t("error.clientSecretRequired")}
     entry: dict[str, Any] = {"client_id": client_id, "client_secret": secret}
     # Normalize to a list of strings here rather than trusting the caller: anything else
     # (a dict, a list of ints) survives the save and only blows up later inside
@@ -185,7 +186,7 @@ def set_byo_config(
         if cleaned:
             entry["scopes"] = list(dict.fromkeys(cleaned))
     elif scopes:
-        return {"ok": False, "error": "scopes must be a list or a string"}
+        return {"ok": False, "error": t("error.scopesShape")}
     store[connector] = entry
     secrets.put(BYO_PROFILE, store)
     return {"ok": True, "configured": True}
@@ -208,13 +209,13 @@ def begin_byo_connect(
     """
     provider = CONNECTOR_PROVIDER.get(connector)
     if provider is None:
-        return {"ok": False, "error": f"{connector} has no BYO OAuth path"}
+        return {"ok": False, "error": t("error.noByoPath", connector=connector)}
     spec = PROVIDERS.get(provider)
     if spec is None:
         return {"ok": False, "error": f"no BYO endpoints known for {provider}"}
     cfg = byo_config(secrets, connector)
     if not cfg.get("client_id"):
-        return {"ok": False, "error": f"no BYO app configured for {connector}"}
+        return {"ok": False, "error": t("error.noByoAppConfigured", connector=connector)}
 
     state = _secrets.token_urlsafe(24)
     params: dict[str, str] = {
@@ -352,13 +353,13 @@ def complete_byo_connect(
     """Exchange an authorization code for tokens and store the connector profile."""
     pending = consume_byo_state(state)
     if pending is None:
-        return {"ok": False, "error": "unknown or expired connection attempt"}
+        return {"ok": False, "error": t("error.unknownConnectionAttempt")}
     connector = str(pending["connector"])
     provider = CONNECTOR_PROVIDER.get(connector, "")
     spec = PROVIDERS.get(provider)
     cfg = byo_config(secrets, connector)
     if spec is None or not cfg.get("client_id"):
-        return {"ok": False, "error": f"no BYO app configured for {connector}"}
+        return {"ok": False, "error": t("error.noByoAppConfigured", connector=connector)}
     if not code:
         return {"ok": False, "error": "missing authorization code"}
 
@@ -371,10 +372,10 @@ def complete_byo_connect(
         form["code_verifier"] = str(pending["verifier"])
     body = _token_request(spec, cfg, form)
     if not body:
-        return {"ok": False, "error": "token exchange failed"}
+        return {"ok": False, "error": t("error.tokenExchangeFailed")}
     profile = _profile_from_token(connector, provider, body)
     if not profile.get("access_token"):
-        return {"ok": False, "error": "provider returned no access token"}
+        return {"ok": False, "error": t("error.noAccessToken")}
     return {"ok": True, "connector": connector, "profile": profile}
 
 
