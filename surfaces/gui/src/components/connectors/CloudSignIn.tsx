@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { announceCloudChanged, cloudLogin, waitForCloudSignIn } from "../../api";
+import {
+  announceCloudChanged,
+  cloudAvailable,
+  cloudLogin,
+  getCloudStatus,
+  waitForCloudSignIn,
+  type CloudStatus,
+} from "../../api";
 
 // The signed-out state of every one-click pane: a REAL sign-in button, not a
 // hint pointing at another page. Sign-in completes in the system browser; this
@@ -10,7 +17,22 @@ import { announceCloudChanged, cloudLogin, waitForCloudSignIn } from "../../api"
 export function CloudSignInInline({ blurb }: { blurb?: string }) {
   const [waiting, setWaiting] = useState(false);
   const cancelRef = useRef<(() => void) | null>(null);
+  // Gate here rather than at each of the five call sites: with the cloud switched off the
+  // login route refuses, so the button would be a dead end wherever it appeared.
+  const [status, setStatus] = useState<CloudStatus | null>(null);
+  useEffect(() => {
+    let live = true;
+    void getCloudStatus()
+      .then((s) => live && setStatus(s))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
   useEffect(() => () => cancelRef.current?.(), []);
+  // Render nothing until the check lands, so the button never flashes on a local-only
+  // install; `cloudAvailable` treats an older sidecar with no `enabled` field as on.
+  if (!cloudAvailable(status)) return null;
   return (
     <div className="space-y-1.5">
       <button

@@ -267,6 +267,15 @@ def test_sender_rule_matching():
 
 def test_account_profile_refreshes_in_place(secrets, monkeypatch):
     from coworker import cloud
+    from coworker.config import Config, load_config
+
+    # Refreshing a managed profile goes through the cloud broker, and the cloud ships off
+    # — so this test has to opt in, the same way a user would.
+    _real = load_config
+    monkeypatch.setattr(
+        "coworker.config.load_config",
+        lambda *a, **k: Config(**{**vars(_real(*a, **k)), "cloud_enabled": True}),
+    )
 
     secrets.put(
         cloud.CLOUD_AUTH_PROFILE, {"access_token": "jwt", "expires": time.time() + 3600}

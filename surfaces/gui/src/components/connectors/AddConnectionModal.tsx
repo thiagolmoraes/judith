@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  cloudAvailable,
   connectConnector,
   connectManaged,
   connectMcpBacked,
@@ -46,13 +47,17 @@ export function AddConnectionModal({
   // with manual fields alongside (jira, asana) it's a second mode; alone (monday)
   // it IS the connect flow.
   const mcpBacked = !!c.mcp;
-  const twoModes =
+  // The managed one-click needs OpenWorker Cloud. With it switched off the pane would be
+  // marketing copy above a button that can't work, so drop the tab entirely — except for
+  // MCP-backed connectors, whose one-click is local OAuth and needs no cloud at all.
+  const managedOneClick =
     c.name === "slack" ||
     c.name === "hubspot" ||
     c.name === "github" ||
     c.name === "notion" ||
-    c.name === "attio" ||
-    (mcpBacked && c.fields.length > 0);
+    c.name === "attio";
+  const twoModes =
+    (managedOneClick && cloudAvailable(cloud)) || (mcpBacked && c.fields.length > 0);
   // A third mode wherever the user can register their own OAuth app: one-click without a
   // cloud sign-in. Offered alongside the other two rather than replacing either.
   const hasByo = byoSupported(c.name);

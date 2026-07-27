@@ -31,7 +31,10 @@ def secrets(tmp_path, monkeypatch):
 
 @pytest.fixture
 def config():
+    # Explicitly on: `cloud_enabled` defaults to False, and this module exercises the
+    # cloud paths themselves. The off case is covered in test_cloud_disabled.py.
     return Config(
+        cloud_enabled=True,
         cloud_base_url="https://cloud.test",
         cloud_auth_domain="tenant.auth0.test",
         cloud_client_id="client123",
