@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useI18n } from "../i18n/useLocale";
 import type { ApprovalDecision, Item } from "../types";
 import { humanizeApprovalTitle, type HumanLine } from "../humanize";
 import { Icon } from "./Icon";
@@ -187,8 +188,9 @@ export function ApprovalCard({
   runTask?: { id: string; title: string } | null;
   compact?: boolean;
 }) {
+  const { t } = useI18n();
   const [peek, setPeek] = useState(false);
-  const title = humanizeApprovalTitle(item.name, item.args);
+  const title = humanizeApprovalTitle(item.name, item.args, t);
   const scope = scopeNote(item.name, item.args, item.category);
   const grants = item.name === "create_scheduled_task" ? permissionLines(item.args) : [];
   // "requires approval" is the engine's default boilerplate — only surface a real reason.

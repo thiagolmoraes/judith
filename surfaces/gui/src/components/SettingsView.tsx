@@ -61,11 +61,15 @@ const BTN_ACCENT = "text-[12.5px] px-3 py-2 rounded-lg bg-accent text-white shri
 const BTN_BORDERED =
   "text-[12.5px] px-3 py-2 rounded-lg border border-line bg-paper hover:border-lineStrong shrink-0";
 
-const SET_TABS: { key: SetTab; label: string; icon: "sliders" | "code" | "mic" | "sparkle" }[] = [
-  { key: "appearance", label: "General", icon: "sliders" },
-  { key: "models", label: "Models", icon: "code" },
-  { key: "voice", label: "Voice input", icon: "mic" },
-  { key: "personas", label: "Personas", icon: "sparkle" },
+const SET_TABS: {
+  key: SetTab;
+  labelKey: string;
+  icon: "sliders" | "code" | "mic" | "sparkle";
+}[] = [
+  { key: "appearance", labelKey: "settings.general.title", icon: "sliders" },
+  { key: "models", labelKey: "nav.models", icon: "code" },
+  { key: "voice", labelKey: "nav.voice", icon: "mic" },
+  { key: "personas", labelKey: "nav.personas", icon: "sparkle" },
 ];
 
 export function SettingsView({
@@ -75,11 +79,12 @@ export function SettingsView({
   initialTab?: SetTab;
   onOpenPersona?: (id: string) => void;
 }) {
+  const { t: tt } = useI18n();
   // Personas is flag-gated (hidden for launch) — filter the tab AND coerce a stale
   // deep-link to it (openSettings("personas") callers) so the page never opens on a
   // section with no nav entry.
   const personas = showPersonas();
-  const tabs = personas ? SET_TABS : SET_TABS.filter((t) => t.key !== "personas");
+  const tabs = personas ? SET_TABS : SET_TABS.filter((x) => x.key !== "personas");
   const wanted = initialTab && (personas || initialTab !== "personas") ? initialTab : "appearance";
   const [tab, setTab] = useState<SetTab>(wanted);
 
@@ -87,20 +92,20 @@ export function SettingsView({
     <main className="flex-1 min-w-0 flex bg-paper">
       <nav className="page-subnav w-[208px] shrink-0 border-r border-line bg-panel/40 px-3 py-4">
         <div className="px-2 text-[13.5px] font-semibold mb-3 flex items-center gap-2">
-          <Icon name="gear" size={16} /> Settings
+          <Icon name="gear" size={16} /> {tt("nav.settings")}
         </div>
-        {tabs.map((t) => {
-          const active = tab === t.key;
+        {tabs.map((tab_) => {
+          const active = tab === tab_.key;
           return (
             <button
-              key={t.key}
+              key={tab_.key}
               className={
                 "w-full text-left px-2.5 py-2 rounded-lg text-[13px] flex items-center gap-2 " +
                 (active ? "bg-paper text-accent font-medium" : "text-muted hover:bg-paper hover:text-ink")
               }
-              onClick={() => setTab(t.key)}
+              onClick={() => setTab(tab_.key)}
             >
-              <Icon name={t.icon} size={15} /> {t.label}
+              <Icon name={tab_.icon} size={15} /> {tt(tab_.labelKey)}
             </button>
           );
         })}
@@ -112,10 +117,7 @@ export function SettingsView({
             <AppearanceSection />
           ) : tab === "models" ? (
             <section>
-              <PanelHead
-                title="Models"
-                sub="Providers and the models offered in the composer's picker. Keys are stored only on this computer."
-              />
+              <PanelHead title={tt("nav.models")} sub={tt("settings.models.sub")} />
               <ModelsTab />
               {/* Token savings is model-spend behavior, so it lives here (UX-021),
                   not under General. */}
@@ -144,6 +146,7 @@ const formatBytes = (bytes: number) => {
 };
 
 function VoiceInputSection() {
+  const { t } = useI18n();
   const [status, setStatus] = useState<DictationStatus | null>(null);
   const [progress, setProgress] = useState<DictationDownloadProgress | null>(null);
   const [phase, setPhase] = useState<"idle" | "downloading" | "verifying" | "testing" | "transcribing">("idle");
@@ -266,18 +269,19 @@ function VoiceInputSection() {
       />
 
       {!desktop ? (
-        <div className={CARD + " p-4 text-[13px] text-muted"}>Voice Input setup is available in the OpenWorker desktop app.</div>
+        <div className={CARD + " p-4 text-[13px] text-muted"}>{t("settings.voice.desktopOnly")}</div>
       ) : (
         <div className="space-y-4">
           <div className="rounded-xl border border-green-200 bg-green-50/70 px-4 py-3 text-[12.5px] text-green-800">
-            <span className="font-medium">Private by design.</span> Audio is held in memory only while you record and is transcribed locally.
+            <span className="font-medium">{t("settings.voice.private")}</span>{" "}
+            {t("settings.voice.privateDetail")}
           </div>
 
           <div className={CARD}>
             <div className="p-4 flex items-start gap-3">
               <Icon name="code" size={18} className="text-accent mt-0.5" />
               <div className="min-w-0 flex-1">
-                <div className="text-[13.5px] font-medium">This device</div>
+                <div className="text-[13.5px] font-medium">{t("settings.voice.thisDevice")}</div>
                 <div className="text-[12px] text-muted mt-1">{status?.device_summary || "Checking compatibility…"}</div>
                 {status?.compatibility_reason && <div className="text-[12px] text-red-600 mt-1.5">{status.compatibility_reason}</div>}
               </div>
@@ -290,8 +294,8 @@ function VoiceInputSection() {
             <div className="border-t border-line bg-paper/50 px-4 py-3 grid grid-cols-2 gap-3 text-[12px] text-muted">
               <div><span className="block text-ink font-medium">Mac</span>macOS 12+ · Apple Silicon M1+</div>
               <div><span className="block text-ink font-medium">Windows</span>Windows 10 22H2/11 · x64</div>
-              <div><span className="block text-ink font-medium">Memory</span>8 GB recommended</div>
-              <div><span className="block text-ink font-medium">Processor</span>4 CPU cores recommended</div>
+              <div><span className="block text-ink font-medium">{t("settings.voice.memory")}</span>8 GB recommended</div>
+              <div><span className="block text-ink font-medium">{t("settings.voice.processor")}</span>4 CPU cores recommended</div>
             </div>
           </div>
 
@@ -306,16 +310,16 @@ function VoiceInputSection() {
               </div>
               {status?.model_verified ? (
                 <>
-                  <span className="text-[11.5px] px-2 py-1 rounded-full bg-green-50 text-green-700">Verified</span>
-                  <button className={BTN_BORDERED} onClick={() => void repair()}>Repair</button>
-                  <button className="text-[12px] text-red-600 px-2 py-2" onClick={() => void remove()}>Delete</button>
+                  <span className="text-[11.5px] px-2 py-1 rounded-full bg-green-50 text-green-700">{t("settings.voice.verified")}</span>
+                  <button className={BTN_BORDERED} onClick={() => void repair()}>{t("settings.voice.repair")}</button>
+                  <button className="text-[12px] text-red-600 px-2 py-2" onClick={() => void remove()}>{t("common.delete")}</button>
                 </>
               ) : downloading ? (
-                <button className={BTN_BORDERED} onClick={() => void cancelDownload()}>Cancel</button>
+                <button className={BTN_BORDERED} onClick={() => void cancelDownload()}>{t("common.cancel")}</button>
               ) : phase === "verifying" ? (
-                <span className="text-[12px] text-muted">Verifying…</span>
+                <span className="text-[12px] text-muted">{t("settings.voice.verifying")}</span>
               ) : (
-                <button className={BTN_ACCENT} disabled={!status?.supported} onClick={() => void download()}>Download model</button>
+                <button className={BTN_ACCENT} disabled={!status?.supported} onClick={() => void download()}>{t("settings.voice.downloadModel")}</button>
               )}
             </div>
             {downloading && (
@@ -330,7 +334,7 @@ function VoiceInputSection() {
             <div className="p-4 flex items-center gap-3">
               <Icon name="mic" size={18} className={ready ? "text-green-600" : "text-muted"} />
               <div className="min-w-0 flex-1">
-                <div className="text-[13.5px] font-medium">Microphone test</div>
+                <div className="text-[13.5px] font-medium">{t("settings.voice.micTest")}</div>
                 <div className="text-[12px] text-muted mt-0.5">
                   {ready ? "Your microphone and local transcription engine are working." : "Record a short phrase to enable the composer microphone."}
                 </div>
@@ -355,6 +359,7 @@ function VoiceInputSection() {
 // entry point to the Persona Gallery (a screen-sized modal — installs finish back
 // here, disabled pending consent; a gallery install re-mounts the list in place).
 function PersonasSection({ onOpenPersona }: { onOpenPersona?: (id: string) => void }) {
+  const { t } = useI18n();
   const [galleryBump, setGalleryBump] = useState(0);
   const [galleryOpen, setGalleryOpen] = useState(false);
 
@@ -372,12 +377,12 @@ function PersonasSection({ onOpenPersona }: { onOpenPersona?: (id: string) => vo
       >
         <Icon name="sparkle" size={16} className="text-accent shrink-0" />
         <span className="min-w-0 flex-1">
-          <span className="block text-[13.5px] font-medium">Browse the Persona Gallery</span>
+          <span className="block text-[13.5px] font-medium">{t("settings.personas.browse")}</span>
           <span className="block text-[12px] text-muted">
             Curated coworkers from the OpenWorker team — see what each can do before installing.
           </span>
         </span>
-        <span className="text-[12.5px] text-accent shrink-0">Open →</span>
+        <span className="text-[12.5px] text-accent shrink-0">{t("common.open")}</span>
       </button>
       {galleryOpen && (
         <GalleryModal
@@ -411,6 +416,7 @@ function LanguageCard() {
 
 // -- Appearance + app behaviour ------------------------------------------------
 function AppearanceSection() {
+  const { t } = useI18n();
   const [theme, setTheme] = useThemePref();
   const [autostart, setAuto] = useState(false);
   const [keepAwake, setKeep] = useState(false);
@@ -432,22 +438,22 @@ function AppearanceSection() {
 
   return (
     <section>
-      <PanelHead title="General" sub="How OpenWorker looks and behaves on this machine." />
+      <PanelHead title={t("settings.general.title")} sub={t("settings.general.sub")} />
 
       <div className={CARD + " p-4 mb-4"}>
-        <div className={FIELD_LABEL}>Theme</div>
+        <div className={FIELD_LABEL}>{t("settings.theme")}</div>
         <SegmentedRadio
           label="Appearance"
           value={theme}
           options={[
-            { value: "light" as const, label: "Light" },
-            { value: "dark" as const, label: "Dark" },
-            { value: "auto" as const, label: "Auto" },
+            { value: "light" as const, label: t("settings.theme.light") },
+            { value: "dark" as const, label: t("settings.theme.dark") },
+            { value: "auto" as const, label: t("settings.theme.auto") },
           ]}
           onChange={setTheme}
           testIdPrefix="theme"
         />
-        <div className={FIELD_HELP}>Auto follows your Mac&rsquo;s appearance.</div>
+        <div className={FIELD_HELP}>{t("settings.theme.help")}</div>
       </div>
 
       <LanguageCard />
@@ -460,19 +466,19 @@ function AppearanceSection() {
 
       {desktop && (
         <div className={CARD + " p-4"}>
-          <div className={FIELD_LABEL + " mb-2.5"}>Always-on</div>
+          <div className={FIELD_LABEL + " mb-2.5"}>{t("settings.alwaysOn")}</div>
           <label className="flex items-start gap-3 py-2">
             <input type="checkbox" className="mt-0.5" checked={autostart} onChange={(e) => toggleAuto(e.target.checked)} />
             <span>
-              <span className="block text-[13px] text-ink">Open at login</span>
-              <span className="block text-[12px] text-muted">Launch OpenWorker automatically when you sign in.</span>
+              <span className="block text-[13px] text-ink">{t("settings.openAtLogin")}</span>
+              <span className="block text-[12px] text-muted">{t("settings.openAtLogin.help")}</span>
             </span>
           </label>
           <label className="flex items-start gap-3 py-2">
             <input type="checkbox" className="mt-0.5" checked={keepAwake} onChange={(e) => toggleKeep(e.target.checked)} />
             <span>
-              <span className="block text-[13px] text-ink">Keep this system awake</span>
-              <span className="block text-[12px] text-muted">Prevent idle sleep so scheduled tasks fire on time.</span>
+              <span className="block text-[13px] text-ink">{t("settings.keepAwake")}</span>
+              <span className="block text-[12px] text-muted">{t("settings.keepAwake.help")}</span>
             </span>
           </label>
         </div>
@@ -482,20 +488,21 @@ function AppearanceSection() {
           every build, the browser dev shell runs the same first-run flow) and, on
           desktop, the manual update check (launch also checks automatically). */}
       <div className={CARD + " p-4 mt-4"}>
-        <div className={FIELD_LABEL + " mb-2"}>Setup &amp; updates</div>
+        <div className={FIELD_LABEL + " mb-2"}>{t("settings.setupUpdates")}</div>
         <div className="flex items-center gap-2">
           <button className={BTN_BORDERED} onClick={runSetupAgain}>
             Run setup again
           </button>
           {desktop && <UpdateInline />}
         </div>
-        <div className={FIELD_HELP}>Replays the first-run setup: model, first automation, tips.</div>
+        <div className={FIELD_HELP}>{t("settings.runSetupAgain.help")}</div>
       </div>
     </section>
   );
 }
 
 function TrustedWorkspacesCard() {
+  const { t } = useI18n();
   const [workspaces, setWorkspaces] = useState<WorkspaceCommandTrust[] | null>(null);
 
   const refresh = () =>
@@ -515,14 +522,14 @@ function TrustedWorkspacesCard() {
 
   return (
     <div className={CARD + " p-4 mb-4"} data-testid="trusted-workspaces-card">
-      <div className={FIELD_LABEL}>Trusted workspaces</div>
+      <div className={FIELD_LABEL}>{t("settings.trustedWorkspaces")}</div>
       <div className={FIELD_HELP}>
         Trusted projects may manage their command allowances in .coworker/config.toml.
       </div>
       {workspaces === null ? (
-        <div className="text-[12px] text-muted mt-3">Loading…</div>
+        <div className="text-[12px] text-muted mt-3">{t("common.loading")}</div>
       ) : workspaces.length === 0 ? (
-        <div className="text-[12px] text-muted mt-3">No workspaces are trusted.</div>
+        <div className="text-[12px] text-muted mt-3">{t("settings.trustedWorkspaces.empty")}</div>
       ) : (
         <div className="mt-3 divide-y divide-line">
           {workspaces.map((workspace) => (
@@ -617,6 +624,7 @@ function UpdateInline() {
 // then this card is the user's dial: attach thresholds + the fallback for models
 // without native PDF support.
 function TokenSavingsCard() {
+  const { t } = useI18n();
   const [pdf, setPdf] = useState<PdfSettings | null>(null);
 
   useEffect(() => {
@@ -639,7 +647,7 @@ function TokenSavingsCard() {
   if (!pdf) return null;
   return (
     <div className={CARD + " p-4 mb-4"} data-testid="token-savings-card">
-      <div className={FIELD_LABEL}>Token savings</div>
+      <div className={FIELD_LABEL}>{t("settings.tokenSavings")}</div>
       <div className={FIELD_HELP}>
         PDF attachments travel with every turn of a conversation, so large documents multiply
         what you spend on tokens.
@@ -666,7 +674,7 @@ function TokenSavingsCard() {
 
       <div className="mt-3 flex items-center gap-5">
         <label className="flex items-center gap-2.5">
-          <span className="text-[13px] text-ink">Max pages</span>
+          <span className="text-[13px] text-ink">{t("settings.maxPages")}</span>
           <input
             type="number"
             min={1}
@@ -678,7 +686,7 @@ function TokenSavingsCard() {
           />
         </label>
         <label className="flex items-center gap-2.5">
-          <span className="text-[13px] text-ink">Max size</span>
+          <span className="text-[13px] text-ink">{t("settings.maxSize")}</span>
           <input
             type="number"
             min={1}
@@ -700,6 +708,7 @@ function TokenSavingsCard() {
 }
 
 function SidebarCard() {
+  const { t } = useI18n();
   const [peek, setPeek] = useState<number | null>(null);
 
   useEffect(() => {
@@ -717,9 +726,9 @@ function SidebarCard() {
   if (peek === null) return null;
   return (
     <div className={CARD + " p-4 mb-4"}>
-      <div className={FIELD_LABEL}>Sidebar</div>
+      <div className={FIELD_LABEL}>{t("settings.sidebar")}</div>
       <label className="flex items-center gap-3 mt-2.5">
-        <span className="text-[13px] text-ink">Conversations shown per coworker</span>
+        <span className="text-[13px] text-ink">{t("settings.sessionsPeek")}</span>
         <input
           type="number"
           min={1}
