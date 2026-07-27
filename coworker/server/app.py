@@ -1089,6 +1089,10 @@ def create_app(manager: SessionManager) -> FastAPI:
         from ..config import load_config
 
         out = cloud.begin_login(load_config())
+        if not out.get("ok", True):
+            # No authorize_url to open — e.g. the cloud is switched off. Refuse cleanly
+            # rather than raising KeyError into a 500.
+            return out
         webbrowser.open(out["authorize_url"])
         return {"ok": True, "authorize_url": out["authorize_url"]}
 

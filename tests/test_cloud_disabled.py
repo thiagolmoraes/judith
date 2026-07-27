@@ -151,3 +151,41 @@ def test_local_paths_are_unaffected(client):
 
     byo = client.get("/v1/connectors/byo").json()
     assert "redirect_uri" in byo  # the BYO pane still has what it needs
+
+
+def test_no_cloud_route_500s_when_disabled(tmp_path, monkeypatch):
+    """Every cloud route must refuse cleanly with the cloud off.
+
+    Regression: /v1/cloud/login read out["authorize_url"] unconditionally, so a refusal
+    (which carries no such key) surfaced as a 500 with a traceback instead of a plain
+    "unavailable". A per-route sweep is cheaper than remembering to check each new one.
+    """
+    monkeypatch.setenv("COWORKER_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setattr("webbrowser.open", lambda _u: True)
+    manager = SessionManager(workspace=tmp_path)
+    # raise_server_exceptions=False so a handler crash shows up as 500 rather than
+    # propagating into the test as the original exception.
+    with TestClient(create_app(manager), raise_server_exceptions=False) as c:
+        routes = [
+            ("GET", "/v1/cloud/status"),
+            ("POST", "/v1/cloud/login"),
+            ("POST", "/v1/cloud/logout"),
+            ("GET", "/v1/cloud/gallery"),
+            ("GET", "/v1/cloud/gallery/some-slug"),
+            ("POST", "/v1/connectors/notion/connect-managed"),
+        ]
+        for method, path in routes:
+            resp = c.request(method, path)
+            assert resp.status_code < 500, f"{method} {path} -> {resp.status_code}"
+
+
+def test_login_route_refuses_without_opening_a_browser(tmp_path, monkeypatch):
+    monkeypatch.setenv("COWORKER_STATE_DIR", str(tmp_path / "state"))
+    opened: list[str] = []
+    monkeypatch.setattr("webbrowser.open", lambda url: opened.append(url))
+    manager = SessionManager(workspace=tmp_path)
+    with TestClient(create_app(manager)) as c:
+        body = c.post("/v1/cloud/login").json()
+    assert body["ok"] is False
+    assert "disabled" in body["error"]
+    assert opened == []
