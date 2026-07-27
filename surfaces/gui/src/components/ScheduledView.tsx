@@ -270,7 +270,7 @@ function NewAutomationForm({
         >
           {busy ? t("sched.creating") : t("sched.createAutomation")}
         </button>
-        <button className="link" onClick={onCancel}>cancel</button>
+        <button className="link" onClick={onCancel}>{t("common.cancelLower")}</button>
       </div>
     </div>
   );
@@ -372,7 +372,7 @@ function TaskDetail({
   return (
     <Shell>
       <button className="text-[13px] text-muted hover:text-ink mb-3" onClick={onBack}>
-        ← Automations
+        {t("sched.backToAutomations")}
       </button>
       <div className="sched-detail">
         <div className="sched-detail-head">
@@ -392,12 +392,12 @@ function TaskDetail({
                 <button className="btn-primary sm" disabled={saving || !title.trim() || !instructions.trim()} onClick={saveEdit}>
                   {saving ? t("common.saving") : t("common.save")}
                 </button>
-                <button className="link" onClick={() => setEditing(false)}>cancel</button>
+                <button className="link" onClick={() => setEditing(false)}>{t("common.cancelLower")}</button>
               </>
             ) : (
               <>
                 <button className="btn-primary sm" onClick={() => onRunNow(id, task.title)}>
-                  ▶ Run now
+                  {t("sched.runNow")}
                 </button>
                 <button className="btn sm" onClick={startEdit}>{t("common.edit")}</button>
                 <button className="btn sm danger-btn" onClick={remove}>
@@ -497,7 +497,7 @@ function TaskDetail({
             <div className="sched-run-row">
               <span>
                 {seenMark !== null && r.started_at > seenMark && (
-                  <span className="run-new-pill" data-testid="run-new">new</span>
+                  <span className="run-new-pill" data-testid="run-new">{t("sched.new2")}</span>
                 )}
                 {fmt(r.started_at)} · <span className={"run-" + r.status}>{r.status}</span> · {r.trigger}
                 {r.artifacts.length > 0 && <span className="dim"> · {r.artifacts.length} file(s)</span>}

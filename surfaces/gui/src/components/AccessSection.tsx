@@ -214,14 +214,14 @@ export function AccessSection({
   const names = live.map((c) => labelFor(c.connector, byName));
   const sourcesPart =
     names.length === 0
-      ? "no sources"
+      ? t("access.noSources")
       : names.length <= 2
         ? names.join(", ")
         : `${names.slice(0, 2).join(", ")} +${names.length - 2}`;
   const folderPart = projectScoped
     ? baseName(workspace || roots.find((r) => r.primary)?.path || "") || null
     : roots.length > 0
-      ? `${roots.length} folder${roots.length === 1 ? "" : "s"}`
+      ? t("count.folders", { count: roots.length })
       : null;
   const summary = folderPart ? `${sourcesPart} · ${folderPart}` : sourcesPart;
 

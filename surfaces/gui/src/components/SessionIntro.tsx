@@ -109,7 +109,7 @@ export function SessionIntro({
               {t("intro.hubspot.sub")}
             </span>
           </span>
-          <span className="task-card-act">{hubspotReady ? "Start →" : "Configure ›"}</span>
+          <span className="task-card-act">{hubspotReady ? t("common.start") : t("common.configureArrow")}</span>
         </button>
 
         <button
@@ -125,7 +125,7 @@ export function SessionIntro({
               {t("intro.ghslack.sub")}
             </span>
           </span>
-          <span className="task-card-act">{ghSlackReady ? "Start →" : "Configure ›"}</span>
+          <span className="task-card-act">{ghSlackReady ? t("common.start") : t("common.configureArrow")}</span>
         </button>
       </div>
     </div>

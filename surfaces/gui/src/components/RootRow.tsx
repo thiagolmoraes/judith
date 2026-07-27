@@ -49,7 +49,9 @@ export function RootRow({
         className={"root-access" + (root.writable ? " rw" : " ro")}
         onClick={() => onToggle(root)}
         disabled={busy || root.primary}
-        title={root.primary ? "The main workspace is always read-write" : "Toggle read-only / read-write"}
+        title={
+          root.primary ? t("root.mainAlwaysRW") : t("root.toggleRW")
+        }
       >
         {root.writable ? t("access.readWrite") : t("access.readOnly")}
       </button>

@@ -25,15 +25,15 @@ import { SelectMenu } from "./SelectMenu";
 
 // "When" = day choice × free time (owner call 2026-07-11); the cron assembles from the two.
 const DAYS: Record<string, { label: string; dow: string }> = {
-  mon: { label: "Mondays", dow: "1" },
-  tue: { label: "Tuesdays", dow: "2" },
-  wed: { label: "Wednesdays", dow: "3" },
-  thu: { label: "Thursdays", dow: "4" },
-  fri: { label: "Fridays", dow: "5" },
-  sat: { label: "Saturdays", dow: "6" },
-  sun: { label: "Sundays", dow: "0" },
-  weekdays: { label: "Weekdays", dow: "1-5" },
-  daily: { label: "Every day", dow: "*" },
+  mon: { label: "day.mon", dow: "1" },
+  tue: { label: "day.tue", dow: "2" },
+  wed: { label: "day.wed", dow: "3" },
+  thu: { label: "day.thu", dow: "4" },
+  fri: { label: "day.fri", dow: "5" },
+  sat: { label: "day.sat", dow: "6" },
+  sun: { label: "day.sun", dow: "0" },
+  weekdays: { label: "sched.weekdays", dow: "1-5" },
+  daily: { label: "sched.everyDay", dow: "*" },
 };
 // §30 connect-state spinner (the app has no other spinner — waits elsewhere are label swaps).
 // Exported for Onboarding page 2's sign-in button (same states, same look).
@@ -82,6 +82,7 @@ const TPL_KEY: Record<string, string> = {
   "Pipeline and deal activity": "tpl.why.pipelineActivity",
   "What arrived overnight": "tpl.why.overnight",
   "Your unread email": "tpl.why.unreadEmail",
+  "Today's meetings and gaps": "tpl.why.meetingsGaps",
   Weekly: "sched.weekly",
   Daily: "sched.daily",
   Weekdays: "sched.weekdays",
@@ -364,7 +365,7 @@ export function AutomationQuickstart({
                 return (
                   <span
                     key={c.name}
-                    title={`${cs?.title || c.name} — ${on ? "connected" : "not connected yet"}`}
+                    title={`${cs?.title || c.name} — ${on ? i18n("quickstart.connected") : i18n("quickstart.notConnectedYet")}`}
                     style={on ? undefined : { filter: "grayscale(1)", opacity: 0.55 }}
                   >
                     {cs ? (
@@ -398,7 +399,10 @@ export function AutomationQuickstart({
             </span>
             <span className="text-[14px] font-semibold">{tpl(picked.title)}</span>
             <span className="ml-auto text-[12px] text-faint max-sm:hidden">
-              {picked.conns.length ? "Connections, delivery & schedule" : "Delivery & schedule"} ·{" "}
+              {picked.conns.length
+                ? i18n("quickstart.summaryFull")
+                : i18n("quickstart.summaryShort")}{" "}
+              ·{" "}
               {tpl(picked.cadence)}
             </span>
           </div>
@@ -414,13 +418,13 @@ export function AutomationQuickstart({
                     <span className="block text-[11.5px] text-faint">{tpl(why)}</span>
                   </span>
                   {c?.connected ? (
-                    <span className="text-[12.5px] text-ok">✓ Connected</span>
+                    <span className="text-[12.5px] text-ok">{i18n("quickstart.connectedCheck")}</span>
                   ) : flow ? (
                     <span className="inline-flex items-center gap-2 text-[12px] text-muted">
                       <Spinner />
                       {flow.phase === "opening"
-                        ? "Opening browser…"
-                        : `Waiting for ${c?.title || name}…`}
+                        ? i18n("quickstart.openingBrowser")
+                        : i18n("quickstart.waitingFor", { name: c?.title || name })}
                     </span>
                   ) : !cloudAvailable(cloud) ? (
                     /* This quickstart only offers managed (broker) connects, which need the
@@ -547,9 +551,9 @@ export function AutomationQuickstart({
               <div className="flex gap-2">
                 <div className="flex-1 min-w-0">
                   <SelectMenu
-                    ariaLabel="Day"
+                    ariaLabel={i18n("quickstart.day")}
                     value={day}
-                    options={Object.entries(DAYS).map(([k, v]) => ({ value: k, label: v.label }))}
+                    options={Object.entries(DAYS).map(([k, v]) => ({ value: k, label: i18n(v.label) }))}
                     onChange={setDay}
                   />
                 </div>
@@ -565,11 +569,11 @@ export function AutomationQuickstart({
                 <>
                   <label className={label}>{i18n("quickstart.deliverTo")}</label>
                   <SelectMenu
-                    ariaLabel="Deliver to"
+                    ariaLabel={i18n("quickstart.deliverTo")}
                     value={deliver}
                     options={[
                       { value: "app", label: i18n("quickstart.deliver.inApp") },
-                      { value: "slack", label: "Slack DM (connect Slack later)" },
+                      { value: "slack", label: i18n("quickstart.slackDmLater") },
                     ]}
                     onChange={(v) => setDeliver(v as "app" | "slack")}
                   />
