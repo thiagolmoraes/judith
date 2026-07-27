@@ -148,8 +148,8 @@ _MESSAGES: dict[str, dict[str, str]] = {
         "pt-BR": "private_key é obrigatória",
     },
     "error.privateKeyUnusable": {
-        "en": "private key not usable: {reason}",
-        "pt-BR": "chave privada inutilizável: {reason}",
+        "en": "that private key can't be read — paste the whole .pem, including the BEGIN and END lines",
+        "pt-BR": "não foi possível ler essa chave privada — cole o .pem inteiro, incluindo as linhas BEGIN e END",
     },
     "error.scopesShape": {
         "en": "scopes must be a list or a string",
