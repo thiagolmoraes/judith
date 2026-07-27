@@ -467,10 +467,19 @@ export interface Connector {
 // --- OpenWorker Cloud (optional sign-in; manual token paste always works) ---
 
 export interface CloudStatus {
+  /** Whether this install talks to OpenWorker Cloud at all (`cloud_enabled` in config).
+   * Off ⇒ never offer sign-in: the routes refuse, so a prompt would be a dead end. */
+  enabled?: boolean;
   signed_in: boolean;
   account: string;
   user_id: string;
   telemetry_enabled?: boolean; // Phase 5 opt-out; signed-out users send nothing regardless
+}
+
+/** Whether to show cloud sign-in affordances. Treats a missing `enabled` as on, so an
+ * older sidecar that predates the flag keeps its current behavior. */
+export function cloudAvailable(status: CloudStatus | null): boolean {
+  return status !== null && status.enabled !== false;
 }
 
 /** Flip the product-telemetry preference (local; only meaningful when signed in). */

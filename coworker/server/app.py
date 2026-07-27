@@ -1050,8 +1050,21 @@ def create_app(manager: SessionManager) -> FastAPI:
     @app.get("/v1/cloud/status")
     def cloud_status() -> dict[str, Any]:
         from .. import cloud
+        from ..config import load_config
 
+        enabled = load_config().cloud_enabled
+        if not enabled:
+            # Report signed-out rather than the stored session: with the cloud off no
+            # token is issued anyway, and the GUI keys its sign-in prompts off this.
+            return {
+                "enabled": False,
+                "signed_in": False,
+                "account": "",
+                "user_id": "",
+                "telemetry_enabled": False,
+            }
         return {
+            "enabled": True,
             **cloud.status(manager.secrets),
             "telemetry_enabled": cloud.telemetry_enabled(manager.secrets),
         }
@@ -1076,6 +1089,10 @@ def create_app(manager: SessionManager) -> FastAPI:
         from ..config import load_config
 
         out = cloud.begin_login(load_config())
+        if not out.get("ok", True):
+            # No authorize_url to open — e.g. the cloud is switched off. Refuse cleanly
+            # rather than raising KeyError into a 500.
+            return out
         webbrowser.open(out["authorize_url"])
         return {"ok": True, "authorize_url": out["authorize_url"]}
 

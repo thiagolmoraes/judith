@@ -82,6 +82,11 @@ def begin_login(config: Config) -> dict[str, Any]:
     desktop shell binds the sidecar to a RANDOM free port. This shipped once
     as "Firefox can't connect to 127.0.0.1:8765" right after Auth0 finished.
     """
+    # Sign-in is the one cloud entry point with no token yet, so the fresh_access_token
+    # chokepoint can't cover it — refuse here too, or the route would still work for
+    # anyone calling it directly with the cloud switched off.
+    if not config.cloud_enabled:
+        return {"ok": False, "error": "OpenWorker Cloud is disabled"}
     verifier = _b64url(_secrets.token_bytes(48))
     challenge = _b64url(hashlib.sha256(verifier.encode()).digest())
     port = os.environ.get("COWORKER_PORT") or config.port
@@ -226,7 +231,15 @@ def logout(secrets: SecretStore) -> dict[str, Any]:
 
 def fresh_access_token(secrets: SecretStore, config: Config) -> Optional[str]:
     """Valid cloud session token, silently refreshed near expiry; None when
-    signed out or the session can't be renewed (GUI shows "sign in again")."""
+    signed out or the session can't be renewed (GUI shows "sign in again").
+
+    Also None when the cloud is switched off, which is the single chokepoint that keeps a
+    local-only install local: every cloud caller — telemetry, managed connect, the relay,
+    GitHub installation tokens — already treats a missing token as "not available", so one
+    check here disables all of them without touching their code paths.
+    """
+    if not config.cloud_enabled:
+        return None
     profile = secrets.get(CLOUD_AUTH_PROFILE) or {}
     if not profile.get("access_token"):
         return None
