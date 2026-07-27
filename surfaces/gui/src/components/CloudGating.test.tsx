@@ -101,8 +101,11 @@ describe("cloud sign-in surfaces", () => {
 
     for (const [path, load] of Object.entries(sources)) {
       if (path.includes(".test.")) continue;
-      const text = (await load()) as string;
-      if (/on this Mac/.test(text)) offenders.push(path);
+      // Whitespace-insensitive: JSX wraps prose across lines, so "stay on\n this Mac"
+      // is one sentence to a reader and two lines to a naive regex. Both live instances
+      // were split exactly that way and a line-oriented search missed them.
+      const text = ((await load()) as string).replace(/\s+/g, " ");
+      if (/\bthis Mac\b/.test(text)) offenders.push(path);
     }
 
     expect(offenders, `platform-specific copy: ${offenders}`).toEqual([]);

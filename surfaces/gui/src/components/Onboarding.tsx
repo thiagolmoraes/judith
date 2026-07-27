@@ -311,7 +311,7 @@ export function Onboarding({ onDone }: { onDone: (next?: "work" | "gallery" | "a
             </div>
             <p className="text-[11px] text-faint mt-3">
               30+ more tools on the Connectors page — add or remove anytime. Tokens stay on
-              this Mac.
+              this device.
             </p>
           </section>
         )}

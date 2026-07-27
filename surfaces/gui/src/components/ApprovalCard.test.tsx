@@ -110,7 +110,7 @@ describe("ApprovalCard — §35 shapes", () => {
     expect(onApprove).toHaveBeenCalledWith("once");
   });
 
-  it("send_file gets the full external card: destination title, file chip, leaves-the-Mac note", () => {
+  it("send_file gets the full external card: destination title, file chip, leaves-the-device note", () => {
     render(
       <ApprovalCard
         item={sendApproval({
@@ -121,7 +121,7 @@ describe("ApprovalCard — §35 shapes", () => {
       />,
     );
     expect(screen.getByText(/Send a file to/).textContent).toContain("C9");
-    expect(screen.getByText(/leaves this Mac → Slack/)).toBeTruthy();
+    expect(screen.getByText(/leaves this device → Slack/)).toBeTruthy();
     expect(screen.getByText(/report\.pdf/)).toBeTruthy();
     expect(screen.getByText(/here you go/)).toBeTruthy();
     expect(screen.getByText("Allow once")).toBeTruthy();
