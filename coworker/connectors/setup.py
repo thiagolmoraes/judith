@@ -52,8 +52,27 @@ def _mcp_tokens_present(secrets: SecretStore, name: str) -> bool:
     return has_tokens(name, secrets)
 
 
+def _translated_field(field: Any, locale: str) -> dict[str, Any]:
+    """A field's dict with its help text translated. `label` and `placeholder` are left
+    alone: they name the value to paste ("Bot User OAuth Token"), which the user is
+    copying out of the vendor's own English UI."""
+    from .catalog_i18n import translate as _tr
+
+    data = field.to_dict()
+    if data.get("help"):
+        data["help"] = _tr(data["help"], locale)
+    return data
+
+
 def connector_list(secrets: SecretStore) -> list[dict[str, Any]]:
     show_experimental = experimental_enabled(secrets)
+    # Translate at serialization, not in the descriptors: English stays the single place
+    # the copy is authored, and this is the one funnel every catalogue string passes
+    # through on its way to the GUI.
+    from ..i18n import current_locale
+    from .catalog_i18n import translate as _tr, translate_all as _tr_all
+
+    locale = current_locale()
     out: list[dict[str, Any]] = []
     for d in list_descriptors():
         # Experimental connectors are invisible (not just disabled) until the user opts in;
@@ -72,11 +91,11 @@ def connector_list(secrets: SecretStore) -> list[dict[str, Any]]:
             "name": d.name,
             "title": d.title,
             "icon": d.icon,
-            "blurb": d.blurb,
+            "blurb": _tr(d.blurb, locale),
             # Pre-connect detail page copy (UX-DECISIONS §38): About paragraph
             # (may be empty → GUI omits the group) + honest Access bullets.
-            "about": about_for(d.name),
-            "access": access_for(d.name),
+            "about": _tr(about_for(d.name), locale),
+            "access": _tr_all(access_for(d.name), locale),
             "auth": d.auth,
             "two_way": d.two_way,
             "channels": d.channels,
@@ -87,8 +106,8 @@ def connector_list(secrets: SecretStore) -> list[dict[str, Any]]:
             # MCP-backed one-click (vendor-hosted MCP server + local OAuth) —
             # distinct from `managed` (broker OAuth): no cloud sign-in needed.
             "mcp": bool(d.mcp_url),
-            "fields": [f.to_dict() for f in d.fields],
-            "instructions": d.instructions,
+            "fields": [_translated_field(f, locale) for f in d.fields],
+            "instructions": _tr_all(list(d.instructions or []), locale),
             "connected": connected,
             "account": profile.get("account"),
             "enabled": bool(profile.get("enabled", True)) and connected,
@@ -342,7 +361,10 @@ def connect_connector(
     raw = {f.key: _resolved(f) for f in d.fields}
     missing = [f.label for f in d.fields if f.required and not raw.get(f.key)]
     if missing:
-        return {"ok": False, "error": t("error.missingFields", fields=", ".join(missing))}
+        return {
+            "ok": False,
+            "error": t("error.missingFields", fields=", ".join(missing)),
+        }
 
     allowed = sorted(
         {u.strip() for u in raw.get("allowed_users", "").split(",") if u.strip()}
