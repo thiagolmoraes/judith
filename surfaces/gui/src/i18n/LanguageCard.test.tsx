@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { I18nProvider, useI18n } from "./useLocale";
 import { LOCALES, LOCALE_NAMES } from "./index";
 
@@ -97,30 +97,67 @@ describe("language picker", () => {
     });
   });
 
+  // These two assert an English result, which is also the pre-fetch default — so they
+  // have to prove the read actually COMPLETED, or they'd pass against a fetch that never
+  // resolves. Each holds the response open, checks a pt-BR control renders on the same
+  // deferred stub, then settles it and asserts English.
+  const deferred = <T,>() => {
+    let settle!: (value: T) => void;
+    let fail!: (reason: unknown) => void;
+    const promise = new Promise<T>((resolve, reject) => {
+      settle = resolve;
+      fail = reject;
+    });
+    return { promise, settle, fail };
+  };
+
   it("ignores an unknown stored locale rather than rendering blank", async () => {
-    stubFetch({ locale: "kl-GL" });
+    const gate = deferred<Response>();
+    vi.stubGlobal("fetch", vi.fn(() => gate.promise));
     render(
       <I18nProvider>
         <Picker />
       </I18nProvider>,
     );
-    await waitFor(() => expect(screen.getByTestId("sample").textContent).toBe("Cancel"));
+    await act(async () => {
+      gate.settle({ ok: true, json: async () => ({ locale: "kl-GL" }) } as Response);
+    });
+    // Resolved with an unusable locale — English, and specifically not blank.
+    expect(screen.getByTestId("sample").textContent).toBe("Cancel");
+    expect(screen.getByTestId("locale-en").getAttribute("aria-checked")).toBe("true");
   });
 
   it("still renders when settings can't be read", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => {
-        throw new Error("offline");
-      }),
-    );
+    const gate = deferred<Response>();
+    vi.stubGlobal("fetch", vi.fn(() => gate.promise));
     render(
       <I18nProvider>
         <Picker />
       </I18nProvider>,
     );
-    // English default: the app has to come up even with no backend.
-    await waitFor(() => expect(screen.getByTestId("sample").textContent).toBe("Cancel"));
+    await act(async () => {
+      gate.fail(new Error("offline"));
+    });
+    // The rejection was handled and the app is still up — not stuck mid-render.
+    expect(screen.getByTestId("sample").textContent).toBe("Cancel");
+    expect(screen.getByTestId("locale-pt-BR")).toBeTruthy();
+  });
+
+  it("the deferred stub can produce a non-English result", async () => {
+    // Guards the two tests above: if the deferred fetch never reached the provider, this
+    // would render English too, and their assertions would prove nothing.
+    const gate = deferred<Response>();
+    vi.stubGlobal("fetch", vi.fn(() => gate.promise));
+    render(
+      <I18nProvider>
+        <Picker />
+      </I18nProvider>,
+    );
+    expect(screen.getByTestId("sample").textContent).toBe("Cancel"); // pre-resolution
+    await act(async () => {
+      gate.settle({ ok: true, json: async () => ({ locale: "pt-BR" }) } as Response);
+    });
+    expect(screen.getByTestId("sample").textContent).toBe("Cancelar");
   });
 
   it("keeps the switch when persisting fails", async () => {

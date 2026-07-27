@@ -36,6 +36,7 @@ import { LOCALES, LOCALE_NAMES } from "../i18n";
 import { useI18n } from "../i18n/useLocale";
 import { useThemePref } from "../theme";
 import { Icon } from "./Icon";
+import { SegmentedRadio } from "./SegmentedRadio";
 import { PanelHead } from "./IntegrationsView";
 import { ModelsTab } from "./ManageTabs";
 import { GalleryModal } from "./GalleryModal";
@@ -396,23 +397,13 @@ function LanguageCard() {
   return (
     <div className={CARD + " p-4 mb-4"} data-testid="language-card">
       <div className={FIELD_LABEL}>{t("settings.language.title")}</div>
-      {/* role="radio" + aria-checked on each option, not just the group: a bare
-          radiogroup of plain buttons announces the labels but never which one is
-          selected, so a screen-reader user can't tell the current language. */}
-      <div className="seg mt-2.5" role="radiogroup" aria-label={t("settings.language.title")}>
-        {LOCALES.map((code) => (
-          <button
-            key={code}
-            role="radio"
-            aria-checked={code === locale}
-            className={code === locale ? "active" : ""}
-            data-testid={`locale-${code}`}
-            onClick={() => void setLocale(code)}
-          >
-            {LOCALE_NAMES[code]}
-          </button>
-        ))}
-      </div>
+      <SegmentedRadio
+        label={t("settings.language.title")}
+        value={locale}
+        options={LOCALES.map((code) => ({ value: code, label: LOCALE_NAMES[code] }))}
+        onChange={(code) => void setLocale(code)}
+        testIdPrefix="locale"
+      />
       <div className={FIELD_HELP}>{t("settings.language.help")}</div>
     </div>
   );
@@ -445,19 +436,17 @@ function AppearanceSection() {
 
       <div className={CARD + " p-4 mb-4"}>
         <div className={FIELD_LABEL}>Theme</div>
-        <div className="seg mt-2.5" role="radiogroup" aria-label="Appearance">
-          {(["light", "dark", "auto"] as const).map((p) => (
-            <button
-              key={p}
-              role="radio"
-              aria-checked={p === theme}
-              className={p === theme ? "active" : ""}
-              onClick={() => setTheme(p)}
-            >
-              {p === "light" ? "Light" : p === "dark" ? "Dark" : "Auto"}
-            </button>
-          ))}
-        </div>
+        <SegmentedRadio
+          label="Appearance"
+          value={theme}
+          options={[
+            { value: "light" as const, label: "Light" },
+            { value: "dark" as const, label: "Dark" },
+            { value: "auto" as const, label: "Auto" },
+          ]}
+          onChange={setTheme}
+          testIdPrefix="theme"
+        />
         <div className={FIELD_HELP}>Auto follows your Mac&rsquo;s appearance.</div>
       </div>
 
@@ -657,24 +646,17 @@ function TokenSavingsCard() {
       </div>
 
       <div className="mt-3 text-[13px] text-ink">PDFs on models without native PDF support</div>
-      <div className="seg mt-2" role="radiogroup" aria-label="PDF fallback" data-testid="pdf-fallback">
-        <button
-          role="radio"
-          aria-checked={pdf.pdf_fallback === "text"}
-          className={pdf.pdf_fallback === "text" ? "active" : ""}
-          onClick={() => save({ pdf_fallback: "text" })}
-        >
-          Extract text
-        </button>
-        <button
-          role="radio"
-          aria-checked={pdf.pdf_fallback === "images"}
-          className={pdf.pdf_fallback === "images" ? "active" : ""}
-          onClick={() => save({ pdf_fallback: "images" })}
-        >
-          Send page images
-        </button>
-      </div>
+      <SegmentedRadio
+        label="PDF fallback"
+        className="seg mt-2"
+        groupTestId="pdf-fallback"
+        value={pdf.pdf_fallback === "images" ? "images" : "text"}
+        options={[
+          { value: "text" as const, label: "Extract text" },
+          { value: "images" as const, label: "Send page images" },
+        ]}
+        onChange={(next) => save({ pdf_fallback: next })}
+      />
       <div className={FIELD_HELP}>
         Claude, GPT and Gemini read PDFs natively — this only applies to models that
         don&rsquo;t (GLM, Kimi, DeepSeek, local models…). Text extraction is cheapest; page
