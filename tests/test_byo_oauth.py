@@ -507,6 +507,8 @@ def client(tmp_path, monkeypatch):
     from coworker.server.manager import SessionManager
 
     monkeypatch.setenv("COWORKER_STATE_DIR", str(tmp_path / "state"))
+    # The connect route opens the system browser; a test must never actually launch one.
+    monkeypatch.setattr("webbrowser.open", lambda _url: True)
     B._pending.clear()
     G._token_cache.clear()
     manager = SessionManager(data_dir=tmp_path / "data")
@@ -517,10 +519,9 @@ def test_byo_status_never_leaks_the_secret(client):
     """The Settings pane reads this; a client secret in the response would put it in every
     GUI fetch and in any log that captures one."""
     c, _ = client
-    assert c.get("/v1/connectors/byo").json() == {
-        "oauth": {},
-        "github": {"configured": False, "app_id": ""},
-    }
+    empty = c.get("/v1/connectors/byo").json()
+    assert empty["oauth"] == {}
+    assert empty["github"] == {"configured": False, "app_id": ""}
     c.post(
         "/v1/connectors/notion/byo-config",
         json={"fields": {"client_id": "cid-x", "client_secret": "SECRET-x"}},
@@ -797,3 +798,45 @@ def test_complete_listing_logs_nothing(secrets, rsa_pem, monkeypatch, caplog):
     with caplog.at_level("WARNING", logger="coworker.connectors"):
         assert len(G.list_byo_installations(secrets)) == 1
     assert caplog.records == []
+
+
+def test_connect_opens_the_system_browser(client, monkeypatch):
+    """The sidecar opens the browser itself, matching /v1/cloud/login and the managed
+    connect — the GUI only polls afterwards, so it never sees the URL."""
+    c, _ = client
+    opened: list[str] = []
+    monkeypatch.setattr("webbrowser.open", lambda url: opened.append(url))
+    c.post(
+        "/v1/connectors/notion/byo-config",
+        json={"fields": {"client_id": "cid", "client_secret": "sec"}},
+    )
+    res = c.post("/v1/connectors/notion/byo-connect").json()
+    assert res["ok"] is True
+    assert opened == [res["authorize_url"]]
+
+
+def test_failed_connect_opens_nothing(client, monkeypatch):
+    """No app configured: report the error rather than launching a browser at a URL that
+    was never built."""
+    c, _ = client
+    opened: list[str] = []
+    monkeypatch.setattr("webbrowser.open", lambda url: opened.append(url))
+    assert c.post("/v1/connectors/notion/byo-connect").json()["ok"] is False
+    assert opened == []
+
+
+def test_status_reports_the_real_redirect_uri(client, monkeypatch):
+    """The GUI tells the user which redirect to register, and the packaged sidecar binds a
+    random port — so the value has to come from the server, and has to be the same one used
+    at consent time or the provider rejects it."""
+    c, _ = client
+    monkeypatch.setenv("COWORKER_PORT", "50055")
+    reported = c.get("/v1/connectors/byo").json()["redirect_uri"]
+    assert reported == "http://127.0.0.1:50055/oauth/callback"
+
+    c.post(
+        "/v1/connectors/notion/byo-config",
+        json={"fields": {"client_id": "cid", "client_secret": "sec"}},
+    )
+    url = c.post("/v1/connectors/notion/byo-connect").json()["authorize_url"]
+    assert _query(url)["redirect_uri"] == reported

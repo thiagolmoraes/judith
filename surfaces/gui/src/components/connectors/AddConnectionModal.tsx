@@ -9,8 +9,17 @@ import {
 } from "../../api";
 import { ConnectorBadge } from "../../connectors/ConnectorIcon";
 import { ConnectSetup } from "../ManageTabs";
+import { ByoSetup, byoSupported } from "./ByoSetup";
 import { CloudSignInInline, CloudStatusPending } from "./CloudSignIn";
 import { PILL_ACCENT, PILL_LINE, TAG_ACCENT } from "./ui";
+
+type Pane = "one" | "byo" | "manual";
+
+const PANE_LABEL: Record<Pane, string> = {
+  one: "One click",
+  byo: "Your own app",
+  manual: "Manual",
+};
 
 // The ONE place a connection gets added (UX-DECISIONS §21): the detail page's header
 // button (or the list's Connect pill) opens this sheet. Connectors with two connect
@@ -44,7 +53,18 @@ export function AddConnectionModal({
     c.name === "notion" ||
     c.name === "attio" ||
     (mcpBacked && c.fields.length > 0);
-  const [pane, setPane] = useState<"one" | "manual">("one");
+  // A third mode wherever the user can register their own OAuth app: one-click without a
+  // cloud sign-in. Offered alongside the other two rather than replacing either.
+  const hasByo = byoSupported(c.name);
+  const panes: Pane[] = [
+    ...(twoModes ? (["one"] as const) : []),
+    ...(hasByo ? (["byo"] as const) : []),
+    ...(twoModes || hasByo ? (["manual"] as const) : []),
+  ];
+  const showTabs = panes.length > 1;
+  // Default to one-click where it exists, otherwise the user's own app: both beat asking
+  // someone to paste a long-lived token by hand.
+  const [pane, setPane] = useState<Pane>(twoModes ? "one" : "byo");
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -70,11 +90,11 @@ export function AddConnectionModal({
           </button>
         </div>
 
-        {twoModes ? (
+        {showTabs ? (
           <>
             <div className="px-5 pt-4">
               <div className="inline-flex rounded-full p-0.5 bg-paper text-[12.5px] font-medium">
-                {(["one", "manual"] as const).map((p) => (
+                {panes.map((p) => (
                   <button
                     key={p}
                     data-testid={`modal-pane-${p}`}
@@ -84,7 +104,7 @@ export function AddConnectionModal({
                     }
                     onClick={() => setPane(p)}
                   >
-                    {p === "one" ? "One click" : "Manual"}
+                    {PANE_LABEL[p]}
                   </button>
                 ))}
               </div>
@@ -101,6 +121,8 @@ export function AddConnectionModal({
               ) : (
                 <GenericOneClick c={c} cloud={cloud} />
               )
+            ) : pane === "byo" ? (
+              <ByoSetup c={c} onConnected={() => { onChanged(); onClose(); }} />
             ) : c.name === "slack" ? (
               <SlackManual onConnected={() => { onChanged(); onClose(); }} />
             ) : (
