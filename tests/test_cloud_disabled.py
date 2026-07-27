@@ -166,26 +166,35 @@ def test_no_cloud_route_500s_when_disabled(tmp_path, monkeypatch):
     # raise_server_exceptions=False so a handler crash shows up as 500 rather than
     # propagating into the test as the original exception.
     with TestClient(create_app(manager), raise_server_exceptions=False) as c:
+        # (method, request path, the template it should match in the route table). The
+        # third element exists because a request path can't be compared to a registered
+        # one directly — /v1/cloud/gallery/some-slug is registered as .../{slug}.
         routes = [
-            ("GET", "/v1/cloud/status"),
-            ("POST", "/v1/cloud/login"),
-            ("POST", "/v1/cloud/logout"),
-            ("GET", "/v1/cloud/gallery"),
-            ("GET", "/v1/cloud/gallery/some-slug"),
-            ("POST", "/v1/cloud/telemetry"),
-            ("POST", "/v1/connectors/notion/connect-managed"),
+            ("GET", "/v1/cloud/status", "/v1/cloud/status"),
+            ("POST", "/v1/cloud/login", "/v1/cloud/login"),
+            ("POST", "/v1/cloud/logout", "/v1/cloud/logout"),
+            ("GET", "/v1/cloud/gallery", "/v1/cloud/gallery"),
+            ("GET", "/v1/cloud/gallery/some-slug", "/v1/cloud/gallery/{slug}"),
+            ("POST", "/v1/cloud/telemetry", "/v1/cloud/telemetry"),
+            (
+                "POST",
+                "/v1/connectors/notion/connect-managed",
+                "/v1/connectors/{name}/connect-managed",
+            ),
         ]
-        # Every /v1/cloud/* route the app registers, so a new one added without a
-        # disabled-path check shows up here rather than in the field.
-        registered = {
-            r.path
-            for r in create_app(manager).routes
-            if "/v1/cloud" in getattr(r, "path", "")
-        }
-        assert registered <= {p for _, p in routes} | {"/v1/cloud/gallery/{slug}"}, (
-            f"cloud routes missing from the sweep: {registered - {p for _, p in routes}}"
+        # Checked BOTH ways against the real route table. Subset-only would let a typo'd
+        # path sit here answering 404 — under 500, so the sweep would "pass" while
+        # exercising nothing.
+        all_paths = {getattr(r, "path", "") for r in create_app(manager).routes}
+        swept = {tpl for _, _, tpl in routes}
+        registered_cloud = {p for p in all_paths if "/v1/cloud" in p}
+        assert registered_cloud - swept == set(), (
+            f"cloud routes missing from the sweep: {registered_cloud - swept}"
         )
-        for method, path in routes:
+        assert swept - all_paths == set(), (
+            f"swept routes that no longer exist: {swept - all_paths}"
+        )
+        for method, path, _tpl in routes:
             # A body for the POSTs that take one, so the handler actually runs instead of
             # bouncing off request validation before reaching the disabled path.
             resp = c.request(method, path, json={} if method == "POST" else None)
