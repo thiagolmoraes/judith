@@ -106,7 +106,7 @@ export function UpdateBanner() {
           disabled={busy}
           data-testid="update-install"
         >
-          {busy ? t("update.downloading") : "Restart to update"}
+          {busy ? t("update.downloading") : t("update.restart")}
         </button>
         <button
           className="px-2 py-1.5 text-[12.5px] text-faint hover:text-muted"
