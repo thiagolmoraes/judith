@@ -12,6 +12,11 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
+import sys
+
+if sys.version_info < (3, 11):  # pragma: no cover — BaseExceptionGroup is builtin from 3.11
+    from exceptiongroup import BaseExceptionGroup  # noqa: F401 (used by the MCP test)
+
 from coworker import i18n
 from coworker.i18n import DEFAULT_LOCALE, LOCALES, current_locale, t
 from coworker.server import SessionManager, create_app
@@ -430,11 +435,6 @@ def test_mcp_error_text_unwraps_exception_groups():
     "unhandled errors in a TaskGroup (1 sub-exception)" — noise. The helper descends
     to the leaf that actually says what happened."""
     from coworker.server.manager import _mcp_error_text
-
-    try:  # Python 3.10: same backport the code under test uses.
-        BaseExceptionGroup
-    except NameError:  # pragma: no cover
-        from exceptiongroup import BaseExceptionGroup
 
     leaf = ConnectionError("connection refused by 127.0.0.1:9")
     nested = BaseExceptionGroup(
