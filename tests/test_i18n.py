@@ -431,6 +431,11 @@ def test_mcp_error_text_unwraps_exception_groups():
     to the leaf that actually says what happened."""
     from coworker.server.manager import _mcp_error_text
 
+    try:  # Python 3.10: same backport the code under test uses.
+        BaseExceptionGroup
+    except NameError:  # pragma: no cover
+        from exceptiongroup import BaseExceptionGroup
+
     leaf = ConnectionError("connection refused by 127.0.0.1:9")
     nested = BaseExceptionGroup(
         "unhandled errors in a TaskGroup",

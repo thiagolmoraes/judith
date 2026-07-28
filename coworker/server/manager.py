@@ -106,6 +106,12 @@ def _approval_body(request) -> str:
     return "\n".join(p for p in (reason, preview) if p)
 
 
+try:  # Python 3.10 has no builtin BaseExceptionGroup; anyio ships the backport.
+    BaseExceptionGroup
+except NameError:  # pragma: no cover — only reachable on 3.10
+    from exceptiongroup import BaseExceptionGroup
+
+
 def _mcp_error_text(exc: BaseException) -> str:
     """A readable reason for an MCP failure.
 
