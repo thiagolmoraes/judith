@@ -7,6 +7,15 @@ export default defineConfig({
   plugins: [react()],
   test: {
     environment: "jsdom",
+    // jsdom needs a non-opaque origin for localStorage; about:blank has none.
+    environmentOptions: { jsdom: { url: "http://localhost/" } },
+    // Node 22+ ships its own `localStorage` global, which without --localstorage-file
+    // is a method-less object — and it shadows jsdom's Storage everywhere, so every
+    // localStorage call in a test throws "not a function". Seven Sidebar tests failed
+    // exactly this way on Node 25 while passing on older Node. Disabling Node's
+    // webstorage in the workers lets jsdom's real Storage through.
+    pool: "forks",
+    poolOptions: { forks: { execArgv: ["--no-experimental-webstorage"] } },
     include: ["src/**/*.test.{ts,tsx}"],
   },
 });
