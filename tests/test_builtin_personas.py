@@ -59,6 +59,18 @@ def test_code_keeps_single_root_file_tools(tmp_path):
 # of an answer. Chat answers on screen but has no connectors, so it can't read the mail.
 
 
+def test_assistant_resolves_to_its_own_agent():
+    """Not a tautology: a persona whose id is missing from the registry falls back to
+    the DEFAULT persona, so `get_agent("assistant")` silently returns Cowork — same
+    object shape, opposite behaviour. That is exactly what happened while this branch
+    was unmerged, and only reading the prompt revealed it."""
+    from coworker.agents import get_agent
+
+    a = get_agent("assistant")
+    assert a.name == "assistant"
+    assert a.system_prompt.startswith("You are the user's assistant")
+
+
 def test_assistant_pairs_connectors_with_no_workspace():
     """The whole point of the persona. Connectors without a workspace means it can reach
     the mailbox and has nowhere to write a file even if the model wanted to."""
@@ -67,6 +79,32 @@ def test_assistant_pairs_connectors_with_no_workspace():
     assert a.connectors is True
     assert a.needs_workspace is False
     assert a.messaging is True
+
+
+def test_assistant_actually_reaches_a_connected_account(tmp_path):
+    """`connectors=True` is a request, not a result — build_engine reads that flag to
+    decide whether to load the integration toolset at all. Going through build_engine
+    proves the request is honoured; asserting the flag alone would pass even if the
+    wiring were removed.
+
+    Gmail stands in for "any connected account": the persona exists so a coworker can
+    read your mail and answer on screen, and that is the tool it needs to do it."""
+    from coworker.agent import build_engine
+    from coworker.secrets import SecretStore
+
+    store = SecretStore(tmp_path / "secrets.json")
+    store.put("gmail:default", {"access_token": "t", "account": "me@example.com"})
+
+    engine = build_engine(
+        agent=PersonaRegistry().agent("assistant"),
+        workspace=None,  # the persona has none, and must build anyway
+        secrets=store,
+    )
+    names = set(engine.registry.names())
+    assert any(n.startswith("gmail_") for n in names), sorted(names)[:12]
+    # The other half of the persona's contract, on the SAME built toolset.
+    for forbidden in ("write_file", "apply_patch", "run_shell"):
+        assert forbidden not in names
 
 
 def test_assistant_has_no_file_or_shell_tools(tmp_path):
@@ -84,18 +122,28 @@ def test_assistant_prompt_directs_answers_on_screen():
     reg = PersonaRegistry()
     prompt = reg.agent("assistant").system_prompt.lower()
     assert "answer in the conversation" in prompt
-    assert "no workspace" in prompt
-    # And it must not promise files.
-    assert "deliverable (a memo" not in prompt
+    # The explicit contract, not the absence of one Cowork phrase: any instruction to
+    # save, write or produce a file would make this a second Cowork.
+    assert "no file or shell access" in prompt
+    assert "never offer to save something to a file" in prompt
+    for promise in ("write_file", "save it to", "produce a deliverable"):
+        assert promise not in prompt
 
 
 def test_assistant_ships_disabled_until_the_user_enables_it(tmp_path):
     """New personas don't appear in the picker unannounced; the user turns them on in
     Settings ▸ Personas. Pinned because the persona is useless if it can't be found."""
-    reg = PersonaRegistry(state_path=tmp_path / "personas.json")
+    state = tmp_path / "personas.json"
+    reg = PersonaRegistry(state_path=state)
     assert reg.is_enabled("assistant") is False
     assert "assistant" not in [p["name"] for p in reg.sidebar()]
 
     reg.set_enabled("assistant", True)
     reg.set_surfaced("assistant", True)
     assert "assistant" in [p["name"] for p in reg.sidebar()]
+
+    # Reopened from disk: asserting on the same object would pass even if save() were
+    # broken, and the user's choice has to survive an app restart to mean anything.
+    reopened = PersonaRegistry(state_path=state)
+    assert reopened.is_enabled("assistant") is True
+    assert "assistant" in [p["name"] for p in reopened.sidebar()]

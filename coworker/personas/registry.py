@@ -164,9 +164,9 @@ class PersonaRegistry:
             "plug",
             "Your connected accounts — answers in the chat",
             assistant_agent,
-            False,
-            "knowledge",
-            [],
+            needs_workspace=False,
+            family="knowledge",
+            tools=[],
             workspace="none",
         )
         # Markdown-backed built-ins (Ops, …) — dogfood the manifest path.
