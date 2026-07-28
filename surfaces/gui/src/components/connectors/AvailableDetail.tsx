@@ -3,6 +3,7 @@ import { type CloudStatus, type Connector } from "../../api";
 import { ConnectorBadge } from "../../connectors/ConnectorIcon";
 import { AddConnectionModal } from "./AddConnectionModal";
 import { FOOT, GRP, GRP_H, PILL_ACCENT, ROW, TAG_QUIET } from "./ui";
+import { useI18n } from "../../i18n/useLocale";
 
 // Pre-connect detail page (UX-DECISIONS §38): what a connector is for and what
 // access it gets, BEFORE any credentials exist. About paragraph, honest Access
@@ -19,6 +20,7 @@ export function AvailableDetail({
   cloud: CloudStatus | null;
   onChanged: () => void;
 }) {
+  const { t } = useI18n();
   const [connecting, setConnecting] = useState(false);
   const [showTools, setShowTools] = useState(false);
   const tools = c.tools || [];
@@ -36,7 +38,7 @@ export function AvailableDetail({
           data-testid="available-connect"
           onClick={() => setConnecting(true)}
         >
-          Connect
+          {t("conn.connect")}
         </button>
       </div>
 
@@ -44,7 +46,7 @@ export function AvailableDetail({
 
       {(c.access?.length ?? 0) > 0 && (
         <>
-          <div className={GRP_H}>Access</div>
+          <div className={GRP_H}>{t("available.access")}</div>
           <div className={GRP} data-testid="available-access">
             {c.access!.map((line) => (
               <div key={line} className={ROW + " !min-h-[36px] !py-2 text-[13px]"}>
@@ -53,14 +55,14 @@ export function AvailableDetail({
             ))}
           </div>
           <div className={FOOT}>
-            Keys and tokens are stored only on this computer. Disconnect anytime.
+            {t("available.keysLocal")}
           </div>
         </>
       )}
 
       {tools.length > 0 && (
         <>
-          <div className={GRP_H}>Tools</div>
+          <div className={GRP_H}>{t("available.tools")}</div>
           <div className={GRP}>
             <button
               className={ROW + " w-full text-left hover:bg-paper/60 text-[13px]"}

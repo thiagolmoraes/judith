@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { SlackWorkspace } from "../../api";
+import { useI18n } from "../../i18n/useLocale";
+import type { Translate } from "../../humanize";
 
 // UX-027: the post-connect "how mentions reach you" card. A tabbed carousel of
 // animated split-scenes — Slack on the left (pinned to light-Slack colors, so it
@@ -12,11 +14,16 @@ import type { SlackWorkspace } from "../../api";
 
 const KEY = "ocw.slack.howitworks.collapsed";
 const DUR = 8000; // per-scene loop, ms
-const TABS = ["Mention → session", "Threads stay connected", "Allow teammates"];
-const CAPTIONS = [
-  "Mention @OpenWorker in any channel it's invited to — a session opens here, and the answer lands back in Slack as a thread.",
-  "Mention it again inside the thread — the conversation continues in the same session, context intact. The thread is the session.",
-  "Teammates aren't auto-trusted: their first mention waits for your OK, then they're on the People list.",
+const TAB_COUNT = 3;
+const tabs = (t: Translate) => [
+  t("slackHiw.tabMention"),
+  t("slackHiw.tabThreads"),
+  t("slackHiw.tabAllow"),
+];
+const captions = (t: Translate) => [
+  t("slackHiw.capMention"),
+  t("slackHiw.capThreads"),
+  t("slackHiw.capAllow"),
 ];
 
 function readCollapsed(): boolean {
@@ -24,17 +31,18 @@ function readCollapsed(): boolean {
 }
 
 export function SlackHowItWorks({ workspaces }: { workspaces: SlackWorkspace[] }) {
+  const { t } = useI18n();
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [tab, setTab] = useState(0);
   const [cycle, setCycle] = useState(0); // bump = remount the scene = restart its animations
-  const tourRef = useRef(TABS.length); // auto-advances left in the one-time story tour
+  const tourRef = useRef(TAB_COUNT); // auto-advances left in the one-time story tour
 
   useEffect(() => {
     if (collapsed) return;
     const t = window.setTimeout(() => {
       if (tourRef.current > 1) {
         tourRef.current -= 1;
-        setTab((x) => (x + 1) % TABS.length);
+        setTab((x) => (x + 1) % TAB_COUNT);
       } else {
         tourRef.current = 0;
         setCycle((c) => c + 1); // keep looping the current scene quietly
@@ -64,6 +72,7 @@ export function SlackHowItWorks({ workspaces }: { workspaces: SlackWorkspace[] }
     (mine &&
       (mine.installer_name ||
         mine.allowed_user_names?.[mine.installer_user_id ?? ""])) ||
+    // Stays English: it labels an avatar inside the fictional Slack mockup below.
     "You";
   const meFirst = meName.split(/\s+/)[0];
   const meInitial = (meName[0] || "Y").toUpperCase();
@@ -74,15 +83,17 @@ export function SlackHowItWorks({ workspaces }: { workspaces: SlackWorkspace[] }
     <div className="mb-5" data-testid="slack-howitworks">
       <div className="flex items-baseline gap-2.5">
         <h3 className="text-[13.5px] font-semibold tracking-tight">
-          Getting started with Slack &amp; OpenWorker
+          {t("slackHiw.heading")}
         </h3>
         <button
           className="ml-auto shrink-0 inline-flex items-center gap-1.5 text-[12px] text-muted hover:text-ink"
           data-testid="hiw-collapse"
-          title={collapsed ? "Show how mentions work" : "Collapse — reopen anytime"}
+          title={
+            collapsed ? t("slackHiw.showTitle") : t("slackHiw.collapseTitle")
+          }
           onClick={toggle}
         >
-          {collapsed ? "How it works" : "Hide"}
+          {collapsed ? t("slackHiw.howItWorks") : t("slackHiw.hide")}
           <span
             className="text-[9px] transition-transform"
             style={collapsed ? { transform: "rotate(-90deg)" } : undefined}
@@ -93,24 +104,23 @@ export function SlackHowItWorks({ workspaces }: { workspaces: SlackWorkspace[] }
       </div>
       <div className="text-[12px] text-muted mt-0.5">
         <span className="text-ok font-bold">✓ </span>
-        {ws?.account || "Workspace"} connected
-        {mine
-          ? " — you're on the People list, so your mentions get through."
-          : " — here's how mentions reach you."}
+        {t(mine ? "slackHiw.connectedYou" : "slackHiw.connectedHow", {
+          workspace: ws?.account || t("slackHiw.workspace"),
+        })}
       </div>
 
       {!collapsed && (
         <div className="mt-3">
           <div className="flex gap-1 border-b border-line mb-3">
-            {TABS.map((t, i) => (
+            {tabs(t).map((label, i) => (
               <button
-                key={t}
+                key={label}
                 className={"hiw-tab" + (i === tab ? " on" : "")}
                 data-testid={`hiw-tab-${i}`}
                 style={{ "--hiw-dur": `${DUR}ms` } as React.CSSProperties}
                 onClick={() => jump(i)}
               >
-                {t}
+                {label}
                 <span className="hiw-prog"><i /></span>
               </button>
             ))}
@@ -122,7 +132,7 @@ export function SlackHowItWorks({ workspaces }: { workspaces: SlackWorkspace[] }
             {tab === 2 && <SceneTeammates />}
           </div>
           <div className="mt-2.5 text-[12px] text-muted" data-testid="hiw-caption">
-            {CAPTIONS[tab]}
+            {captions(t)[tab]}
           </div>
         </div>
       )}
@@ -130,7 +140,13 @@ export function SlackHowItWorks({ workspaces }: { workspaces: SlackWorkspace[] }
   );
 }
 
-/* ---- shared miniature furniture ---- */
+/* ---- shared miniature furniture ----
+ *
+ * Everything from here down draws a FICTIONAL Slack workspace and the OpenWorker window
+ * beside it. It stays in English on purpose: the left pane imitates Slack's own interface,
+ * and a Portuguese rendering of it would depict a product that doesn't exist. The Sticky
+ * notes are the exception — they are OpenWorker's annotations ON the scene, not part of it,
+ * so they are translated. */
 
 // The scenes deliberately play in a FICTIONAL workspace ("Lumina Labs") — a real
 // account name here (or anything resembling our own product) reads as confusing
@@ -255,6 +271,17 @@ function OwRail({ hot, hotSub, glow }: { hot?: string; hotSub?: string; glow?: b
   );
 }
 
+/** The annotations OpenWorker draws over the scene — translated, unlike the scene. */
+function useStickyNotes() {
+  const { t } = useI18n();
+  return {
+    newSession: t("slackHiw.stickyNewSession"),
+    thread: t("slackHiw.stickyThread"),
+    same: t("slackHiw.stickySame"),
+    first: t("slackHiw.stickyFirst"),
+  };
+}
+
 const d = (delay: string, extra?: Record<string, string>) =>
   ({ "--d": delay, ...extra } as React.CSSProperties);
 
@@ -280,11 +307,12 @@ function Msg({
 
 /* ---- scene 1: mention in a channel → new session, reply via thread panel ---- */
 function SceneMention({ meFirst, meInitial }: { meFirst: string; meInitial: string }) {
+  const sticky = useStickyNotes();
   return (
     <>
       <span className="hiw-spark" style={d("1.9s")} />
-      <Sticky d="3.1s" pos={{ left: "51%", top: "8%" }}>a @mention starts a NEW session →</Sticky>
-      <Sticky d="5.8s" r pos={{ left: "27%", bottom: "5%" }}>the answer comes back as a thread ↑</Sticky>
+      <Sticky d="3.1s" pos={{ left: "51%", top: "8%" }}>{sticky.newSession}</Sticky>
+      <Sticky d="5.8s" r pos={{ left: "27%", bottom: "5%" }}>{sticky.thread}</Sticky>
       <SlackWin>
         <SlackRail active="launch-room" />
         <div className="hiw-slmain">
@@ -343,10 +371,11 @@ function SceneMention({ meFirst, meInitial }: { meFirst: string; meInitial: stri
 
 /* ---- scene 2: mention INSIDE the open thread panel → the same session ---- */
 function SceneThread({ meFirst, meInitial }: { meFirst: string; meInitial: string }) {
+  const sticky = useStickyNotes();
   return (
     <>
       <span className="hiw-spark" style={d("1.9s")} />
-      <Sticky d="3.2s" r pos={{ left: "52%", top: "10%" }}>chatting in the thread continues the SAME conversation →</Sticky>
+      <Sticky d="3.2s" r pos={{ left: "52%", top: "10%" }}>{sticky.same}</Sticky>
       <SlackWin>
         <SlackRail active="launch-room" />
         <div className="hiw-slmain">
@@ -423,10 +452,11 @@ function SceneThread({ meFirst, meInitial }: { meFirst: string; meInitial: strin
 
 /* ---- scene 3: a teammate's first mention waits for your OK ---- */
 function SceneTeammates() {
+  const sticky = useStickyNotes();
   return (
     <>
       <span className="hiw-spark" style={d("1.9s")} />
-      <Sticky d="3.4s" pos={{ left: "53%", bottom: "10%" }}>first-time senders wait for your OK</Sticky>
+      <Sticky d="3.4s" pos={{ left: "53%", bottom: "10%" }}>{sticky.first}</Sticky>
       <SlackWin>
         <SlackRail active="launch-room" />
         <div className="hiw-slmain">

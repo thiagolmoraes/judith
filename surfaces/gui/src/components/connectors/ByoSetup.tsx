@@ -7,6 +7,7 @@ import {
   type Connector,
 } from "../../api";
 import { PILL_ACCENT, PILL_LINE, TAG_QUIET } from "./ui";
+import { useI18n } from "../../i18n/useLocale";
 
 // The third connect mode: browser consent driven by an OAuth app the USER registered,
 // so one-click works with no OpenWorker Cloud sign-in and the agent acts as their app.
@@ -86,6 +87,7 @@ export function ByoSetup({
   c: Connector;
   onConnected: () => void;
 }) {
+  const { t } = useI18n();
   const [status, setStatus] = useState<ByoStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -195,18 +197,18 @@ export function ByoSetup({
       {loadFailed ? (
         <div className="rounded-lg border border-line bg-paper px-3 py-2.5 flex items-center gap-3">
           <span className="text-[12.5px] text-muted flex-1">
-            Couldn't read the current setup.
+            {t("byo.couldNotRead")}
           </span>
           <button
             className={PILL_LINE}
             onClick={() => void refresh()}
             data-testid="byo-retry"
           >
-            Retry
+            {t("byo.retry")}
           </button>
         </div>
       ) : status === null ? (
-        <div className="text-[12px] text-faint py-2 text-center">Checking…</div>
+        <div className="text-[12px] text-faint py-2 text-center">{t("byo.checking")}</div>
       ) : showForm ? (
         <>
           <div className="rounded-lg border border-line bg-paper px-3 py-2.5 space-y-1">
@@ -237,7 +239,7 @@ export function ByoSetup({
           {isGithub ? (
             <>
               <label className="block space-y-1">
-                <span className={LABEL}>App ID</span>
+                <span className={LABEL}>{t("byo.appId")}</span>
                 <input
                   className={INPUT}
                   value={appId}
@@ -252,7 +254,7 @@ export function ByoSetup({
                   className={INPUT + " font-mono text-[11px] h-24 resize-y"}
                   value={privateKey}
                   onChange={(e) => setPrivateKey(e.target.value)}
-                  placeholder="-----BEGIN RSA PRIVATE KEY-----"
+                  placeholder={t("byo.privateKeyPlaceholder")}
                   data-testid="byo-private-key"
                 />
               </label>
@@ -260,7 +262,7 @@ export function ByoSetup({
           ) : (
             <>
               <label className="block space-y-1">
-                <span className={LABEL}>Client ID</span>
+                <span className={LABEL}>{t("byo.clientId")}</span>
                 <input
                   className={INPUT}
                   value={clientId}
@@ -269,7 +271,7 @@ export function ByoSetup({
                 />
               </label>
               <label className="block space-y-1">
-                <span className={LABEL}>Client secret</span>
+                <span className={LABEL}>{t("byo.clientSecret")}</span>
                 <input
                   className={INPUT}
                   type="password"
@@ -285,7 +287,7 @@ export function ByoSetup({
                   className={INPUT}
                   value={scopes}
                   onChange={(e) => setScopes(e.target.value)}
-                  placeholder="leave blank for the defaults this connector needs"
+                  placeholder={t("byo.scopesPlaceholder")}
                   data-testid="byo-scopes"
                 />
               </label>
@@ -303,7 +305,7 @@ export function ByoSetup({
             </button>
             {configured && (
               <button className={PILL_LINE} onClick={() => setEditing(false)} disabled={busy}>
-                Cancel
+                {t("byo.cancel")}
               </button>
             )}
           </div>
@@ -311,7 +313,7 @@ export function ByoSetup({
       ) : (
         <>
           <div className="rounded-lg border border-line bg-paper px-3 py-2.5 flex items-center gap-2">
-            <span className={TAG_QUIET}>Your app</span>
+            <span className={TAG_QUIET}>{t("byo.yourApp")}</span>
             <span className="text-[12.5px] text-ink flex-1 truncate">
               {isGithub ? `App ID ${status.github.app_id}` : status.oauth[c.name]?.client_id}
             </span>
@@ -329,14 +331,14 @@ export function ByoSetup({
                 setEditing(true);
               }}
             >
-              Change
+              {t("byo.change")}
             </button>
             <button
               className="text-[12px] text-faint hover:text-danger shrink-0"
               onClick={() => void clear()}
               disabled={busy}
             >
-              Remove
+              {t("byo.remove")}
             </button>
           </div>
           <button
@@ -349,7 +351,7 @@ export function ByoSetup({
           </button>
           {isGithub && (
             <p className="text-[11.5px] text-faint text-center">
-              Opens your App's install page — pick the account and repositories.
+              {t("byo.installHint")}
             </p>
           )}
         </>
