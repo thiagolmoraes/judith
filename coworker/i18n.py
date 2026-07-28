@@ -28,6 +28,39 @@ LOCALES = ("en", "pt-BR")
 # Keys are grouped by surface. Only add one here when the string is genuinely user-visible:
 # the value of this file is that everything in it is known to render somewhere.
 _MESSAGES: dict[str, dict[str, str]] = {
+    # -- REST errors the GUI renders directly ----------------------------------
+    "error.connectorNotConnected": {
+        "en": "connector not connected",
+        "pt-BR": "conector não conectado",
+    },
+    "error.workspaceNotConnected": {
+        "en": "workspace not connected",
+        "pt-BR": "workspace não conectado",
+    },
+    "error.slackNotConnected": {
+        "en": "Slack is not connected.",
+        "pt-BR": "O Slack não está conectado.",
+    },
+    "error.galleryNeedsSignIn": {
+        "en": "gallery requires cloud sign-in",
+        "pt-BR": "a galeria exige login no OpenWorker Cloud",
+    },
+    "error.galleryUnreachable": {
+        "en": "gallery requires cloud sign-in (or the cloud is unreachable)",
+        "pt-BR": "a galeria exige login no OpenWorker Cloud (ou a nuvem está inacessível)",
+    },
+    "error.notADirectory": {
+        "en": "not a directory: {path}",
+        "pt-BR": "não é um diretório: {path}",
+    },
+    "error.pathEscapesWorkspace": {
+        "en": "path escapes workspace",
+        "pt-BR": "o caminho sai da pasta de trabalho",
+    },
+    "error.gitCloneFailed": {
+        "en": "could not clone the repository — check the URL and that it is public",
+        "pt-BR": "não foi possível clonar o repositório — confira a URL e se ele é público",
+    },
     # -- automation schedule labels (automation/models.py) ----------------------
     # These render in the sidebar and the Automations page, so they are user-facing
     # despite being built server-side.

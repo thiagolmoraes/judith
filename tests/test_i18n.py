@@ -12,6 +12,11 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
+import sys
+
+if sys.version_info < (3, 11):  # pragma: no cover — BaseExceptionGroup is builtin from 3.11
+    from exceptiongroup import BaseExceptionGroup  # noqa: F401 (used by the MCP test)
+
 from coworker import i18n
 from coworker.i18n import DEFAULT_LOCALE, LOCALES, current_locale, t
 from coworker.server import SessionManager, create_app
@@ -381,3 +386,64 @@ def test_schedule_falls_back_to_raw_cron_untranslated(state):
     _set_locale(state, "pt-BR")
     i18n.invalidate_locale_cache()
     assert Schedule(kind="cron", cron="*/5 * * * *").human() == "*/5 * * * *"
+
+
+# -- REST errors the GUI renders --------------------------------------------------
+def test_rest_errors_the_gui_shows_are_translated(client):
+    """These error strings render verbatim in the GUI (connector pages, persona
+    install, artifact viewer), so they go through the catalogue like any other
+    user-facing copy. Tool-result errors for the model stay English — see
+    test_tool_result_errors_stay_english."""
+    _set_locale(client.state_dir, "pt-BR")
+
+    body = client.post(
+        "/v1/personas/install", json={"dir": "/caminho/que/nao/existe"}
+    ).json()
+    assert body["ok"] is False
+    assert body["error"].startswith("não é um diretório:")
+    assert "/caminho/que/nao/existe" in body["error"]
+
+    body = client.get("/v1/cloud/gallery").json()
+    assert body["ok"] is False
+    assert body["error"] == "a galeria exige login no OpenWorker Cloud"
+
+
+def test_git_clone_failure_is_short_and_translated(client, monkeypatch):
+    """A failed clone used to dump the entire git command line — internal cache path
+    included — into the GUI. A person can't act on that; the URL check hint they can."""
+    import subprocess
+
+    from coworker.personas.registry import PersonaRegistry
+
+    def boom(self, url, **kw):
+        raise subprocess.CalledProcessError(128, ["git", "clone", url, "/private/cache"])
+
+    monkeypatch.setattr(PersonaRegistry, "install_from_git", boom)
+    _set_locale(client.state_dir, "pt-BR")
+    body = client.post(
+        "/v1/personas/install", json={"git_url": "https://github.com/x/y"}
+    ).json()
+    assert body["ok"] is False
+    assert body["error"] == (
+        "não foi possível clonar o repositório — confira a URL e se ele é público"
+    )
+    assert "git" not in body["error"] and "/private" not in body["error"]
+
+
+def test_mcp_error_text_unwraps_exception_groups():
+    """anyio wraps the real failure in an ExceptionGroup, so str(exc) reads
+    "unhandled errors in a TaskGroup (1 sub-exception)" — noise. The helper descends
+    to the leaf that actually says what happened."""
+    from coworker.server.manager import _mcp_error_text
+
+    leaf = ConnectionError("connection refused by 127.0.0.1:9")
+    nested = BaseExceptionGroup(
+        "unhandled errors in a TaskGroup",
+        [BaseExceptionGroup("inner", [leaf])],
+    )
+    assert _mcp_error_text(nested) == "connection refused by 127.0.0.1:9"
+    # A group with SEVERAL leaves has no single story — keep the group text then.
+    multi = BaseExceptionGroup("two failures", [ValueError("a"), ValueError("b")])
+    assert "two failures" in _mcp_error_text(multi)
+    # And a plain exception passes straight through.
+    assert _mcp_error_text(RuntimeError("plain")) == "plain"
