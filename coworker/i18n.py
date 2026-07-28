@@ -28,6 +28,29 @@ LOCALES = ("en", "pt-BR")
 # Keys are grouped by surface. Only add one here when the string is genuinely user-visible:
 # the value of this file is that everything in it is known to render somewhere.
 _MESSAGES: dict[str, dict[str, str]] = {
+    # -- automation schedule labels (automation/models.py) ----------------------
+    # These render in the sidebar and the Automations page, so they are user-facing
+    # despite being built server-side.
+    "sched.onceAt": {"en": "Once at {when}", "pt-BR": "Uma vez em {when}"},
+    "sched.everyDay": {"en": "Every day at ~{time}", "pt-BR": "Todo dia por volta de {time}"},
+    "sched.everyDow": {
+        "en": "Every {day} at ~{time}",
+        # The article is part of {day}, not of this frame: sábado and domingo are
+        # masculine while the -feira weekdays are feminine, so a fixed "Toda" is wrong
+        # two days out of seven.
+        "pt-BR": "{day} por volta de {time}",
+    },
+    "sched.monthly": {
+        "en": "Monthly on day {day} at ~{time}",
+        "pt-BR": "Todo mês no dia {day} por volta de {time}",
+    },
+    "sched.dow.0": {"en": "Monday", "pt-BR": "toda segunda-feira"},
+    "sched.dow.1": {"en": "Tuesday", "pt-BR": "toda terça-feira"},
+    "sched.dow.2": {"en": "Wednesday", "pt-BR": "toda quarta-feira"},
+    "sched.dow.3": {"en": "Thursday", "pt-BR": "toda quinta-feira"},
+    "sched.dow.4": {"en": "Friday", "pt-BR": "toda sexta-feira"},
+    "sched.dow.5": {"en": "Saturday", "pt-BR": "todo sábado"},
+    "sched.dow.6": {"en": "Sunday", "pt-BR": "todo domingo"},
     # -- loopback browser pages (server/app.py) ---------------------------------
     "page.signedIn.title": {"en": "Signed in", "pt-BR": "Login concluído"},
     "page.signedIn.detail": {
