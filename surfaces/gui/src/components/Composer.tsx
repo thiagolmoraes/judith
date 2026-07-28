@@ -5,6 +5,8 @@ import { getSettings, inspectPdf } from "../api";
 import { Dropdown, type Option } from "./Dropdown";
 import { Icon } from "./Icon";
 import { Toggle } from "./Toggle";
+import { useI18n } from "../i18n/useLocale";
+import type { Translate } from "../humanize";
 import {
   cancelDictation,
   getDictationLevel,
@@ -19,10 +21,13 @@ import {
 // polished enough to ship, and Custom (config.toml auto-allow rules) is a power-user mode
 // with no in-app explanation. The server still honors both — a session already in one of
 // those modes keeps working; the picker just doesn't offer them.
-const PERMISSION_OPTIONS: Option[] = [
-  { value: "discuss", label: "Discuss", description: "Chat and explore — no edits or commands" },
-  { value: "interactive", label: "Ask for approval", description: "Ask before edits and commands" },
-  { value: "auto", label: "Full access", description: "Run everything without asking" },
+//
+// Built per render rather than as a module constant: the labels are translated, and a
+// constant would capture whichever locale happened to be active at import time.
+const permissionOptions = (t: Translate): Option[] => [
+  { value: "discuss", label: t("composer.discuss"), description: t("composer.discussHint") },
+  { value: "interactive", label: t("composer.askApproval"), description: t("composer.askBeforeEdits") },
+  { value: "auto", label: t("composer.fullAccess"), description: t("composer.runEverything") },
 ];
 
 // No hardcoded model fallback: until the server supplies the list (a few seconds after a
@@ -80,12 +85,15 @@ interface Props {
 }
 
 export function Composer(props: Props) {
+  const { t: tr } = useI18n();
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [dragging, setDragging] = useState(false);
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [dictation, setDictation] = useState<DictationStatus | null>(null);
-  const [dictationBusy, setDictationBusy] = useState<string | null>(null);
+  // A state tag, not a label: this value is compared against, so it must not be
+  // translated. The visible text is derived from it at render time.
+  const [dictationBusy, setDictationBusy] = useState<"transcribing" | "starting" | null>(null);
   const [dictationError, setDictationError] = useState<string | null>(null);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [attachNotice, setAttachNotice] = useState<string | null>(null);
@@ -195,6 +203,9 @@ export function Composer(props: Props) {
 
   const voiceReady = !!dictation?.supported && !!dictation?.model_verified && !!dictation?.test_passed;
   const recordingTime = `${Math.floor(recordingSeconds / 60)}:${String(recordingSeconds % 60).padStart(2, "0")}`;
+  const busyLabel = dictationBusy
+    ? tr(dictationBusy === "transcribing" ? "composer.transcribing" : "composer.startingMic")
+    : "";
 
   // Attach-time PDF thresholds (Settings → Token savings): a PDF over the user's page or
   // size limit is REJECTED with a visible notice — never attached, never silently dropped.
@@ -216,7 +227,11 @@ export function Composer(props: Props) {
     for (const file of list) {
       if (isPdfFile(file) && file.size > maxMb * 1024 * 1024) {
         showAttachNotice(
-          `${file.name} skipped — ${(file.size / 1024 / 1024).toFixed(1)} MB is over your ${maxMb} MB limit (Settings → Token savings)`,
+          tr("composer.pdfTooBig", {
+            name: file.name,
+            size: (file.size / 1024 / 1024).toFixed(1),
+            max: maxMb,
+          }),
         );
         continue;
       }
@@ -229,12 +244,21 @@ export function Composer(props: Props) {
         const info = await inspectPdf(a.data_url).catch(() => null);
         if (info?.ok && (info.pages ?? 0) > maxPages) {
           showAttachNotice(
-            `${a.name} skipped — ${info.pages} pages is over your ${maxPages}-page limit (Settings → Token savings)`,
+            tr("composer.pdfTooManyPages", {
+              name: a.name,
+              pages: info.pages ?? 0,
+              max: maxPages,
+            }),
           );
           continue;
         }
         if (info && !info.ok) {
-          showAttachNotice(`${a.name} skipped — ${info.error || "could not read PDF"}`);
+          showAttachNotice(
+            tr("composer.pdfUnreadable", {
+              name: a.name,
+              reason: info.error || tr("composer.couldNotReadPdf"),
+            }),
+          );
           continue;
         }
       }
@@ -290,9 +314,9 @@ export function Composer(props: Props) {
     setDictationError(null);
     try {
       if (dictation?.recording) {
-        setDictationBusy("Transcribing…");
+        setDictationBusy("transcribing");
         const transcript = await stopDictation();
-        if (transcript === null) throw new Error("Could not transcribe your recording.");
+        if (transcript === null) throw new Error(tr("composer.couldNotTranscribe"));
         if (transcript.trim()) {
           setText((draft) => (draft.trim() ? `${draft.trimEnd()} ${transcript.trim()}` : transcript.trim()));
         }
@@ -302,17 +326,17 @@ export function Composer(props: Props) {
       }
 
       const status = dictation || (await getDictationStatus());
-      if (!status) throw new Error("Voice dictation is unavailable.");
+      if (!status) throw new Error(tr("composer.voiceUnavailable"));
       if (!status.supported || !status.model_verified || !status.test_passed) {
         props.onConfigureVoiceInput?.();
         return;
       }
-      setDictationBusy("Starting microphone…");
+      setDictationBusy("starting");
       const recording = await startDictation();
-      if (!recording?.recording) throw new Error("Could not start the microphone.");
+      if (!recording?.recording) throw new Error(tr("composer.couldNotStartMic"));
       setDictation(recording);
     } catch (error) {
-      setDictationError(error instanceof Error ? error.message : "Voice dictation is unavailable.");
+      setDictationError(error instanceof Error ? error.message : tr("composer.voiceUnavailable"));
       const status = await getDictationStatus();
       if (status) setDictation(status);
     } finally {
@@ -355,7 +379,7 @@ export function Composer(props: Props) {
           <button
             className="shrink-0 opacity-60 hover:opacity-100"
             onClick={() => setAttachNotice(null)}
-            title="Dismiss"
+            title={tr("common.dismiss")}
           >
             ✕
           </button>
@@ -390,7 +414,7 @@ export function Composer(props: Props) {
         <textarea
           ref={textareaRef}
           className="w-full block px-3.5 pt-3.5 pb-1.5 text-[14.5px]"
-          placeholder={props.placeholder || "Ask the coworker…  (drop or paste files)"}
+          placeholder={props.placeholder || tr("composer.placeholder")}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onKey}
@@ -404,8 +428,8 @@ export function Composer(props: Props) {
           <div className="relative">
             <button
               className={iconBtn + (attachMenuOpen ? " bg-paper text-ink" : "")}
-              title="Attach"
-              aria-label="Attach"
+              title={tr("composer.attach")}
+              aria-label={tr("composer.attach")}
               onClick={() => setAttachMenuOpen((v) => !v)}
             >
               <Icon name="plus" size={17} />
@@ -414,11 +438,11 @@ export function Composer(props: Props) {
               <>
                 <div className="fixed inset-0 z-30" onClick={() => setAttachMenuOpen(false)} />
                 <div className="absolute z-40 bottom-full mb-1 left-0 min-w-[180px] rounded-xl border border-line bg-panel shadow-2xl py-1.5">
-                  {attachItem("image", "Photo or image", () => pickFiles("image/*"))}
-                  {attachItem("file", "PDF", () => pickFiles("application/pdf,.pdf"))}
+                  {attachItem("image", tr("composer.photo"), () => pickFiles("image/*"))}
+                  {attachItem("file", tr("composer.pdf"), () => pickFiles("application/pdf,.pdf"))}
                   {attachItem(
                     "fileCode",
-                    "Other files",
+                    tr("composer.otherFiles"),
                     () => pickFiles("text/*,.md,.csv,.json,.yaml,.yml,.log,.py,.ts,.tsx,.js,.rs,.go,.toml"),
                   )}
                 </div>
@@ -451,6 +475,7 @@ export function Composer(props: Props) {
             </div>
           ) : props.workspace !== undefined ? (
             <ModeMenu
+              t={tr}
               mode={props.mode}
               onModeChange={props.onModeChange}
               unattended={props.unattended}
@@ -458,7 +483,9 @@ export function Composer(props: Props) {
             />
           ) : null}
 
-          {dictationBusy === "Transcribing…" && <span className="text-[11.5px] text-accent">Transcribing…</span>}
+          {dictationBusy === "transcribing" && (
+            <span className="text-[11.5px] text-accent">{busyLabel}</span>
+          )}
 
           <span className="ml-auto" />
 
@@ -469,10 +496,10 @@ export function Composer(props: Props) {
             <button
               className="pill model-warn chip"
               onClick={() => props.onConnectModel?.()}
-              title="Connect a model"
-              aria-label="No model connected — connect a model"
+              title={tr("composer.connectModel")}
+              aria-label={tr("composer.noModelConnected")}
             >
-              <span className="pill-label">No model</span>
+              <span className="pill-label">{tr("composer.noModel")}</span>
               <span className="model-warn-ico" aria-hidden>⚠</span>
             </button>
           ) : modelsLoaded ? (
@@ -482,9 +509,9 @@ export function Composer(props: Props) {
               className="pill chip text-faint cursor-default"
               disabled
               data-testid="models-loading"
-              title="Fetching the model list from the server"
+              title={tr("composer.fetchingModels")}
             >
-              <span className="pill-label">Loading models…</span>
+              <span className="pill-label">{tr("composer.loadingModels")}</span>
             </button>
           ))}
 
@@ -500,14 +527,20 @@ export function Composer(props: Props) {
               onClick={() => void toggleDictation()}
               disabled={!!dictationBusy}
               title={
-                dictationBusy ||
+                busyLabel ||
                 (dictation?.recording
-                  ? "Stop recording and transcribe"
+                  ? tr("composer.stopAndTranscribe")
                   : voiceReady
-                    ? "Start local voice dictation"
-                    : "Configure Voice Input in Settings")
+                    ? tr("composer.startLocalDictation")
+                    : tr("composer.configureVoice"))
               }
-              aria-label={dictation?.recording ? "Stop dictation" : voiceReady ? "Start dictation" : "Configure Voice Input in Settings"}
+              aria-label={
+                dictation?.recording
+                  ? tr("composer.stopDictation")
+                  : voiceReady
+                    ? tr("composer.startDictation")
+                    : tr("composer.configureVoice")
+              }
               aria-disabled={!voiceReady && !dictation?.recording}
             >
               <Icon name={dictation?.recording ? "stop" : "mic"} size={16} />
@@ -517,7 +550,7 @@ export function Composer(props: Props) {
           {/* send / stop */}
           {props.running ? (
             <button className="btn danger" onClick={props.onInterrupt}>
-              ⏹ Stop
+              ⏹ {tr("composer.stop")}
             </button>
           ) : (
             <button
@@ -529,8 +562,8 @@ export function Composer(props: Props) {
               }
               onClick={submit}
               disabled={!props.connected || !!dictation?.recording || !!dictationBusy}
-              title={needsModel ? "Connect a model to send" : undefined}
-              aria-label="Send"
+              title={needsModel ? tr("composer.connectModelToSend") : undefined}
+              aria-label={tr("composer.send")}
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M12 19V5M5 12l7-7 7 7" />
@@ -540,7 +573,7 @@ export function Composer(props: Props) {
         </div>
       </div>
       <span className="sr-only" role="status" aria-live="polite">
-        {dictation?.recording ? `Listening, ${recordingTime}` : dictationBusy || ""}
+        {dictation?.recording ? tr("composer.listening", { time: recordingTime }) : busyLabel}
       </span>
     </div>
   );
@@ -550,18 +583,21 @@ export function Composer(props: Props) {
 // the current one marked, plus — when the session supports it — the "Send approvals to Inbox"
 // toggle at the bottom (the old standalone InboxControl, folded in).
 function ModeMenu({
+  t,
   mode,
   onModeChange,
   unattended,
   onUnattendedChange,
 }: {
+  t: Translate;
   mode: string;
   onModeChange: (mode: string) => void;
   unattended?: boolean;
   onUnattendedChange?: (on: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const current = PERMISSION_OPTIONS.find((o) => o.value === mode);
+  const options = permissionOptions(t);
+  const current = options.find((o) => o.value === mode);
   return (
     <div className="relative">
       {/* Borderless, and it names the CHOSEN mode (owner ask 2026-07-11, competitor composer
@@ -572,10 +608,10 @@ function ModeMenu({
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label="Mode"
+        aria-label={t("composer.mode")}
         title={
-          `Mode: ${current?.label || mode}` +
-          (unattended ? " · approvals go to the Inbox" : "")
+          t("composer.modeTitle", { mode: current?.label || mode }) +
+          (unattended ? t("composer.approvalsToInbox") : "")
         }
       >
         {current?.label || mode}
@@ -589,7 +625,7 @@ function ModeMenu({
             role="menu"
             data-testid="mode-menu"
           >
-            {PERMISSION_OPTIONS.map((o) => (
+            {options.map((o) => (
               <button
                 key={o.value}
                 className="w-full flex flex-col items-start px-2.5 py-1.5 rounded-lg text-left hover:bg-paper"
@@ -614,15 +650,15 @@ function ModeMenu({
                 <div className="my-1 border-t border-line" />
                 <div className="flex items-center gap-2 px-2.5 py-1.5">
                   <span className="flex-1 min-w-0">
-                    <span className="block text-[13px] text-ink">Send approvals to Inbox</span>
+                    <span className="block text-[13px] text-ink">{t("composer.sendToInbox")}</span>
                     <span className="block text-[11px] text-faint leading-snug">
-                      Approvals &amp; questions go to the Inbox; the agent keeps working.
+                      {t("composer.inboxHint")}
                     </span>
                   </span>
                   <Toggle
                     checked={!!unattended}
                     onChange={onUnattendedChange}
-                    title="Send approvals to the Inbox"
+                    title={t("composer.sendToInboxLong")}
                   />
                 </div>
               </>
@@ -647,6 +683,8 @@ function attachItem(icon: "image" | "file" | "fileCode", label: string, onClick:
 }
 
 function AttachChip({ a, onRemove }: { a: Attachment; onRemove: () => void }) {
+  const { t } = useI18n();
+  const title = t("composer.remove");
   return (
     <div className={"attach-chip" + (a.kind === "image" ? " img" : "")}>
       {a.kind === "image" ? (
@@ -657,7 +695,7 @@ function AttachChip({ a, onRemove }: { a: Attachment; onRemove: () => void }) {
           <span className="attach-name">{a.name}</span>
         </>
       )}
-      <button className="attach-x" onClick={onRemove} title="Remove">
+      <button className="attach-x" onClick={onRemove} title={title}>
         ✕
       </button>
     </div>
