@@ -94,6 +94,46 @@ class ConnectorDescriptor:
 
 
 # -- validators (sync httpx, one-shot) -----------------------------------------
+def _validate_whatsapp_evolution(creds: dict) -> ValidationResult:
+    """Check the server answers AND the instance is actually paired.
+
+    A reachable Evolution with an unpaired instance would validate as "connected" and
+    then silently fail on every send, so the pairing state is part of the check.
+    """
+    import httpx
+
+    base = (creds.get("base_url") or "").rstrip("/")
+    key = creds.get("api_key") or ""
+    instance = (creds.get("instance") or "openworker").strip() or "openworker"
+    if not base:
+        return ValidationResult(False, error="Evolution API URL is required")
+    try:
+        resp = httpx.get(
+            f"{base}/instance/connectionState/{instance}",
+            headers={"apikey": key},
+            timeout=15,
+        )
+    except Exception as exc:
+        return ValidationResult(False, error=f"could not reach {base}: {exc}")
+    if resp.status_code in (401, 403):
+        return ValidationResult(False, error="Evolution rejected the API key")
+    if resp.status_code == 404:
+        return ValidationResult(False, error=f"no instance named {instance!r} on that server")
+    try:
+        data = resp.json()
+    except Exception:
+        return ValidationResult(False, error="that URL did not answer with JSON — is it Evolution?")
+    from .whatsapp import _connection_state
+
+    state = _connection_state(data)
+    if state != "open":
+        return ValidationResult(
+            False,
+            error=f"instance {instance!r} is {state or 'not connected'} — pair it in the Evolution manager first",
+        )
+    return ValidationResult(True, identity=instance)
+
+
 def _validate_telegram(creds: dict) -> ValidationResult:
     import httpx
 
@@ -445,6 +485,62 @@ DESCRIPTORS: list[ConnectorDescriptor] = [
             "After connecting, DM your new bot once, then use Capture to grab your user ID.",
         ],
         validate=_validate_telegram,
+    ),
+    ConnectorDescriptor(
+        name="whatsapp_evolution",
+        title="WhatsApp (self-hosted)",
+        icon="🟢",
+        blurb=(
+            "Two-way messaging on a personal number, via a self-hosted Evolution API "
+            "server. Unofficial protocol — use a spare number, never your own. (For a "
+            "business number on Meta's official API, use the WhatsApp connector instead.)"
+        ),
+        auth="api_key",
+        two_way=True,
+        channels=True,
+        brand_color="#25d366",
+        logo="whatsapp",
+        # No managed path: there is no official API for a personal WhatsApp number, so
+        # the cloud has nothing to broker. Self-hosted is the only route.
+        managed=False,
+        experimental=True,
+        risk_notice=(
+            "This drives a personal WhatsApp account through the unofficial multi-device "
+            "protocol, which Meta's terms forbid. The number can be banned — permanently, "
+            "with no appeal and no warning. Use a spare SIM you can afford to lose, never "
+            "the number you rely on. Everyone who messages that number can reach the "
+            "agent, subject to the allow-list below."
+        ),
+        fields=[
+            Field(
+                "base_url",
+                "Evolution API URL",
+                help="Where your Evolution server listens.",
+                placeholder="http://localhost:8090",
+            ),
+            Field(
+                "api_key",
+                "API key",
+                secret=True,
+                help="AUTHENTICATION_API_KEY from the Evolution .env.",
+            ),
+            Field(
+                "instance",
+                "Instance name",
+                required=False,
+                help="The paired Evolution instance. Defaults to `openworker`.",
+                placeholder="openworker",
+            ),
+            _ALLOWED_FIELD,
+        ],
+        instructions=[
+            "Run an Evolution API server (Docker) and open its manager page.",
+            "Create an instance and pair it by scanning the QR with WhatsApp → Settings → Linked devices.",
+            "Paste the server URL and the AUTHENTICATION_API_KEY below.",
+            "Heads up: this automates a personal WhatsApp account through an unofficial "
+            "protocol, against Meta's terms — the number can be banned. Use a spare SIM.",
+        ],
+        validate=_validate_whatsapp_evolution,
     ),
     ConnectorDescriptor(
         name="slack",

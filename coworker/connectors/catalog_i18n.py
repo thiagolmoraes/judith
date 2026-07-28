@@ -267,6 +267,15 @@ PT_BR: dict[str, str] = {
     "Runs read-only chart queries: active users, event totals.": "Executa consultas somente leitura de gráficos: usuários ativos, totais de eventos.",
     "Searches and enriches people and companies, using your Apollo credits.": "Pesquisa e enriquece dados de pessoas e empresas, usando seus créditos do Apollo.",
     "Finds and verifies email addresses, using your Hunter quota.": "Encontra e verifica endereços de e-mail, usando sua cota do Hunter.",
+    "Two-way messaging on a personal number, via a self-hosted Evolution API server. Unofficial protocol — use a spare number, never your own. (For a business number on Meta's official API, use the WhatsApp connector instead.)": "Mensagens nos dois sentidos em um número pessoal, através de um servidor Evolution API auto-hospedado. Protocolo não-oficial — use um número reserva, nunca o seu. (Para um número comercial na API oficial da Meta, use o conector WhatsApp.)",
+    "Run an Evolution API server (Docker) and open its manager page.": "Rode um servidor Evolution API (Docker) e abra a página do manager dele.",
+    "Create an instance and pair it by scanning the QR with WhatsApp → Settings → Linked devices.": "Crie uma instância e pareie escaneando o QR em WhatsApp → Configurações → Dispositivos conectados.",
+    "Paste the server URL and the AUTHENTICATION_API_KEY below.": "Cole a URL do servidor e a AUTHENTICATION_API_KEY abaixo.",
+    "Heads up: this automates a personal WhatsApp account through an unofficial protocol, against Meta's terms — the number can be banned. Use a spare SIM.": "Atenção: isso automatiza uma conta pessoal do WhatsApp por um protocolo não-oficial, contra os termos da Meta — o número pode ser banido. Use um chip reserva.",
+    "Where your Evolution server listens.": "Onde o seu servidor Evolution escuta.",
+    "AUTHENTICATION_API_KEY from the Evolution .env.": "AUTHENTICATION_API_KEY do .env da Evolution.",
+    "The paired Evolution instance. Defaults to `openworker`.": "A instância pareada da Evolution. O padrão é `openworker`.",
+    "This drives a personal WhatsApp account through the unofficial multi-device protocol, which Meta's terms forbid. The number can be banned — permanently, with no appeal and no warning. Use a spare SIM you can afford to lose, never the number you rely on. Everyone who messages that number can reach the agent, subject to the allow-list below.": "Isso dirige uma conta pessoal do WhatsApp pelo protocolo multi-device não-oficial, que os termos da Meta proíbem. O número pode ser banido — em definitivo, sem recurso e sem aviso. Use um chip reserva que você possa perder, nunca o número do qual você depende. Todo mundo que mandar mensagem para esse número alcança o agente, sujeito à lista de permitidos abaixo.",
 }
 
 

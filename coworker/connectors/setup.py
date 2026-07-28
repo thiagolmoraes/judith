@@ -118,7 +118,7 @@ def connector_list(secrets: SecretStore) -> list[dict[str, Any]]:
             "approval_owner_ids": list(profile.get("approval_owner_ids") or []),
             "tools": tool_dicts(secrets, d.name),
             "experimental": d.experimental,
-            "risk_notice": d.risk_notice,
+            "risk_notice": _tr(d.risk_notice, locale),
             "managed": d.managed,
             "managed_paused": d.managed_paused,
             # Whether THIS profile came from managed OAuth (vs manual paste).
@@ -338,10 +338,13 @@ def connect_connector(
         if not experimental_enabled(secrets):
             return {"ok": False, "error": t("error.experimentalDisabled")}
         if not acknowledged:
+            from ..i18n import current_locale
+            from .catalog_i18n import translate as _translate
+
             return {
                 "ok": False,
                 "error": t("error.riskAcknowledgement"),
-                "risk_notice": d.risk_notice,
+                "risk_notice": _translate(d.risk_notice, current_locale()),
             }
 
     # Reconnect-safe: never let a re-submit clobber a stored secret. The GUI masks a connected

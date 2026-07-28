@@ -67,6 +67,11 @@ class Gateway:
     ) -> None:
         self._reply_resolver = resolver
 
+    def adapter_for(self, platform: str) -> Optional[BasePlatformAdapter]:
+        """The live adapter for a platform, or None. Lets a webhook route hand an event
+        to the same adapter the gateway is driving, without reaching into its internals."""
+        return self._adapters.get(platform)
+
     def register(self, adapter: BasePlatformAdapter) -> None:
         adapter.set_message_handler(self._on_inbound)
         if self._interaction_handler is not None:

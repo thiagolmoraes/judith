@@ -425,6 +425,7 @@ def make_adapter(
     relay_url: Optional[str] = None,
     relay_hub=None,
     github_token_client=None,
+    webhook_url: str = "",
 ) -> Optional[BasePlatformAdapter]:
     """Build the adapter for a connected platform from its SecretStore profile.
 
@@ -441,6 +442,17 @@ def make_adapter(
     """
     if platform == "telegram" and profile.get("bot_token"):
         return TelegramAdapter(profile["bot_token"])
+    if platform == "whatsapp_evolution" and profile.get("base_url"):
+        from .whatsapp import WhatsAppAdapter
+
+        # The webhook URL carries the sidecar's CURRENT port; the caller supplies it
+        # because only the server knows what it bound to.
+        return WhatsAppAdapter(
+            profile["base_url"],
+            profile.get("api_key", ""),
+            profile.get("instance") or "openworker",
+            webhook_url=webhook_url or "",
+        )
     if platform == "slack":
         if profile.get("mode") == "relay":
             if not (relay_url and token_provider):

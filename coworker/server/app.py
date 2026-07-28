@@ -194,6 +194,8 @@ def create_app(manager: SessionManager) -> FastAPI:
         "/auth/callback",
         "/mcp/oauth/callback",
         "/oauth/callback",
+        # Evolution API can't send a bearer token; the loopback bind is the boundary.
+        "/webhook/whatsapp",
     }
 
     def _request_authenticated(request: Request) -> bool:
@@ -239,6 +241,36 @@ def create_app(manager: SessionManager) -> FastAPI:
         allow_headers=["*"],
     )
     app.state.manager = manager
+
+    @app.post("/webhook/whatsapp")
+    async def whatsapp_webhook(request: Request) -> dict[str, Any]:
+        """Inbound WhatsApp messages from a self-hosted Evolution API server.
+
+        Tokenless by necessity: Evolution sends no custom auth header, so the guard is
+        the network, not a secret. The sidecar binds 127.0.0.1, so only this machine can
+        reach the route — the same assumption the OAuth callbacks make. Whoever the
+        message is *from* is then checked against the connector's allow-list before it
+        can start or continue a session, exactly like Slack and Telegram.
+        """
+        from ..connectors.whatsapp import webhook_to_event
+
+        try:
+            payload = await request.json()
+        except Exception:
+            return {"ok": False, "error": "invalid JSON"}
+        event = webhook_to_event(payload if isinstance(payload, dict) else {})
+        if event is None:
+            # Echoes, receipts, media without a caption — accepted and dropped, so
+            # Evolution doesn't retry them.
+            return {"ok": True, "handled": False}
+        gateway = manager.gateway
+        if gateway is None:
+            return {"ok": False, "error": "gateway not running"}
+        adapter = gateway.adapter_for("whatsapp_evolution")
+        if adapter is None:
+            return {"ok": False, "error": "whatsapp connector not connected"}
+        await adapter.handle_message(event)
+        return {"ok": True, "handled": True}
 
     @app.get("/v1/health")
     def health(request: Request) -> dict[str, Any]:
