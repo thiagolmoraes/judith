@@ -3,40 +3,32 @@ import { en } from "./en";
 import { ptBR } from "./pt-BR";
 import { translate } from "./index";
 
-// Screens that have been through the translation sweep, guarded against regressing. Every
-// previous pass shipped with strings still in English, because each sweep I wrote was narrower
-// than the thing it was guarding — first tag text only, then template literals, then
-// interpolated sentences. This file is the widest form of that sweep, kept as a test so the
-// next edit can't quietly reintroduce a literal. Add a file here once it is translated.
+// The GUI is fully translated, and this keeps it that way. Every previous pass shipped with
+// strings still in English, because each sweep I wrote was narrower than the thing it was
+// guarding — first tag text only, then template literals, then interpolated sentences, then a
+// plain function returning a string. This file is the widest form of that sweep, kept as a test.
+//
+// It covers ALL of src/ rather than a list of translated files. A list has the same flaw as the
+// shape-based exemptions this guard used to have: a new screen is born outside it and nobody
+// notices. Opting out is possible but has to be deliberate and explained.
 
-const FILES = import.meta.glob(
-  [
-    "../App.tsx",
-    "../components/Composer.tsx",
-    "../components/Sidebar.tsx",
-    // The management screens, translated in the same sweep.
-    "../components/ManageTabs.tsx",
-    "../components/Onboarding.tsx",
-    "../components/GalleryModal.tsx",
-    "../components/InboxConfigure.tsx",
-    "../components/PersonasTab.tsx",
-    // Connector detail pages.
-    "../components/connectors/SlackDetail.tsx",
-    "../components/connectors/GithubDetail.tsx",
-    "../components/connectors/GmailDetail.tsx",
-    "../components/connectors/HubSpotDetail.tsx",
-    "../components/connectors/CalendarDetail.tsx",
-    "../components/connectors/AccountsDetail.tsx",
-    "../components/connectors/AvailableDetail.tsx",
-    "../components/connectors/ByoSetup.tsx",
-    "../components/connectors/AddConnectionModal.tsx",
-    "../components/connectors/ConnectorsList.tsx",
-    "../components/connectors/ConnectorsSection.tsx",
-    "../components/connectors/CloudSignIn.tsx",
-    // SlackHowItWorks is deliberately absent: most of its text draws a fictional Slack
-    // workspace, which stays in English on purpose. See the comment in that file.
-  ],
-  { query: "?raw", import: "default", eager: false },
+const EXEMPT = [
+  // Most of this file draws a FICTIONAL Slack workspace to teach how mentions arrive. It
+  // imitates Slack's own interface, so a Portuguese rendering would depict a product that
+  // doesn't exist. Its own copy — heading, tabs, captions, sticky notes — IS translated.
+  "SlackHowItWorks.tsx",
+];
+
+const ALL = import.meta.glob("../**/*.tsx", {
+  query: "?raw",
+  import: "default",
+  eager: false,
+});
+const FILES = Object.fromEntries(
+  Object.entries(ALL).filter(
+    ([path]) =>
+      !path.includes(".test.") && !EXEMPT.some((name) => path.endsWith(name)),
+  ),
 );
 
 /** Source with comments and imports stripped — prose about a string is not a string. */
@@ -73,6 +65,13 @@ const ALLOWED = new Set([
   "Outlook",
   "Gmail",
   "Google Calendar", // the product's own name, on its badge
+  // System requirements: OS names and version strings are the same in every language,
+  // and "macOS 12+ · Apple Silicon M1+" is not a sentence to translate.
+  "Mac",
+  "Windows",
+  "macOS 12+ · Apple Silicon M1+",
+  "Windows 10 22H2/11 · x64",
+  "~/OpenWorker", // a filesystem path shown as a placeholder
 ]);
 
 // Shapes that can't be user-facing copy no matter what they say.

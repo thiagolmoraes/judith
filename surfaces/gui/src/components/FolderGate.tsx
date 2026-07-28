@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { getRecentWorkspaces, openWorkspace, type RecentWorkspace } from "../api";
 import { chooseFolder } from "../tauri";
+import { useI18n } from "../i18n/useLocale";
 
 // The mandatory workspace picker for project-scoped personas. Deliberately no
 // "switch persona" escape hatch: if a persona needs a folder, the choice here is
@@ -13,6 +14,7 @@ interface Props {
 }
 
 export function FolderGate({ onChoose, onCancel, create }: Props) {
+  const { t } = useI18n();
   const [recents, setRecents] = useState<RecentWorkspace[]>([]);
   const [path, setPath] = useState("");
   const [error, setError] = useState("");
@@ -49,14 +51,14 @@ export function FolderGate({ onChoose, onCancel, create }: Props) {
 
         <div className="gate-input">
           <input
-            placeholder="/path/to/your/project"
+            placeholder={t("folder.examplePath")}
             value={path}
             onChange={(e) => setPath(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && open(path, create)}
             autoFocus
           />
-          <button className="btn" onClick={browse} title="Pick a folder">
-            Browse…
+          <button className="btn" onClick={browse} title={t("folder.pickFolder")}>
+            {t("folder.browse")}
           </button>
           <button className="btn primary" onClick={() => open(path, create)} disabled={!path.trim()}>
             {create ? "Create" : "Open"}
@@ -66,7 +68,7 @@ export function FolderGate({ onChoose, onCancel, create }: Props) {
 
         {recents.length > 0 && (
           <>
-            <div className="gate-label">Recent</div>
+            <div className="gate-label">{t("folder.recent")}</div>
             <div className="gate-recents">
               {recents.map((w) => (
                 <div className="gate-recent" key={w.path} onClick={() => open(w.path)} title={w.path}>
@@ -81,7 +83,7 @@ export function FolderGate({ onChoose, onCancel, create }: Props) {
         {onCancel && (
           <div className="gate-foot">
             <button className="btn gate-cancel" onClick={onCancel}>
-              Cancel
+              {t("folder.cancel")}
             </button>
           </div>
         )}

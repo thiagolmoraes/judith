@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { chooseFolder } from "../tauri";
 import { Icon } from "./Icon";
+import { useI18n } from "../i18n/useLocale";
 
-// A single "Give access to a folder" affordance. Collapsed it's one button; expanded it's a path
+// A single Give access to a folder affordance. Collapsed it's one button; expanded it's a path
 // field (Browse on desktop, paste anywhere) + an "Allow writing" checkbox that's OFF by default —
 // so access is read-only unless explicitly granted. Used by the composer chip and the start panel.
 export function AddFolderForm({
@@ -20,6 +21,7 @@ export function AddFolderForm({
   startOpen?: boolean;
   onDismiss?: () => void;
 }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(!!startOpen);
   const [path, setPath] = useState("");
   const [writable, setWritable] = useState(false);
@@ -45,8 +47,7 @@ export function AddFolderForm({
   if (!open) {
     return (
       <button className={"addfolder-trigger" + (compact ? " compact" : "")} onClick={() => setOpen(true)}>
-        <Icon name="folderPlus" size={15} /> Give access to a folder
-      </button>
+        <Icon name="folderPlus" size={15} />{t("folder.giveAccess")}</button>
     );
   }
 
@@ -56,7 +57,7 @@ export function AddFolderForm({
         <input
           className="addfolder-path"
           autoFocus
-          placeholder="Choose or paste a folder path…"
+          placeholder={t("folder.pathPlaceholder")}
           value={path}
           spellCheck={false}
           onChange={(e) => setPath(e.target.value)}
@@ -65,21 +66,21 @@ export function AddFolderForm({
             else if (e.key === "Escape") reset();
           }}
         />
-        <button className="btn icon-only" onClick={browse} title="Choose location" aria-label="Choose location">
+        <button className="btn icon-only" onClick={browse} title={t("folder.chooseLocation")} aria-label={t("folder.chooseLocation")}>
           <Icon name="folder" size={15} />
         </button>
       </div>
       <div className="addfolder-actions">
         <label className="addfolder-write" title="Off = read-only. Tick to let the agent write here.">
           <input type="checkbox" checked={writable} onChange={(e) => setWritable(e.target.checked)} />
-          Allow writes
+          {t("folder.allowWrites")}
         </label>
         <span className="spacer" />
         <button className="btn" onClick={reset}>
-          Cancel
+          {t("folder.cancel")}
         </button>
         <button className="btn primary" disabled={busy || !path.trim()} onClick={submit}>
-          Add
+          {t("folder.add")}
         </button>
       </div>
     </div>

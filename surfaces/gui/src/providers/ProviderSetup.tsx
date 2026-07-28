@@ -8,6 +8,7 @@ import {
 } from "../api";
 import { openExternal } from "../tauri";
 import { PROVIDER_LOGOS, providerRank } from "./logos";
+import { useI18n } from "../i18n/useLocale";
 
 // The provider gallery ⇄ key form, shared by Onboarding step 1 (§39) and
 // Settings ▸ Models (UX-021) so the two can never drift apart visually. The hook
@@ -51,17 +52,6 @@ export function ProviderMark({ name, title, size = 32 }: { name: string; title: 
 }
 
 /** "2h ago"-style label for a provider's last completion (null when never used). */
-export function relTime(epoch?: number | null): string | null {
-  if (!epoch) return null;
-  const secs = Math.max(0, Math.floor(Date.now() / 1000 - epoch));
-  if (secs < 90) return "just now";
-  const mins = Math.floor(secs / 60);
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 48) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-}
-
 export interface ProviderSetupState {
   providers: ProviderInfo[];
   ordered: ProviderInfo[];
@@ -92,6 +82,7 @@ export interface ProviderSetupState {
 }
 
 export function useProviderSetup(opts?: { onSaved?: () => void }): ProviderSetupState {
+  const { t, relative } = useI18n();
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   // null = the gallery; a provider name = that provider's key form.
   const [sel, setSel] = useState<string | null>(null);
@@ -213,20 +204,31 @@ export function useProviderSetup(opts?: { onSaved?: () => void }): ProviderSetup
 
   const statusFor = (p: ProviderInfo, o?: { lastUsed?: boolean }) => {
     if (p.configured && p.needs_key) {
-      const used = o?.lastUsed ? relTime(p.last_used_at) : null;
+      const used = o?.lastUsed && p.last_used_at ? relative(p.last_used_at) : null;
       return (
         <span className="block text-[11.5px] text-ok font-medium truncate">
-          ✓ Connected{used ? <span className="text-muted font-normal"> · used {used}</span> : ""}
+          {t("provider.connected")}
+          {used ? (
+            <span className="text-muted font-normal">
+              {t("provider.usedSuffix", { when: used })}
+            </span>
+          ) : (
+            ""
+          )}
         </span>
       );
     }
     if (!p.needs_key)
       return (
         <span className="block text-[11.5px] text-faint truncate">
-          {keylessOk.has(p.name) ? <span className="text-ok font-medium">✓ Running</span> : "No key needed"}
+          {keylessOk.has(p.name) ? (
+            <span className="text-ok font-medium">{t("provider.running")}</span>
+          ) : (
+            t("provider.noKeyNeeded")
+          )}
         </span>
       );
-    return <span className="block text-[11.5px] text-faint truncate">Not set up</span>;
+    return <span className="block text-[11.5px] text-faint truncate">{t("provider.notSetUp")}</span>;
   };
 
   return {
@@ -311,6 +313,7 @@ export function ProviderForm({
   tp: string;
   footer?: ReactNode;
 }) {
+  const { t } = useI18n();
   const { info, sel } = ps;
   const label = "block text-[12px] text-muted mt-3 mb-1";
   const input =
@@ -413,7 +416,7 @@ export function ProviderForm({
             className="text-muted underline decoration-line underline-offset-2 hover:text-ink"
             onClick={() => openExternal("https://ollama.com/download")}
           >
-            Install Ollama ↗
+            {t("provider.installOllama")}
           </button>
         </p>
       )}
@@ -432,7 +435,7 @@ export function ProviderForm({
               onClick={() => ps.setShowEndpoint(true)}
               data-testid={`${tp}-endpoint-link`}
             >
-              Custom endpoint ⌄
+              {t("provider.customEndpoint")}
             </button>
           );
         return (

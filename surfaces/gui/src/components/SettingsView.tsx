@@ -264,7 +264,7 @@ function VoiceInputSection() {
   return (
     <section>
       <PanelHead
-        title="Voice input"
+        title={t("settings.voiceInput")}
         sub="Speak naturally in the composer. Recordings and transcripts stay on this device."
       />
 
@@ -303,7 +303,7 @@ function VoiceInputSection() {
             <div className="p-4 flex items-center gap-3">
               <div className="w-9 h-9 rounded-lg bg-accentSoft text-accent grid place-items-center font-semibold">W</div>
               <div className="min-w-0 flex-1">
-                <div className="text-[13.5px] font-medium">Whisper Base · English</div>
+                <div className="text-[13.5px] font-medium">{t("settings.whisperBase")}</div>
                 <div className="text-[12px] text-muted mt-0.5">
                   {status?.model_verified ? `Installed and verified · ${formatBytes(status.model_bytes)}` : `Local voice model · ${formatBytes(status?.model_bytes || 147_964_211)}`}
                 </div>
@@ -366,7 +366,7 @@ function PersonasSection({ onOpenPersona }: { onOpenPersona?: (id: string) => vo
   return (
     <section>
       <PanelHead
-        title="Personas"
+        title={t("settings.personas")}
         sub="Which coworkers are enabled and shown in the picker, plus installing new persona bundles."
       />
       <PersonasTab key={galleryBump} onOpenPersona={onOpenPersona} />
@@ -536,7 +536,9 @@ function TrustedWorkspacesCard() {
                 <div className="text-[12.5px] text-ink break-all">{workspace.workspace}</div>
                 <div className="text-[11.5px] text-muted mt-0.5">
                   {workspace.requested_commands.length
-                    ? `${workspace.requested_commands.length} project command allowance${workspace.requested_commands.length === 1 ? "" : "s"}`
+                    ? t("count.commandAllowances", {
+                        count: workspace.requested_commands.length,
+                      })
                     : "No project command allowances currently declared"}
                   {!workspace.exists ? " · Folder unavailable" : ""}
                 </div>
@@ -545,7 +547,7 @@ function TrustedWorkspacesCard() {
                 className="text-[12px] text-red-600 px-2 py-1"
                 onClick={() => void revoke(workspace.workspace)}
               >
-                Revoke
+                {t("settings.revoke")}
               </button>
             </div>
           ))}
@@ -647,11 +649,10 @@ function TokenSavingsCard() {
     <div className={CARD + " p-4 mb-4"} data-testid="token-savings-card">
       <div className={FIELD_LABEL}>{t("settings.tokenSavings")}</div>
       <div className={FIELD_HELP}>
-        PDF attachments travel with every turn of a conversation, so large documents multiply
-        what you spend on tokens.
+        {t("settings.pdfCost")}
       </div>
 
-      <div className="mt-3 text-[13px] text-ink">PDFs on models without native PDF support</div>
+      <div className="mt-3 text-[13px] text-ink">{t("settings.pdfNoNative")}</div>
       <SegmentedRadio
         label="PDF fallback"
         className="seg mt-2"
@@ -694,7 +695,7 @@ function TokenSavingsCard() {
             className="w-16 px-2 py-1.5 rounded-lg border border-line bg-paper text-[13px] text-ink outline-none focus:border-accent"
             onChange={(e) => save({ pdf_max_mb: Math.max(1, Math.min(Number(e.target.value) || 10, 10)) })}
           />
-          <span className="text-[12.5px] text-muted">MB</span>
+          <span className="text-[12.5px] text-muted">{t("settings.mb")}</span>
         </label>
       </div>
       <div className={FIELD_HELP}>
@@ -746,6 +747,7 @@ function SidebarCard() {
 // -- Files (scratch location) — one card inside General (UX-021: a single option
 // doesn't earn its own tab) -----------------------------------------------------
 function FilesCard() {
+  const { t } = useI18n();
   const [settings, setSettings] = useState<ModelSettings | null>(null);
   const [scratchDraft, setScratchDraft] = useState("");
   const [scratchMsg, setScratchMsg] = useState<string | null>(null);
@@ -781,7 +783,7 @@ function FilesCard() {
 
   return (
     <div className={CARD + " p-4 mb-4"}>
-      <div className={FIELD_LABEL}>Files</div>
+      <div className={FIELD_LABEL}>{t("settings.files")}</div>
         <div className="flex items-center gap-2 mt-2.5">
           <input
             className={INPUT}
@@ -794,12 +796,12 @@ function FilesCard() {
             onKeyDown={(e) => e.key === "Enter" && saveScratch()}
           />
           {desktop && (
-            <button className={BTN_BORDERED} onClick={browseScratch} title="Pick a folder">
-              Browse
+            <button className={BTN_BORDERED} onClick={browseScratch} title={t("settings.pickFolder")}>
+              {t("settings.browse")}
             </button>
           )}
           <button className={BTN_ACCENT} onClick={saveScratch} disabled={!scratchDraft.trim()}>
-            Save
+            {t("settings.save")}
           </button>
         </div>
       <div className={FIELD_HELP}>
