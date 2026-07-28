@@ -20,6 +20,21 @@ const FILES = import.meta.glob(
     "../components/GalleryModal.tsx",
     "../components/InboxConfigure.tsx",
     "../components/PersonasTab.tsx",
+    // Connector detail pages.
+    "../components/connectors/SlackDetail.tsx",
+    "../components/connectors/GithubDetail.tsx",
+    "../components/connectors/GmailDetail.tsx",
+    "../components/connectors/HubSpotDetail.tsx",
+    "../components/connectors/CalendarDetail.tsx",
+    "../components/connectors/AccountsDetail.tsx",
+    "../components/connectors/AvailableDetail.tsx",
+    "../components/connectors/ByoSetup.tsx",
+    "../components/connectors/AddConnectionModal.tsx",
+    "../components/connectors/ConnectorsList.tsx",
+    "../components/connectors/ConnectorsSection.tsx",
+    "../components/connectors/CloudSignIn.tsx",
+    // SlackHowItWorks is deliberately absent: most of its text draws a fictional Slack
+    // workspace, which stays in English on purpose. See the comment in that file.
   ],
   { query: "?raw", import: "default", eager: false },
 );
@@ -29,7 +44,10 @@ function code(text: string): string {
   return text
     .replace(/\/\*[\s\S]*?\*\//g, " ")
     .replace(/(^|[^:])\/\/[^\n]*/g, "$1 ")
-    .replace(/^import[\s\S]*?from\s*["'][^"']+["'];?$/gm, " ");
+    .replace(/^import[\s\S]*?from\s*["'][^"']+["'];?$/gm, " ")
+    // `=> Promise<void>` reads as JSX text to the >…< scan below. Generic type arguments
+    // are not copy, so drop them before scanning.
+    .replace(/=>\s*[A-Z]\w*</g, "=> <");
 }
 
 // Exempting by SHAPE was the bug in the first version of this guard: "a single capitalised word
@@ -54,6 +72,7 @@ const ALLOWED = new Set([
   "Attio",
   "Outlook",
   "Gmail",
+  "Google Calendar", // the product's own name, on its badge
 ]);
 
 // Shapes that can't be user-facing copy no matter what they say.

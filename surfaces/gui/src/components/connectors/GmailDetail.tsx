@@ -10,15 +10,17 @@ import { ConnectorBadge } from "../../connectors/ConnectorIcon";
 import type { DetailProps } from "./ConnectorsSection";
 import { ToolsDisclosure } from "./ToolsDisclosure";
 import { FOOT, GRP, GRP_H, PILL_ACCENT, ROW, TAG_ACCENT, TAG_WARN, XBTN } from "./ui";
+import { useI18n } from "../../i18n/useLocale";
 
 // The Gmail detail page (UX-DECISIONS §21): connected mailboxes (multi-account,
-// Default badge, per-account disconnect) + "Never show agents" privacy filters.
+// Default badge, per-account disconnect) + Never show agents privacy filters.
 // Adding an account launches managed OAuth DIRECTLY — Gmail has one connect mode,
 // so no modal (the pill-modal is only for ≥2-mode connectors like Slack).
 
 const LABEL = "text-[12.5px] text-muted w-24 shrink-0";
 
 export function GmailDetail({ c, cloud, slack: _slack, onChanged }: DetailProps) {
+  const { t } = useI18n();
   const [busy, setBusy] = useState(false);
   const accounts = (c.accounts ?? []) as GmailAccount[]; // email-keyed (pre-generic-layer shape)
 
@@ -43,7 +45,7 @@ export function GmailDetail({ c, cloud, slack: _slack, onChanged }: DetailProps)
                 </span>
               </>
             ) : (
-              <span>Not connected</span>
+              <span>{t("conn.notConnected")}</span>
             )}
           </div>
         </div>
@@ -75,7 +77,7 @@ export function GmailDetail({ c, cloud, slack: _slack, onChanged }: DetailProps)
 
       {accounts.length > 0 && (
         <>
-          <div className={GRP_H + " !mt-0"}>Accounts</div>
+          <div className={GRP_H + " !mt-0"}>{t("conn.accounts")}</div>
           <div className={GRP} data-testid="gmail-accounts">
             {accounts.map((a) => (
               <AccountRow key={a.email} a={a} onChanged={onChanged} />
@@ -88,20 +90,20 @@ export function GmailDetail({ c, cloud, slack: _slack, onChanged }: DetailProps)
 
       <ToolsDisclosure c={c} onChanged={onChanged} />
       <div className={FOOT + " mt-2"}>
-        Filters are enforced on this computer, before an agent sees results. Hidden counts show
-        on the tool card and in Activity — never the content.
+        {t("gmail.filtersEnforced")}
       </div>
     </div>
   );
 }
 
 function AccountRow({ a, onChanged }: { a: GmailAccount; onChanged: () => void }) {
+  const { t } = useI18n();
   const [busy, setBusy] = useState(false);
   return (
     <div className={ROW} data-testid={`gmail-account-${a.email}`}>
       <span className="min-w-0 flex-1 flex items-center gap-2">
         <span className="text-[13px] font-medium truncate">{a.email}</span>
-        {a.default && <span className={TAG_ACCENT}>Default</span>}
+        {a.default && <span className={TAG_ACCENT}>{t("conn.default")}</span>}
         {a.needs_reauth && <span className={TAG_WARN}>⚠ Sign in again</span>}
       </span>
       {!a.default && (
@@ -113,12 +115,12 @@ function AccountRow({ a, onChanged }: { a: GmailAccount; onChanged: () => void }
             onChanged();
           }}
         >
-          Make default
+          {t("conn.makeDefault")}
         </button>
       )}
       <button
         className={XBTN}
-        title="Disconnect this mailbox"
+        title={t("gmail.disconnectMailbox")}
         data-testid={`gmail-disconnect-${a.email}`}
         disabled={busy}
         onClick={async () => {
@@ -135,15 +137,16 @@ function AccountRow({ a, onChanged }: { a: GmailAccount; onChanged: () => void }
 }
 
 function FiltersGroup({ c, onChanged }: Pick<DetailProps, "c" | "onChanged">) {
+  const { t } = useI18n();
   const filters = c.filters ?? { senders: [], labels: [] };
   return (
     <>
-      <div className={GRP_H}>Never show agents</div>
+      <div className={GRP_H}>{t("gmail.neverShow")}</div>
       <div className={GRP} data-testid="gmail-filters">
         <ChipListRow
           label="Senders"
           testid="gmail-filter-senders"
-          placeholder="name@example.com or @domain.com"
+          placeholder={t("gmail.addressPlaceholder")}
           values={filters.senders}
           onSave={async (senders) => {
             await setGmailFilters({ senders });
@@ -153,7 +156,7 @@ function FiltersGroup({ c, onChanged }: Pick<DetailProps, "c" | "onChanged">) {
         <ChipListRow
           label="Labels"
           testid="gmail-filter-labels"
-          placeholder="Label name, e.g. Personal"
+          placeholder={t("gmail.labelPlaceholder")}
           values={filters.labels}
           onSave={async (labels) => {
             await setGmailFilters({ labels });
@@ -162,7 +165,7 @@ function FiltersGroup({ c, onChanged }: Pick<DetailProps, "c" | "onChanged">) {
         />
       </div>
       <div className={FOOT}>
-        Matching email is silently left out of what agents read — no trace they could probe.
+        {t("gmail.silentlyLeftOut")}
       </div>
     </>
   );

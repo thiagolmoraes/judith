@@ -7,6 +7,7 @@ import {
   waitForCloudSignIn,
   type CloudStatus,
 } from "../../api";
+import { useI18n } from "../../i18n/useLocale";
 
 // The signed-out state of every one-click pane: a REAL sign-in button, not a
 // hint pointing at another page. Sign-in completes in the system browser; this
@@ -61,12 +62,13 @@ export function CloudSignInInline({ blurb }: { blurb?: string }) {
 // Rendering the sign-in prompt here told signed-in users they weren't (FB-013) —
 // pending must look like pending.
 export function CloudStatusPending() {
+  const { t } = useI18n();
   return (
     <div
       className="text-[12px] text-faint py-2 text-center"
       data-testid="cloud-status-pending"
     >
-      Checking OpenWorker Cloud sign-in…
+      {t("cloudSignIn.checking")}
     </div>
   );
 }

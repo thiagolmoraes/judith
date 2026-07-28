@@ -13,6 +13,7 @@ import { ConnectSetup } from "../ManageTabs";
 import { ByoSetup, byoSupported } from "./ByoSetup";
 import { CloudSignInInline, CloudStatusPending } from "./CloudSignIn";
 import { PILL_ACCENT, PILL_LINE, TAG_ACCENT } from "./ui";
+import { useI18n } from "../../i18n/useLocale";
 
 type Pane = "one" | "byo" | "manual";
 
@@ -43,6 +44,7 @@ export function AddConnectionModal({
   onClose: () => void;
   onChanged: () => void;
 }) {
+  const { t } = useI18n();
   // MCP-backed one-click (§42): local OAuth against the vendor's hosted MCP server —
   // with manual fields alongside (jira, asana) it's a second mode; alone (monday)
   // it IS the connect flow.
@@ -90,7 +92,7 @@ export function AddConnectionModal({
           <div className="flex-1 font-semibold text-[16px] tracking-tight">
             {title || `Connect ${c.title}`}
           </div>
-          <button className="text-faint hover:text-ink text-[18px] leading-none" onClick={onClose} title="Close">
+          <button className="text-faint hover:text-ink text-[18px] leading-none" onClick={onClose} title={t("addConn.close")}>
             ×
           </button>
         </div>
@@ -155,6 +157,7 @@ export function AddConnectionModal({
 // client secret, no broker, no OpenWorker sign-in required). Poll until the card
 // flips to connected, then close.
 function McpOneClick({ c, onConnected }: { c: Connector; onConnected: () => void }) {
+  const { t } = useI18n();
   const [waiting, setWaiting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -192,7 +195,7 @@ function McpOneClick({ c, onConnected }: { c: Connector; onConnected: () => void
       </button>
       {error && <div className="text-[12.5px] text-danger">{error}</div>}
       <p className="text-[12px] text-faint text-center flex items-center justify-center gap-1.5">
-        <span className={TAG_ACCENT}>Recommended</span> agents get a curated set of{" "}
+        <span className={TAG_ACCENT}>{t("addConn.recommended")}</span> agents get a curated set of{" "}
         {c.title} tools · tokens stay on this computer
       </p>
     </div>
@@ -202,6 +205,7 @@ function McpOneClick({ c, onConnected }: { c: Connector; onConnected: () => void
 // One-click pane for generic managed connectors (Notion, Attio, …): sign in
 // with the service in the browser; each consent lands as its own account.
 function GenericOneClick({ c, cloud }: { c: Connector; cloud: CloudStatus | null }) {
+  const { t } = useI18n();
   const [waiting, setWaiting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const go = async () => {
@@ -232,13 +236,15 @@ function GenericOneClick({ c, cloud }: { c: Connector; cloud: CloudStatus | null
       )}
       {error && <div className="text-[12.5px] text-danger">{error}</div>}
       <p className="text-[12px] text-faint text-center flex items-center justify-center gap-1.5">
-        <span className={TAG_ACCENT}>Recommended</span> tokens stay on this computer
+        <span className={TAG_ACCENT}>{t("addConn.recommended")}</span>{" "}
+        {t("addConn.tokensLocal")}
       </p>
     </div>
   );
 }
 
 function SlackOneClick({ c, cloud }: { c: Connector; cloud: CloudStatus | null }) {
+  const { t } = useI18n();
   const [waiting, setWaiting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const go = async () => {
@@ -264,13 +270,13 @@ function SlackOneClick({ c, cloud }: { c: Connector; cloud: CloudStatus | null }
       )}
       {error && <div className="text-[12.5px] text-danger">{error}</div>}
       <p className="text-[12px] text-faint text-center flex items-center justify-center gap-1.5">
-        <span className={TAG_ACCENT}>Recommended</span> relay · tokens stay on this computer
-      </p>
+        <span className={TAG_ACCENT}>{t("addConn.recommended")}</span>{t("addConn.relayLocal")}</p>
     </div>
   );
 }
 
 function GithubOneClick({ c, cloud }: { c: Connector; cloud: CloudStatus | null }) {
+  const { t } = useI18n();
   const [waiting, setWaiting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const go = async () => {
@@ -300,13 +306,13 @@ function GithubOneClick({ c, cloud }: { c: Connector; cloud: CloudStatus | null 
       )}
       {error && <div className="text-[12.5px] text-danger">{error}</div>}
       <p className="text-[12px] text-faint text-center flex items-center justify-center gap-1.5">
-        <span className={TAG_ACCENT}>Recommended</span> relay · short-lived tokens, never stored
-      </p>
+        <span className={TAG_ACCENT}>{t("addConn.recommended")}</span>{t("addConn.relayShortLived")}</p>
     </div>
   );
 }
 
 function HubSpotOneClick({ c, cloud }: { c: Connector; cloud: CloudStatus | null }) {
+  const { t } = useI18n();
   const [access, setAccess] = useState<"read" | "write">("read");
   const [waiting, setWaiting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -319,8 +325,7 @@ function HubSpotOneClick({ c, cloud }: { c: Connector; cloud: CloudStatus | null
   return (
     <div className="px-5 py-4 space-y-3">
       <p className="text-[13px] text-muted">
-        Opens HubSpot in your browser — pick the portal there. What agents may do is chosen
-        NOW, at consent:
+        {t("addConn.hubspotConsent")}
       </p>
       <div className="space-y-1.5" data-testid="hubspot-access">
         {(
@@ -356,13 +361,14 @@ function HubSpotOneClick({ c, cloud }: { c: Connector; cloud: CloudStatus | null
       )}
       {error && <div className="text-[12.5px] text-danger">{error}</div>}
       <p className="text-[12px] text-faint text-center">
-        Works for any number of portals · tokens stay on this computer
+        {t("addConn.hubspotAnyPortals")}
       </p>
     </div>
   );
 }
 
 function SlackManual({ onConnected }: { onConnected: () => void }) {
+  const { t } = useI18n();
   const [bot, setBot] = useState("");
   const [app, setApp] = useState("");
   const [busy, setBusy] = useState(false);
@@ -378,18 +384,18 @@ function SlackManual({ onConnected }: { onConnected: () => void }) {
   return (
     <div className="px-5 py-4 space-y-3">
       <ol className="list-decimal pl-4 text-[13px] text-muted space-y-1">
-        <li>Create an app at api.slack.com/apps</li>
-        <li>Enable Socket Mode, add bot scopes, install it to your workspace</li>
-        <li>Paste both tokens</li>
+        <li>{t("addConn.slackStep1")}</li>
+        <li>{t("addConn.slackStep2")}</li>
+        <li>{t("addConn.slackStep3")}</li>
       </ol>
-      <input className={INPUT} type="password" placeholder="Bot token · xoxb-…" value={bot} spellCheck={false} onChange={(e) => setBot(e.target.value)} />
-      <input className={INPUT} type="password" placeholder="App token · xapp-…" value={app} spellCheck={false} onChange={(e) => setApp(e.target.value)} />
+      <input className={INPUT} type="password" placeholder={t("addConn.botToken")} value={bot} spellCheck={false} onChange={(e) => setBot(e.target.value)} />
+      <input className={INPUT} type="password" placeholder={t("addConn.appToken")} value={app} spellCheck={false} onChange={(e) => setApp(e.target.value)} />
       <button className={PILL_LINE + " w-full !py-2"} onClick={submit} disabled={busy || !bot.trim() || !app.trim()}>
         {busy ? "Validating…" : "Connect"}
       </button>
       {error && <div className="text-[12.5px] text-danger">{error}</div>}
       <p className="text-[12px] text-warnInk text-center">
-        One mode at a time — this pauses any relay workspaces.
+        {t("addConn.oneModeAtATime")}
       </p>
     </div>
   );
