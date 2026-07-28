@@ -430,6 +430,9 @@ export const ptBR: Catalog = {
   "app.scheduledRunPlain": "Execução agendada · iniciada por uma automação",
   "app.scheduledRunNamed": "Execução agendada — {title} · iniciada por uma automação",
   "sidebar.noProjects": "Nenhum projeto ainda — crie um com o + acima.",
+  "sidebar.delete": "Excluir",
+  "sidebar.deleteConfirm": "Excluir?",
+  "composer.removeAttachment": "Remover {name}",
   // -- tool-call one-liners (humanize.ts) -----------------------------------------
   // Assembled as pre + object + post so the UI can bold the object. Verb-object order
   // holds in Portuguese, so the shape survives translation unchanged; only the

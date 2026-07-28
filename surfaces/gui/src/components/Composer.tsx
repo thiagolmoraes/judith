@@ -380,6 +380,7 @@ export function Composer(props: Props) {
             className="shrink-0 opacity-60 hover:opacity-100"
             onClick={() => setAttachNotice(null)}
             title={tr("common.dismiss")}
+            aria-label={tr("common.dismiss")}
           >
             ✕
           </button>
@@ -685,6 +686,8 @@ function attachItem(icon: "image" | "file" | "fileCode", label: string, onClick:
 function AttachChip({ a, onRemove }: { a: Attachment; onRemove: () => void }) {
   const { t } = useI18n();
   const title = t("composer.remove");
+  // Names the file, so a screen reader hears which attachment this ✕ drops.
+  const removeLabel = t("composer.removeAttachment", { name: a.name });
   return (
     <div className={"attach-chip" + (a.kind === "image" ? " img" : "")}>
       {a.kind === "image" ? (
@@ -695,7 +698,7 @@ function AttachChip({ a, onRemove }: { a: Attachment; onRemove: () => void }) {
           <span className="attach-name">{a.name}</span>
         </>
       )}
-      <button className="attach-x" onClick={onRemove} title={title}>
+      <button className="attach-x" onClick={onRemove} title={title} aria-label={removeLabel}>
         ✕
       </button>
     </div>

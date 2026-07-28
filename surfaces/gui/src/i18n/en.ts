@@ -424,6 +424,9 @@ export const en: Catalog = {
   "app.scheduledRunPlain": "Scheduled run · started by an automation",
   "app.scheduledRunNamed": "Scheduled run — {title} · started by an automation",
   "sidebar.noProjects": "No projects yet — start one with the + above.",
+  "sidebar.delete": "Delete",
+  "sidebar.deleteConfirm": "Delete?",
+  "composer.removeAttachment": "Remove {name}",
   // -- tool-call one-liners (humanize.ts) -----------------------------------------
   // Assembled as pre + object + post so the UI can bold the object. Verb-object order
   // holds in Portuguese, so the shape survives translation unchanged; only the

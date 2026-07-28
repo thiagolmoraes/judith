@@ -23,18 +23,55 @@ function code(text: string): string {
     .replace(/^import[\s\S]*?from\s*["'][^"']+["'];?$/gm, " ");
 }
 
-// Identifiers, CSS, ids and glyphs all look like strings to a regex. These are the shapes that
-// are legitimately not user-facing.
-const NOT_PROSE = [
+// Exempting by SHAPE was the bug in the first version of this guard: "a single capitalised word
+// is probably an enum value" also exempts `Delete`, `Send` and `Search`, which are button labels.
+// Two of those were live in the sidebar while this test was green.
+//
+// So the exemptions are an explicit allowlist instead. A new one has to be added deliberately,
+// which is the point — the cost of a false positive is one line here, the cost of a false
+// negative is untranslated copy shipping unnoticed.
+const ALLOWED = new Set([
+  "OpenWorker", // the wordmark
+  "BETA",
+  "Coworker", // product surface names, also persona ids
+  "Chat",
+  "Code",
+  "PDF",
+  "Granola", // vendor names
+  "Slack",
+  "GitHub",
+  "Notion",
+  "HubSpot",
+  "Attio",
+  "Outlook",
+  "Gmail",
+]);
+
+// Shapes that can't be user-facing copy no matter what they say.
+const LOWERCASE_WORDS = /^[a-z0-9-]+(?:[ ][a-z0-9-]+)*$/;
+const NOT_COPY = [
   /^[a-z][a-zA-Z0-9]*$/, // camelCase identifier
-  /^[a-z0-9-]+(?:[ ][a-z0-9-]+)*$/, // css classes / kebab ids, lowercase throughout
-  /^[A-Z][a-zA-Z0-9]*$/, // a single capitalised word with no space: a type or enum value
+  LOWERCASE_WORDS, // css classes / kebab ids, lowercase throughout
   /^[\W\d\s]+$/, // punctuation, digits, emoji
   /^\p{Extended_Pictographic}/u,
+  /[;{}()=]|=>/, // a fragment of code the regex tore out of context
 ];
 
-const isProse = (s: string) =>
-  s.trim().length > 3 && /[a-z]\s+[a-z]/i.test(s) && !NOT_PROSE.some((r) => r.test(s.trim()));
+/** Does this literal read as something a person would see?
+ *
+ * `inAttribute` drops the lowercase-words exemption. In JSX text `foo bar` is nearly always a
+ * className the regex caught mid-expression, but in `aria-label="new session"` it is the
+ * accessible name — the one place lowercase prose is real copy. */
+const isCopy = (raw: string, inAttribute = false) => {
+  const s = raw.trim();
+  // Two chars, not four: `Go`, `OK` and `Up` are all real button labels.
+  if (s.length < 2 || ALLOWED.has(s)) return false;
+  if (!/[A-Za-z]/.test(s)) return false;
+  const shapes = inAttribute
+    ? NOT_COPY.filter((r) => r.source !== LOWERCASE_WORDS.source)
+    : NOT_COPY;
+  return !shapes.some((r) => r.test(s));
+};
 
 describe("the core shell has no untranslated user-facing text", () => {
   it("has no English sentences left in JSX attributes", async () => {
@@ -46,7 +83,7 @@ describe("the core shell has no untranslated user-facing text", () => {
       for (const m of text.matchAll(
         /(?:title|placeholder|aria-label|ariaLabel|alt)=\{?"([^"]+)"/g,
       )) {
-        if (isProse(m[1])) offenders.push(`${path}: ${m[1]}`);
+        if (isCopy(m[1], true)) offenders.push(`${path}: ${m[1]}`);
       }
     }
     expect(offenders, `hardcoded attribute copy:\n${offenders.join("\n")}`).toEqual([]);
@@ -58,8 +95,9 @@ describe("the core shell has no untranslated user-facing text", () => {
       // Whitespace-collapsed: JSX wraps a sentence across lines, and a line-oriented search
       // misses exactly the long strings most worth catching.
       const text = code((await load()) as string).replace(/\s+/g, " ");
-      for (const m of text.matchAll(/>\s*([A-Z][^<>{}]{4,})\s*</g)) {
-        if (isProse(m[1])) offenders.push(`${path}: ${m[1].trim()}`);
+      // {1,} not {4,}: a short label is exactly what the shape-based exemption used to hide.
+      for (const m of text.matchAll(/>\s*([A-Za-z][^<>{}]{1,})\s*</g)) {
+        if (isCopy(m[1])) offenders.push(`${path}: ${m[1].trim()}`);
       }
     }
     expect(offenders, `hardcoded JSX copy:\n${offenders.join("\n")}`).toEqual([]);
@@ -71,10 +109,10 @@ describe("the core shell has no untranslated user-facing text", () => {
     const offenders: string[] = [];
     for (const [path, load] of Object.entries(FILES)) {
       const text = code((await load()) as string).replace(/\s+/g, " ");
-      for (const m of text.matchAll(/\$\{[^}]*\?\s*""\s*:\s*"s"[^}]*\}/g)) {
-        offenders.push(`${path}: ${m[0]}`);
-      }
-      for (const m of text.matchAll(/\$\{[^}]*\?\s*"s"\s*:\s*""[^}]*\}/g)) {
+      // Any interpolation that picks between two string literals. The first version only
+      // matched the ""/"s" suffix form, so `${n === 1 ? "run" : "runs"}` — the same rule
+      // spelled out in full — sailed past it.
+      for (const m of text.matchAll(/\$\{[^}]*\?\s*"[^"]*"\s*:\s*"[^"]*"[^}]*\}/g)) {
         offenders.push(`${path}: ${m[0]}`);
       }
     }

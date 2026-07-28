@@ -515,7 +515,7 @@ export function Sidebar(props: Props) {
                   }}
                 >
                   <Icon name="trash" size={13} className="shrink-0" />
-                  <span className="flex-1">Delete?</span>
+                  <span className="flex-1">{t("sidebar.deleteConfirm")}</span>
                 </button>
               ) : (
                 <button
@@ -525,7 +525,7 @@ export function Sidebar(props: Props) {
                   onClick={() => setConfirmDelId(s.session_id)}
                 >
                   <Icon name="trash" size={13} className="shrink-0" />
-                  <span className="flex-1">Delete</span>
+                  <span className="flex-1">{t("sidebar.delete")}</span>
                 </button>
               )}
             </div>
