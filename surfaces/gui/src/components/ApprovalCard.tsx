@@ -132,6 +132,7 @@ function Buttons({
   runTask?: { id: string; title: string } | null;
   primaryLabel: string;
 }) {
+  const { t } = useI18n();
   const connector = item.category === "connector";
   const offerStanding = !!(runTask && item.standingTarget);
   return (
@@ -145,7 +146,7 @@ function Buttons({
           title={`Always allow ${item.name} → ${item.standingTarget} for “${runTask?.title || "this automation"}” — revoke any time on its Automations page`}
           onClick={() => onApprove("always_task")}
         >
-          Allow every time
+          {t("approval.allowEveryTime")}
         </button>
       )}
       {/* In a run context the task-persistent grant replaces the session-scoped one —
@@ -159,17 +160,17 @@ function Buttons({
           title={`Always allow ${TOOL_VERBS[item.name]?.toLowerCase() || item.name} for this session`}
           onClick={() => onApprove("always_tool")}
         >
-          Always allow
+          {t("approval.alwaysAllow")}
         </button>
       )}
       {item.name === "run_shell" && (
         <button className="btn" onClick={() => onApprove("always_command")}>
-          Always allow this command
+          {t("approval.alwaysAllowCommand")}
         </button>
       )}
       <span className="spacer" />
       <button className="btn quiet-deny" onClick={() => onApprove("deny")}>
-        Deny
+        {t("approval.deny")}
       </button>
     </div>
   );

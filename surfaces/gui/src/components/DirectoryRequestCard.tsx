@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { Item } from "../types";
 import { chooseFolder } from "../tauri";
 import { Icon } from "./Icon";
+import { useI18n } from "../i18n/useLocale";
 
 type DirReqItem = Extract<Item, { kind: "dirreq" }>;
 
@@ -14,6 +15,7 @@ export function DirectoryRequestCard({
   item: DirReqItem;
   onRespond: (granted: boolean, path?: string, writable?: boolean) => void;
 }) {
+  const { t } = useI18n();
   const [path, setPath] = useState(item.path || "");
   const [writable, setWritable] = useState(!!item.writable);
 
@@ -26,17 +28,17 @@ export function DirectoryRequestCard({
     <div className="dirreq-card">
       <div className="dirreq-head">
         <Icon name="folderPlus" size={16} className="ico" />
-        <span>The agent is requesting access to a folder</span>
+        <span>{t("folder.agentRequesting")}</span>
       </div>
       {item.reason && <div className="dirreq-reason">“{item.reason}”</div>}
       <div className="dirreq-pathrow">
         <input
           className="dirreq-path"
-          placeholder="Choose or paste a folder path…"
+          placeholder={t("folder.pathPlaceholder")}
           value={path}
           onChange={(e) => setPath(e.target.value)}
         />
-        <button className="btn icon-only" onClick={browse} title="Choose location" aria-label="Choose location">
+        <button className="btn icon-only" onClick={browse} title={t("folder.chooseLocation")} aria-label={t("folder.chooseLocation")}>
           <Icon name="folder" size={15} />
         </button>
       </div>
@@ -47,10 +49,10 @@ export function DirectoryRequestCard({
         </label>
         <span className="spacer" />
         <button className="btn" onClick={() => onRespond(false)}>
-          Decline
+          {t("folder.decline")}
         </button>
         <button className="btn primary" disabled={!path.trim()} onClick={() => onRespond(true, path.trim(), writable)}>
-          Grant access
+          {t("folder.grantAccess")}
         </button>
       </div>
     </div>

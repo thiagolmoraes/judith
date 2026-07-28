@@ -1,6 +1,6 @@
 // PersonaView — the persona detail page (§5, mock parity). Identity header + Enable toggle, About,
-// Built-in capabilities (tools), "Connections for full benefit" (manifest `recommends`, core/optional
-// + reason + connect state), "New sessions get by default" (persona-default connection toggles), and a
+// Built-in capabilities (tools), Connections for full benefit (manifest `recommends`, core/optional
+// + reason + connect state), New sessions get by default (persona-default connection toggles), and a
 // defaults footer (recommended models / default mode / workspace).
 //
 // Data: fetches GET /v1/personas/{id} on mount; also fetches /v1/connectors to thread real brand
@@ -22,6 +22,7 @@ import { Icon } from "./Icon";
 import { PersonaGlyph } from "./personaIcon";
 import { Toggle } from "./Toggle";
 import { indexConnectors, labelFor, visualFor, type ConnectorMap } from "../connectors/visuals";
+import { useI18n } from "../i18n/useLocale";
 
 // Shared section-heading + tag + button utility strings (mock parity).
 const SEC_H = "text-[11px] uppercase tracking-[0.05em] text-faint font-semibold";
@@ -41,6 +42,7 @@ export function PersonaView({
   onBack?: () => void;
   onOpenIntegrations?: () => void;
 }) {
+  const { t } = useI18n();
   const [detail, setDetail] = useState<PersonaDetail | null>(null);
   const [byName, setByName] = useState<ConnectorMap>({});
   const [error, setError] = useState<string | null>(null);
@@ -83,12 +85,11 @@ export function PersonaView({
             className="inline-flex items-center gap-1 text-[12.5px] text-muted hover:text-ink"
             onClick={onBack}
           >
-            <Icon name="arrowLeft" size={15} /> Back
-          </button>
+            <Icon name="arrowLeft" size={15} />{t("persona.back")}</button>
           <span className="text-faint">·</span>
         </>
       )}
-      <span className="text-[13px] font-semibold">Persona</span>
+      <span className="text-[13px] font-semibold">{t("persona.persona")}</span>
     </div>
   );
 
@@ -119,14 +120,14 @@ export function PersonaView({
             </div>
             <div className="ml-auto flex items-center gap-2">
               <span className="text-[12px] text-muted">{detail.enabled ? "Enabled" : "Disabled"}</span>
-              <Toggle checked={detail.enabled} onChange={toggleEnabled} title="Enable this persona" />
+              <Toggle checked={detail.enabled} onChange={toggleEnabled} title={t("persona.enableThis")} />
             </div>
           </header>
 
           {/* about */}
           {detail.description && (
             <section>
-              <div className={`${SEC_H} mb-1.5`}>About</div>
+              <div className={`${SEC_H} mb-1.5`}>{t("persona.about")}</div>
               <p className="text-[14px] leading-relaxed text-ink/90">{detail.description}</p>
             </section>
           )}
@@ -134,7 +135,7 @@ export function PersonaView({
           {/* tools */}
           {detail.tools.length > 0 && (
             <section>
-              <div className={`${SEC_H} mb-2`}>Built-in capabilities</div>
+              <div className={`${SEC_H} mb-2`}>{t("persona.builtinCapabilities")}</div>
               <div className="flex flex-wrap gap-1.5">
                 {detail.tools.map((t) => (
                   <span
@@ -151,7 +152,7 @@ export function PersonaView({
           {/* connections for full benefit (manifest recommends) */}
           {detail.recommends.length > 0 && (
             <section>
-              <div className={`${SEC_H} mb-1`}>Connections for full benefit</div>
+              <div className={`${SEC_H} mb-1`}>{t("persona.connectionsForBenefit")}</div>
               <p className="text-[12.5px] text-muted mb-2.5">
                 Declared by the persona — wire {shortPersonaName(detail.name, personaId)} into these
                 to unlock its full workflow.
@@ -171,7 +172,7 @@ export function PersonaView({
                         <div className="flex items-center gap-2">
                           <span className="text-[13px] font-medium">{labelFor(r.ref, byName)}</span>
                           {isMcp ? (
-                            <span className={TAG_MCP}>MCP</span>
+                            <span className={TAG_MCP}>{t("persona.mcp")}</span>
                           ) : r.tier === "core" ? (
                             <span className={TAG_CORE}>core</span>
                           ) : null}
@@ -201,7 +202,7 @@ export function PersonaView({
           {/* persona-default connections (persona → session default) */}
           {detail.default_connections.length > 0 && (
             <section>
-              <div className={`${SEC_H} mb-1`}>New sessions get by default</div>
+              <div className={`${SEC_H} mb-1`}>{t("persona.newSessionsDefault")}</div>
               <p className="text-[12.5px] text-muted mb-2.5">
                 When you start a {shortPersonaName(detail.name, personaId)} session these are enabled
                 automatically. You can still mute any of them per session.
@@ -238,7 +239,7 @@ export function PersonaView({
           <section className="flex flex-wrap gap-x-8 gap-y-2 text-[12.5px]">
             {detail.recommended_models.length > 0 && (
               <div>
-                <span className="text-faint">Models</span> ·{" "}
+                <span className="text-faint">{t("persona.models")}</span> ·{" "}
                 {detail.recommended_models.map((m, i) => (
                   <span key={m}>
                     <span className="font-mono">{m}</span>
@@ -249,12 +250,12 @@ export function PersonaView({
             )}
             {detail.default_permission_mode && (
               <div>
-                <span className="text-faint">Default mode</span> · {detail.default_permission_mode}
+                <span className="text-faint">{t("persona.defaultMode")}</span> · {detail.default_permission_mode}
               </div>
             )}
             {detail.workspace && (
               <div>
-                <span className="text-faint">Workspace</span> · {detail.workspace}
+                <span className="text-faint">{t("persona.workspace")}</span> · {detail.workspace}
               </div>
             )}
           </section>

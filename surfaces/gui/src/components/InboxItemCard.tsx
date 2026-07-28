@@ -56,7 +56,7 @@ export function InboxItemCard({
         }}
       />
       <button className={BTN_PRIMARY} disabled={!answer.trim()} onClick={() => onResolve(item.id, answer)}>
-        Send
+        {t("approval.send")}
       </button>
     </div>
   );
@@ -115,14 +115,14 @@ export function InboxItemCard({
               title={`Always allow against ${item.data.standing_target} for “${item.data.task_title || "this automation"}” — revoke any time on its Automations page`}
               onClick={() => onResolve(item.id, "always_task")}
             >
-              Allow every time
+              {t("approval.allowEveryTime")}
             </button>
           )}
           <button
             className={item.data?.tool ? BTN_QUIET : BTN_BORDERED}
             onClick={() => onResolve(item.id, "deny")}
           >
-            Deny
+            {t("approval.deny")}
           </button>
         </div>
       ) : item.kind === "question" ? (
@@ -178,7 +178,7 @@ export function InboxItemCard({
             {item.data?.path ? "Grant" : "Grant (no folder)"}
           </button>
           <button className={BTN_BORDERED} onClick={() => onResolve(item.id, JSON.stringify({ granted: false }))}>
-            Deny
+            {t("approval.deny")}
           </button>
         </div>
       ) : item.kind === "plan" ? (
@@ -187,19 +187,19 @@ export function InboxItemCard({
             className={BTN_PRIMARY}
             onClick={() => onResolve(item.id, JSON.stringify({ approved: true, mode: "interactive" }))}
           >
-            Approve
+            {t("approval.approve")}
           </button>
           <button
             className={BTN_BORDERED}
             onClick={() => onResolve(item.id, JSON.stringify({ approved: false, feedback: "" }))}
           >
-            Reject
+            {t("approval.reject")}
           </button>
         </div>
       ) : (
         <div className="flex items-center gap-2 mt-2.5">
           <button className={BTN_BORDERED} onClick={() => onResolve(item.id, "seen")}>
-            Dismiss
+            {t("approval.dismiss")}
           </button>
         </div>
       )}

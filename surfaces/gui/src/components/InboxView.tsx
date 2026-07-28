@@ -16,6 +16,7 @@ import { InboxItemCard } from "./InboxItemCard";
 import { InboxConfigure } from "./InboxConfigure";
 import { PanelHead } from "./IntegrationsView";
 import { shortPersonaName } from "../personaScope";
+import { useI18n } from "../i18n/useLocale";
 
 const ICON_FOR: Record<string, "diamond" | "chat" | "code"> = {
   cowork: "diamond",
@@ -56,6 +57,7 @@ export function InboxView({
 }: {
   onOpenSession: (sessionId: string, workspace: string, agent: string) => void;
 }) {
+  const { t } = useI18n();
   const [tab, setTab] = useState<"pending" | "configure">("pending");
   const [items, setItems] = useState<InboxItem[]>([]);
   const [personas, setPersonas] = useState<Persona[] | null>(null);
@@ -145,7 +147,7 @@ export function InboxView({
       <div className="flex-1 min-w-0 overflow-y-auto hairline-scroll">
         <div className="max-w-4xl mx-auto px-7 py-6">
           <PanelHead
-            title="Inbox"
+            title={t("inboxView.inbox")}
             sub="Approvals, questions, and notifications from your coworkers — including sessions running unattended."
           />
 
@@ -196,7 +198,7 @@ export function InboxView({
                     — replies there resolve items here.{" "}
                   </span>
                 ) : slackConnected ? (
-                  <span>Delivered here only. </span>
+                  <span>{t("inboxView.deliveredHere")}</span>
                 ) : (
                   <span>
                     Delivered here only. Connect Slack (Connectors page) to also get these in a
@@ -208,7 +210,7 @@ export function InboxView({
                   data-testid="inbox-route-configure"
                   onClick={() => setTab("configure")}
                 >
-                  Configure ›
+                  {t("inboxView.configure")}
                 </button>
               </div>
 
@@ -225,7 +227,7 @@ export function InboxView({
                       className={CHIP(personaFilter === "all")}
                       onClick={() => setPersonaFilter("all")}
                     >
-                      All coworkers
+                      {t("inboxView.allCoworkers")}
                     </button>
                     {personasWithItems.map((p) => (
                       <button

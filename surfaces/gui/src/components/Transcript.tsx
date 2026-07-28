@@ -12,6 +12,7 @@ import { Icon } from "./Icon";
 // so revealing it on group-hover never shifts the layout. `ts` is unix seconds — canonical
 // messages carry it, pre-stamp history doesn't, so the time simply omits itself when absent.
 function BubbleMeta({ text, ts, align }: { text: string; ts?: number; align: "left" | "right" }) {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
   const when = typeof ts === "number" ? new Date(ts * 1000) : null;
   const copy = () => {
@@ -36,7 +37,7 @@ function BubbleMeta({ text, ts, align }: { text: string; ts?: number; align: "le
         <button
           className="flex items-center cursor-pointer hover:text-muted"
           data-testid="bubble-copy"
-          title="Copy message"
+          title={t("transcript.copyMessage")}
           onClick={copy}
         >
           {copied ? "Copied" : <Icon name="copy" size={11} />}
@@ -182,7 +183,7 @@ function StepRow({ tool, approval }: { tool: ToolItem; approval?: ApprovalItem }
           <span
             className="text-[11px] text-warnInk shrink-0"
             data-testid="tool-hidden-count"
-            title="Removed by your privacy filters before the agent saw the results — agents get no trace of these."
+            title={t("transcript.filteredOut")}
           >
             {tool.hidden} hidden
           </span>
@@ -232,7 +233,7 @@ function TurnGroup({
   const nSteps = rows.filter((r) => r.type !== "narr").length;
   const declined = items.filter((it) => it.kind === "approval" && it.resolved === "deny").length;
   const hiddenTotal = tools.reduce((n, t) => n + (t.hidden || 0), 0);
-  const stepsLabel = `${nSteps} step${nSteps === 1 ? "" : "s"}`;
+  const stepsLabel = t("count.steps", { count: nSteps });
 
   return (
     <details className="stepgroup" open={open}>
@@ -330,6 +331,7 @@ export function retryAnchor(items: Item[]): number {
 }
 
 export function Transcript({ items, running, streamingText, onRetry }: Props) {
+  const { t } = useI18n();
   // §33 grouping: a turn = the maximal run of assistant/tool/resolved-approval items between
   // breakers (user, connector, notices, plan/dir requests…). Trailing assistant texts are the
   // ANSWER and render as bubbles after the group; interior assistant texts are narration and
@@ -453,7 +455,7 @@ export function Transcript({ items, running, streamingText, onRetry }: Props) {
                 {item.text}
                 {item.retriable && !running && onRetry && block.i === retryAnchor(items) && (
                   <button className="btn ml-2" data-testid="notice-retry" onClick={onRetry}>
-                    Retry
+                    {t("transcript.retry")}
                   </button>
                 )}
               </div>
