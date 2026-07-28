@@ -64,7 +64,7 @@ export function AccountsDetail({ c, cloud, slack: _slack, onChanged }: DetailPro
               : ""
           }
         >
-          {busy ? t("mt.checkBrowser") : "＋ Add account"}
+          {busy ? t("mt.checkBrowser") : t("accounts.addPlus")}
         </button>
       </div>
 

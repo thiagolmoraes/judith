@@ -59,7 +59,7 @@ const FICTIONAL: Record<string, string[]> = {
     "Launch traction: signups up 3.4×…",
     "Top: US 41% · India 22% · Germany 9%…",
     "Top countries: US 41%, India 22%, Germany 9% — context kept from the whole thread.",
-    "Reading the thread… signups up 3.4×, top referrer is the press page. (replying in the Slack thread)",
+    "Reading the thread… signups up 3.4×, top referrer is the press page.",
     "＋ New session",
     "⌕ Search",
     "◷ Automations",
@@ -82,8 +82,10 @@ const FICTIONAL: Record<string, string[]> = {
 const allowedInFile = (path: string, s: string): boolean => {
   for (const [name, strings] of Object.entries(FICTIONAL)) {
     if (path.endsWith(name)) {
-      // Substring, not equality: the scan tears multi-element lines into fragments.
-      return strings.some((f) => f.includes(s) || s.includes(f));
+      // Exact matches only (review): substring matching approved any new string that
+      // happened to contain "You" or "Today". The list holds the fragments the scans
+      // actually extract, verbatim.
+      return strings.includes(s);
     }
   }
   return false;
@@ -199,9 +201,11 @@ describe("translated screens have no untranslated user-facing text", () => {
     const offenders: string[] = [];
     for (const [path, load] of Object.entries(FILES)) {
       const text = code((await load()) as string).replace(/\s+/g, " ");
+      // Either branch may be a literal — {busy ? t("k") : "English"} was the applier's
+      // signature failure mode, and requiring both branches to be literals missed it.
       for (const m of text.matchAll(
         // Lookbehind: a ternary in className={...} picks between class strings.
-        /(?<!className=)\{\s*[\w.!?]+(?:\([^()]*\))?\s*\?\s*"([^"]+)"\s*:\s*"([^"]*)"\s*\}/g,
+        /(?<!className=)\{\s*[\w.!?]+(?:\([^()]*\))?\s*\?\s*(?:"([^"]+)"|t\("[^"]+"\)[^:{}]*)\s*:\s*(?:"([^"]*)"|t\("[^"]+"\)[^{}]*)\s*\}/g,
       )) {
         for (const branch of [m[1], m[2]]) {
           if (branch && isCopy(branch) && !allowedInFile(path, branch)) {
