@@ -104,7 +104,7 @@ export function InboxItemCard({
             className={item.data?.tool ? BTN_ACCENT : BTN_PRIMARY}
             onClick={() => onResolve(item.id, "allow")}
           >
-            {item.data?.tool ? "Allow once" : "Approve"}
+            {item.data?.tool ? t("approval.allowOnce") : t("approval.approve")}
           </button>
           {/* Task-persistent standing grant (§25) — present only when the approval was
               raised inside an automation run AND the call can carry a tool+target rule.
@@ -175,7 +175,7 @@ export function InboxItemCard({
               )
             }
           >
-            {item.data?.path ? "Grant" : "Grant (no folder)"}
+            {item.data?.path ? t("approval.grant") : t("approval.grantNoFolder")}
           </button>
           <button className={BTN_BORDERED} onClick={() => onResolve(item.id, JSON.stringify({ granted: false }))}>
             {t("approval.deny")}

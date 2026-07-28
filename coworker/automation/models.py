@@ -10,7 +10,18 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-_DOW = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+# Indexed by the cron day-of-week field, where 0 is SUNDAY. The previous list started at
+# Monday, so every weekly label named the wrong day — a Sunday automation read "Every
+# Monday". Keys, not names: the labels are translated (they show in the sidebar).
+_DOW_KEYS = [
+    "sched.dow.6",  # 0 = Sunday
+    "sched.dow.0",
+    "sched.dow.1",
+    "sched.dow.2",
+    "sched.dow.3",
+    "sched.dow.4",
+    "sched.dow.5",  # 6 = Saturday
+]
 
 
 def _now() -> float:
@@ -58,10 +69,13 @@ def grant_entries(permissions: Any) -> list[str]:
     return entries
 
 
-def _human_time(hour: int, minute: int) -> str:
-    ampm = "AM" if hour < 12 else "PM"
-    h12 = hour % 12 or 12
-    return f"{h12}:{minute:02d} {ampm}"
+def _human_time(hour: int, minute: int, locale: str) -> str:
+    """12-hour with AM/PM in English, 24-hour elsewhere — a convention, not a translation."""
+    if locale == "en":
+        ampm = "AM" if hour < 12 else "PM"
+        h12 = hour % 12 or 12
+        return f"{h12}:{minute:02d} {ampm}"
+    return f"{hour:02d}:{minute:02d}"
 
 
 @dataclass
@@ -74,23 +88,34 @@ class Schedule:
     )
 
     def human(self) -> str:
-        """Best-effort human label ('Every day at ~7:10 PM'); falls back to the raw cron."""
+        """Best-effort human label ('Every day at ~7:10 PM'); falls back to the raw cron.
+
+        Rendered in the sidebar and on the Automations page, so it is translated even
+        though it is built server-side."""
+        from ..i18n import current_locale, t as _t
+
+        locale = current_locale()
         if self.kind == "once":
-            return f"Once at {self.fire_at}"
+            return _t("sched.onceAt", locale=locale, when=self.fire_at)
         parts = (self.cron or "").split()
         if len(parts) != 5:
             return self.cron or "?"
         minute, hour, dom, month, dow = parts
         try:
-            t = _human_time(int(hour), int(minute))
+            when = _human_time(int(hour), int(minute), locale)
         except ValueError:
             return self.cron  # non-trivial cron (ranges/steps) — show as-is
+        # A restricted month makes every frame below a lie — "0 9 * 12 *" runs only in
+        # December, so "Every day" would overstate it. Raw cron is honest; these are rare.
+        if month != "*":
+            return self.cron
         if dom == "*" and dow == "*":
-            return f"Every day at ~{t}"
+            return _t("sched.everyDay", locale=locale, time=when)
         if dom == "*" and dow.isdigit():
-            return f"Every {_DOW[int(dow) % 7]} at ~{t}"
+            day = _t(_DOW_KEYS[int(dow) % 7], locale=locale)
+            return _t("sched.everyDow", locale=locale, day=day, time=when)
         if dom.isdigit() and dow == "*":
-            return f"Monthly on day {dom} at ~{t}"
+            return _t("sched.monthly", locale=locale, day=dom, time=when)
         return self.cron
 
     def to_dict(self) -> dict:

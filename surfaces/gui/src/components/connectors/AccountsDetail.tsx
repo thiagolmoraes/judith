@@ -64,7 +64,7 @@ export function AccountsDetail({ c, cloud, slack: _slack, onChanged }: DetailPro
               : ""
           }
         >
-          {busy ? "Check your browser…" : "＋ Add account"}
+          {busy ? t("mt.checkBrowser") : "＋ Add account"}
         </button>
       </div>
 
@@ -82,7 +82,7 @@ export function AccountsDetail({ c, cloud, slack: _slack, onChanged }: DetailPro
       {(showManual || !c.connected) && (
         <>
           <div className={GRP_H + (accounts.length ? "" : " !mt-0")}>
-            {c.managed ? "Add manually" : "Add an account"}
+            {c.managed ? t("accounts.addManually") : t("accounts.addAccount")}
           </div>
           <div className={GRP} data-testid="accounts-manual-add">
             <div className="px-1.5 py-1">

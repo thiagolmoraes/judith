@@ -265,7 +265,7 @@ function VoiceInputSection() {
     <section>
       <PanelHead
         title={t("settings.voiceInput")}
-        sub="Speak naturally in the composer. Recordings and transcripts stay on this device."
+        sub={t("settings.speakNaturally")}
       />
 
       {!desktop ? (
@@ -287,7 +287,7 @@ function VoiceInputSection() {
               </div>
               {status && (
                 <span className={"text-[11.5px] px-2 py-1 rounded-full " + (status.supported ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600")}>
-                  {status.supported ? "● Compatible" : "Unsupported"}
+                  {status.supported ? t("settings.compatible") : t("settings.unsupported")}
                 </span>
               )}
             </div>
@@ -336,7 +336,7 @@ function VoiceInputSection() {
               <div className="min-w-0 flex-1">
                 <div className="text-[13.5px] font-medium">{t("settings.voice.micTest")}</div>
                 <div className="text-[12px] text-muted mt-0.5">
-                  {ready ? "Your microphone and local transcription engine are working." : "Record a short phrase to enable the composer microphone."}
+                  {ready ? t("settings.micWorking") : t("settings.recordPhrase")}
                 </div>
               </div>
               {ready && <span className="text-[11.5px] px-2 py-1 rounded-full bg-green-50 text-green-700">● Ready</span>}
@@ -367,7 +367,7 @@ function PersonasSection({ onOpenPersona }: { onOpenPersona?: (id: string) => vo
     <section>
       <PanelHead
         title={t("settings.personas")}
-        sub="Which coworkers are enabled and shown in the picker, plus installing new persona bundles."
+        sub={t("settings.personasSub")}
       />
       <PersonasTab key={galleryBump} onOpenPersona={onOpenPersona} />
       <button
@@ -539,8 +539,8 @@ function TrustedWorkspacesCard() {
                     ? t("count.commandAllowances", {
                         count: workspace.requested_commands.length,
                       })
-                    : "No project command allowances currently declared"}
-                  {!workspace.exists ? " · Folder unavailable" : ""}
+                    : t("settings.noAllowances")}
+                  {!workspace.exists ? t("settings.folderUnavailable") : ""}
                 </div>
               </div>
               <button

@@ -243,8 +243,8 @@ export function PersonasTab({ onOpenPersona }: { onOpenPersona?: (id: string) =>
               </div>
               <div className="text-[12px] text-ink">
                 {t("personas.risk", { list: c.risk.join(", ") || "read" })}
-                {c.connectors ? " · connectors" : ""}
-                {c.messaging ? " · messaging" : ""}
+                {c.connectors ? t("personas.connectorsSuffix") : ""}
+                {c.messaging ? t("personas.messagingSuffix") : ""}
                 {c.mcp.length ? ` · mcp: ${c.mcp.join(", ")}` : ""}
               </div>
               <div className="text-[12px] text-faint mt-1">

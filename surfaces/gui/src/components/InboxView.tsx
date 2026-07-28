@@ -148,7 +148,7 @@ export function InboxView({
         <div className="max-w-4xl mx-auto px-7 py-6">
           <PanelHead
             title={t("inboxView.inbox")}
-            sub="Approvals, questions, and notifications from your coworkers — including sessions running unattended."
+            sub={t("inboxView.sub")}
           />
 
           <div className="flex gap-5 border-b border-line mb-4">

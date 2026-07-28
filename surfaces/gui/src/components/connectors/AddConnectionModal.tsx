@@ -191,12 +191,12 @@ function McpOneClick({ c, onConnected }: { c: Connector; onConnected: () => void
         onClick={go}
         disabled={waiting}
       >
-        {waiting ? "Check your browser…" : `Connect ${c.title}`}
+        {waiting ? t("mt.checkBrowser") : `Connect ${c.title}`}
       </button>
       {error && <div className="text-[12.5px] text-danger">{error}</div>}
       <p className="text-[12px] text-faint text-center flex items-center justify-center gap-1.5">
-        <span className={TAG_ACCENT}>{t("addConn.recommended")}</span> agents get a curated set of{" "}
-        {c.title} tools · tokens stay on this computer
+        <span className={TAG_ACCENT}>{t("addConn.recommended")}</span>{" "}
+        {t("addConn.mcpBlurb", { connector: c.title })}
       </p>
     </div>
   );
@@ -261,7 +261,7 @@ function SlackOneClick({ c, cloud }: { c: Connector; cloud: CloudStatus | null }
       </p>
       {cloud?.signed_in ? (
         <button className={PILL_ACCENT + " w-full !py-2"} data-testid="modal-add-to-slack" onClick={go} disabled={waiting}>
-          {waiting ? "Check your browser…" : "Add to Slack"}
+          {waiting ? "Check your browser…" : t("addConn.addToSlack")}
         </button>
       ) : cloud ? (
         <CloudSignInInline />
@@ -270,7 +270,9 @@ function SlackOneClick({ c, cloud }: { c: Connector; cloud: CloudStatus | null }
       )}
       {error && <div className="text-[12.5px] text-danger">{error}</div>}
       <p className="text-[12px] text-faint text-center flex items-center justify-center gap-1.5">
-        <span className={TAG_ACCENT}>{t("addConn.recommended")}</span>{t("addConn.relayLocal")}</p>
+        <span className={TAG_ACCENT}>{t("addConn.recommended")}</span>{" "}
+        {t("addConn.relayLocal")}
+      </p>
     </div>
   );
 }
@@ -297,7 +299,7 @@ function GithubOneClick({ c, cloud }: { c: Connector; cloud: CloudStatus | null 
            redirects the same tab on to the install page (the old "Already installed? Link
            it" question and the Configure dead-end are gone). */
         <button className={PILL_ACCENT + " w-full !py-2"} data-testid="modal-install-github-app" onClick={() => go()} disabled={waiting}>
-          {waiting ? "Check your browser…" : "Connect GitHub"}
+          {waiting ? "Check your browser…" : t("addConn.connectGithub")}
         </button>
       ) : cloud ? (
         <CloudSignInInline />
@@ -306,7 +308,9 @@ function GithubOneClick({ c, cloud }: { c: Connector; cloud: CloudStatus | null 
       )}
       {error && <div className="text-[12.5px] text-danger">{error}</div>}
       <p className="text-[12px] text-faint text-center flex items-center justify-center gap-1.5">
-        <span className={TAG_ACCENT}>{t("addConn.recommended")}</span>{t("addConn.relayShortLived")}</p>
+        <span className={TAG_ACCENT}>{t("addConn.recommended")}</span>{" "}
+        {t("addConn.relayShortLived")}
+      </p>
     </div>
   );
 }
@@ -352,7 +356,7 @@ function HubSpotOneClick({ c, cloud }: { c: Connector; cloud: CloudStatus | null
       </div>
       {cloud?.signed_in ? (
         <button className={PILL_ACCENT + " w-full !py-2"} data-testid="modal-connect-hubspot" onClick={go} disabled={waiting}>
-          {waiting ? "Check your browser…" : "Connect HubSpot"}
+          {waiting ? "Check your browser…" : t("addConn.connectHubspot")}
         </button>
       ) : cloud ? (
         <CloudSignInInline />
@@ -391,7 +395,7 @@ function SlackManual({ onConnected }: { onConnected: () => void }) {
       <input className={INPUT} type="password" placeholder={t("addConn.botToken")} value={bot} spellCheck={false} onChange={(e) => setBot(e.target.value)} />
       <input className={INPUT} type="password" placeholder={t("addConn.appToken")} value={app} spellCheck={false} onChange={(e) => setApp(e.target.value)} />
       <button className={PILL_LINE + " w-full !py-2"} onClick={submit} disabled={busy || !bot.trim() || !app.trim()}>
-        {busy ? "Validating…" : "Connect"}
+        {busy ? t("mt.validating") : t("mt.connect")}
       </button>
       {error && <div className="text-[12.5px] text-danger">{error}</div>}
       <p className="text-[12px] text-warnInk text-center">

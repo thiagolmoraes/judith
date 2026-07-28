@@ -37,13 +37,13 @@ export function AuditView() {
         <div className="max-w-4xl mx-auto px-7 py-6">
           <PanelHead
             title={t("audit.activity")}
-            sub="Recent connector and browser tool activity. Arguments are sanitized before storage."
+            sub={t("audit.sub")}
           />
 
           <div className="flex items-center gap-2 flex-wrap mb-4">
             <input className={INPUT} placeholder={t("audit.sessionId")} value={sessionFilter} onChange={(e) => setSessionFilter(e.target.value)} />
-            <input className={INPUT} placeholder="connector" value={connectorFilter} onChange={(e) => setConnectorFilter(e.target.value)} />
-            <input className={INPUT} placeholder="tool" value={toolFilter} onChange={(e) => setToolFilter(e.target.value)} />
+            <input className={INPUT} placeholder={t("audit.connectorPh")} value={connectorFilter} onChange={(e) => setConnectorFilter(e.target.value)} />
+            <input className={INPUT} placeholder={t("audit.toolPh")} value={toolFilter} onChange={(e) => setToolFilter(e.target.value)} />
             <button className={BTN_ACCENT} onClick={refresh}>
               {t("audit.filter")}
             </button>
