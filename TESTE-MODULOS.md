@@ -7,11 +7,11 @@
 
 | | |
 |---|---|
-| Suites | Python **1044 ✓** · GUI **146 ✓** (`tsc` e build limpos) |
+| Suites | Python **1047 ✓** · GUI **153 ✓** (`tsc` e build limpos) |
 | Módulos exercitados ao vivo | 16 — todos os fluxos principais **funcionam** |
-| Quebrado de verdade | **1** (testes do Sidebar, pré-existente — item 1) |
+| Quebrado de verdade | **0** — o único item (testes do Sidebar) foi corrigido no PR #20 |
 | Consertado durante a noite | 3 bugs reais achados pelos testes (seção "Consertado") |
-| Pendências para amanhã | 6 itens, nenhum grave (seção "Para corrigir") |
+| Pendências | itens 1–4 corrigidos (PRs #20 e #21); restam observações opcionais |
 
 ## O que funciona (testado ao vivo, não só suite)
 
@@ -38,22 +38,22 @@
 
 ## 🔴 Para corrigir (amanhã)
 
-1. **`Sidebar.test.tsx`: 7 testes falham** — pré-existente (desde antes da i18n; confirmado idêntico em árvore limpa). Causa: o mock de `localStorage` do arquivo não implementa `removeItem`/`setItem` como função. É o mock do teste, não o componente. *Único item realmente "quebrado" do repositório.*
+1. ~~**`Sidebar.test.tsx`: 7 testes falham**~~ **Corrigido (PR #20).** O diagnóstico original ("mock do teste") estava errado: a causa era o `localStorage` global do próprio Node — ligado por padrão no Node 25, sem métodos sem `--localstorage-file` — sombreando o Storage do jsdom nos workers do vitest. Duas linhas de config (`--no-experimental-webstorage` no execArgv + URL não-opaca no jsdom) e a suíte fechou **153/153** pela primeira vez.
 
-2. **Strings de backend em inglês que a GUI pode exibir** (a varredura do backend só cobriu `i18n.py`; estas estão fora):
+2. ~~**Strings de backend em inglês que a GUI pode exibir**~~ **Corrigido (PR #21)** — as oito passaram pelo catálogo:
    - `"connector not connected"` — `POST /v1/connectors/{name}/allow`
    - `"Slack is not connected."` — `POST /v1/inbox/routing/binding`
    - `"gallery requires cloud sign-in"` — `GET /v1/cloud/gallery` (a GalleryModal mostra copy própria, então prioridade baixa)
    - `"not a directory: …"` — install de persona
    - `"path escapes workspace"` — leitura de artefato
 
-3. **Erro cru de MCP vaza para o usuário**: servidor inacessível retorna `"unhandled errors in a TaskGroup (1 sub-exception)"`. Trocar por mensagem legível (e traduzida).
+3. ~~**Erro cru de MCP vaza para o usuário**~~ **Corrigido (PR #21)** — `_mcp_error_text` desce o ExceptionGroup do anyio até a exceção que diz o que aconteceu.
 
-4. **Install de persona via git despeja o comando inteiro no erro** (`Command '['git', 'clone', …]' returned non-zero…`), incluindo caminho interno. Encurtar para algo tipo "não foi possível clonar o repositório".
+4. ~~**Install de persona via git despeja o comando inteiro no erro**~~ **Corrigido (PR #21)** — mensagem curta com dica acionável; caminho interno não vaza mais.
 
-5. **PR #19 aberto** (`fix/i18n-review-followup`) — correções do segundo review do CodeRabbit no #17: 6 ternários mistos (`{busy ? t(...) : "English"}`) + allowlist do guard por igualdade exata. Aguardando review; monitor armado. Mergear e **rebuildar o app** depois.
+5. ~~**PR #19**~~ **Mergeado.**
 
-6. **App instalado está desatualizado** — o `/Applications/OpenWorker.app` de ontem não tem os PRs #13–#17 (sidebar/composer/etc. ainda em inglês lá, e o rótulo de agendamento idem). Rebuild + reinstalar após o #19.
+6. ~~**App instalado desatualizado**~~ **Rebuildado e reinstalado** do `deploy/hml` final da madrugada; falta só um rebuild após #20/#21 mergearem.
 
 ## 🟡 Observações (não são bugs)
 
