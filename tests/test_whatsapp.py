@@ -330,10 +330,13 @@ def test_official_and_self_hosted_whatsapp_coexist():
     them would silently change which API a connected user is on."""
     from coworker.connectors.descriptors import DESCRIPTORS
 
-    official = [d for d in DESCRIPTORS if d.name == "whatsapp"][0]
-    self_hosted = [d for d in DESCRIPTORS if d.name == "whatsapp_evolution"][0]
-    assert official.two_way is False and official.experimental is False
-    assert self_hosted.two_way is True and self_hosted.experimental is True
+    official = next(d for d in DESCRIPTORS if d.name == "whatsapp")
+    self_hosted = next(d for d in DESCRIPTORS if d.name == "whatsapp_evolution")
+    # Split, so a failure names WHICH property drifted.
+    assert official.two_way is False
+    assert official.experimental is False
+    assert self_hosted.two_way is True
+    assert self_hosted.experimental is True
 
 
 # -- gateway wiring ------------------------------------------------------------
@@ -443,3 +446,30 @@ def test_send_survives_a_non_dict_response(monkeypatch):
     monkeypatch.setattr(httpx, "post", lambda *a, **k: _Resp(500, "internal error"))
     failed = send_whatsapp("http://x", "K", "openworker", "5511@s.whatsapp.net", "hi")
     assert failed.ok is False and "internal error" in (failed.error or "")
+
+
+# -- the webhook URL -----------------------------------------------------------
+def test_webhook_url_does_not_point_at_loopback(monkeypatch, tmp_path):
+    """Evolution normally runs in Docker, where 127.0.0.1 is the CONTAINER. A webhook
+    aimed at loopback dies with ECONNREFUSED and the connector reports connected while
+    receiving nothing — which is exactly what happened on the first live test."""
+    from coworker.server.manager import SessionManager
+
+    monkeypatch.setenv("COWORKER_PORT", "51234")
+    monkeypatch.delenv("COWORKER_WEBHOOK_HOST", raising=False)
+    url = SessionManager(workspace=tmp_path)._local_webhook_url("whatsapp_evolution")
+    assert url == "http://host.docker.internal:51234/webhook/whatsapp"
+    assert "127.0.0.1" not in url and "localhost" not in url
+
+    # Evolution on another machine: the host is overridable.
+    monkeypatch.setenv("COWORKER_WEBHOOK_HOST", "192.168.1.50")
+    assert SessionManager(workspace=tmp_path)._local_webhook_url(
+        "whatsapp_evolution"
+    ) == "http://192.168.1.50:51234/webhook/whatsapp"
+
+
+def test_no_webhook_url_for_other_platforms(monkeypatch, tmp_path):
+    from coworker.server.manager import SessionManager
+
+    monkeypatch.setenv("COWORKER_PORT", "51234")
+    assert SessionManager(workspace=tmp_path)._local_webhook_url("slack") == ""

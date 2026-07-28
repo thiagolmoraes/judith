@@ -2430,7 +2430,17 @@ class SessionManager:
         if platform != "whatsapp_evolution":
             return ""
         port = os.environ.get("COWORKER_PORT") or ""
-        return f"http://127.0.0.1:{port}/webhook/whatsapp" if port else ""
+        if not port:
+            return ""
+        # NOT 127.0.0.1. The typical Evolution runs in Docker, where loopback is the
+        # CONTAINER — a webhook aimed there dies with ECONNREFUSED and the connector
+        # looks connected while receiving nothing. `host.docker.internal` resolves to
+        # the host from inside a container (compose needs
+        # `extra_hosts: ["host.docker.internal:host-gateway"]` on Linux), and resolves
+        # on the host too on macOS/Windows, so one URL serves both. Override with
+        # COWORKER_WEBHOOK_HOST when Evolution runs on another machine.
+        host = os.environ.get("COWORKER_WEBHOOK_HOST") or "host.docker.internal"
+        return f"http://{host}:{port}/webhook/whatsapp"
 
     async def stop_gateway(self) -> None:
         if self.gateway is not None:
