@@ -451,7 +451,7 @@ def create_app(manager: SessionManager) -> FastAPI:
                 if manifest is None:
                     return {
                         "ok": False,
-                        "error": "gallery requires cloud sign-in (or the cloud is unreachable)",
+                        "error": t("error.galleryUnreachable"),
                     }
                 markdown = manifest.get("manifest_markdown", "")
                 digest = "sha256:" + hashlib.sha256(markdown.encode()).hexdigest()
@@ -470,6 +470,18 @@ def create_app(manager: SessionManager) -> FastAPI:
                     "error": "provide a `dir`, `git_url`, or `gallery_slug`",
                 }
         except Exception as e:  # surface manifest/clone errors to the caller
+            import subprocess
+
+            if isinstance(e, subprocess.CalledProcessError):
+                # str(e) dumps the whole git command line, internal cache path
+                # included — noise a person can't act on, shown verbatim in the GUI.
+                return {"ok": False, "error": t("error.gitCloneFailed")}
+            if isinstance(e, FileNotFoundError):
+                # registry raises "not a directory: {path}" — same shape, translated.
+                return {
+                    "ok": False,
+                    "error": t("error.notADirectory", path=str(e).split(": ", 1)[-1]),
+                }
             return {"ok": False, "error": str(e)}
         return {"ok": True, "consent": summaries, "personas": reg.list_all()}
 
@@ -482,7 +494,7 @@ def create_app(manager: SessionManager) -> FastAPI:
 
         body = cloud.gallery_detail(manager.secrets, load_config(), slug)
         if body is None:
-            return {"ok": False, "error": "gallery requires cloud sign-in"}
+            return {"ok": False, "error": t("error.galleryNeedsSignIn")}
         return body
 
     @app.get("/v1/cloud/gallery")
@@ -496,7 +508,7 @@ def create_app(manager: SessionManager) -> FastAPI:
         if body is None:
             return {
                 "ok": False,
-                "error": "gallery requires cloud sign-in",
+                "error": t("error.galleryNeedsSignIn"),
                 "personas": [],
             }
         return {"ok": True, "personas": body.get("personas", [])}

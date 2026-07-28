@@ -106,6 +106,19 @@ def _approval_body(request) -> str:
     return "\n".join(p for p in (reason, preview) if p)
 
 
+def _mcp_error_text(exc: BaseException) -> str:
+    """A readable reason for an MCP failure.
+
+    anyio's TaskGroup wraps the real error in an ExceptionGroup, so str(exc) reads
+    "unhandled errors in a TaskGroup (1 sub-exception)" — noise a person can't act
+    on. Descend to the deepest single leaf and report that instead."""
+    seen = 0
+    while isinstance(exc, BaseExceptionGroup) and len(exc.exceptions) == 1 and seen < 10:
+        exc = exc.exceptions[0]
+        seen += 1
+    return str(exc) or exc.__class__.__name__
+
+
 class SessionManager:
     def __init__(
         self,
@@ -1008,7 +1021,7 @@ class SessionManager:
                 conn = await self.mcp.ensure(server, interactive=True)
                 return {"ok": True, "tools": len(conn.tools)}
             except Exception as exc:
-                self._mcp_errors[name] = str(exc) or exc.__class__.__name__
+                self._mcp_errors[name] = _mcp_error_text(exc)
                 return {"ok": False, "error": self._mcp_errors[name]}
             finally:
                 self._mcp_authorizing.discard(name)
@@ -1081,7 +1094,12 @@ class SessionManager:
                 try:
                     conn = await self.mcp.ensure(server)
                 except Exception as exc:
-                    return {"name": name, "ok": False, "error": str(exc), "tools": []}
+                    return {
+                        "name": name,
+                        "ok": False,
+                        "error": _mcp_error_text(exc),
+                        "tools": [],
+                    }
                 return {
                     "name": name,
                     "ok": True,
@@ -1268,7 +1286,7 @@ class SessionManager:
         try:
             target.relative_to(root)
         except ValueError:
-            return None, "path escapes workspace"
+            return None, t("error.pathEscapesWorkspace")
         if not target.is_file():
             return None, "not found"
         return target, None
@@ -2117,7 +2135,7 @@ class SessionManager:
         if channel == "slack":
             settings = load_settings(self.secrets).get("slack")
             if settings is None or not settings.enabled:
-                return {"ok": False, "error": "Slack is not connected."}
+                return {"ok": False, "error": t("error.slackNotConnected")}
             team_id, destination = slack_split(target)
             if not destination:
                 return {"ok": False, "error": "Choose a destination channel."}
@@ -2155,7 +2173,9 @@ class SessionManager:
             return {
                 "ok": False,
                 "error": (
-                    "workspace not connected" if team_id else "connector not connected"
+                    t("error.workspaceNotConnected")
+                    if team_id
+                    else t("error.connectorNotConnected")
                 ),
             }
         allowed = set(profile.get("allowed_users") or [])
@@ -3493,7 +3513,7 @@ class SessionManager:
         persists it so a later resume still has it."""
         p = Path(path).expanduser()
         if not p.is_dir():
-            return {"ok": False, "error": f"not a directory: {path}"}
+            return {"ok": False, "error": t("error.notADirectory", path=str(path))}
         resolved = p.resolve()
         engine = self._engines.get(session_id)
         if engine is not None and getattr(engine, "roots", None) is not None:
