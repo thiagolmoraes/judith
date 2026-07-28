@@ -189,6 +189,7 @@ export function AutomationQuickstart({
     permissions?: { tool: string; target: string; access: "read" | "write" }[];
   }) => void;
 }) {
+  const { t } = useI18n();
   const { t: i18n } = useI18n();
   // `t` is taken by the template loop variable below, so the translator is `i18n` here
   // and `tpl` maps authored English copy to its key.
@@ -527,7 +528,7 @@ export function AutomationQuickstart({
                   <label className={label}>{i18n("quickstart.repository")}</label>
                   <input
                     className={input}
-                    placeholder="owner/repo"
+                    placeholder={t("quickstart.ownerRepo")}
                     value={repo}
                     onChange={(e) => setRepo(e.target.value)}
                     data-testid="ob-repo"
