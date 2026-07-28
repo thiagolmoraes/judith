@@ -154,7 +154,7 @@ function PrivacyGroup({ c, onChanged }: Pick<DetailProps, "c" | "onChanged">) {
   };
   return (
     <>
-      <div className={GRP_H}>Access &amp; privacy</div>
+      <div className={GRP_H}>{t("hubspot.accessPrivacy")}</div>
       <div className={GRP}>
         <div className={ROW} data-testid="hubspot-hidden-fields">
           <span className={LABEL}>{t("hubspot.hiddenFields")}</span>

@@ -40,6 +40,12 @@ const FICTIONAL: Record<string, string[]> = {
     "Priya N",
     "Emma W",
     "Agents & apps",
+    // Post-entity forms: code() rewrites &amp;/&rsquo; to ' before the scans run.
+    "Agents ' apps",
+    "Drafts ' sent",
+    "Allow ' deliver",
+    "Each teammate's",
+    "mention waits for your OK — then they're on the People list and it flows.",
     "⌕ Describe what you are looking for",
     "Message #launch-room",
     "Today ▾",
@@ -99,7 +105,14 @@ function code(text: string): string {
     .replace(/^import[\s\S]*?from\s*["'][^"']+["'];?$/gm, " ")
     // `=> Promise<void>` reads as JSX text to the >…< scan below. Generic type arguments
     // are not copy, so drop them before scanning.
-    .replace(/=>\s*[A-Z]\w*</g, "=> <");
+    .replace(/=>\s*[A-Z]\w*</g, "=> <")
+    // HTML entities are prose, but their & and ; look like markup/code to the scans
+    // below: `&ldquo;Show more&rdquo;` split a sentence into fragments too short to
+    // flag, so an English line sat in Settings with this guard green.
+    // Named (&rsquo;), numeric (&#39;) and hex (&#x2019;) alike — the first version only
+    // handled the named form, so `&#39;` still split a sentence into fragments too short
+    // to flag. Digits matter: `&frac12;` and `&#8212;` are both real.
+    .replace(/&(?:[a-z][a-z0-9]*|#\d+|#x[0-9a-f]+);/gi, "'");
 }
 
 // Exempting by SHAPE was the bug in the first version of this guard: "a single capitalised word
@@ -264,5 +277,46 @@ describe("the keys these screens use", () => {
     expect(named).toContain("Relatório");
     expect(named).not.toContain("Scheduled");
     expect(translate("pt-BR", "app.scheduledRunPlain")).not.toContain("Scheduled");
+  });
+});
+
+describe("the guard's own blind spots", () => {
+  // Each of these shipped English copy past a green test at some point. They are here so
+  // the NEXT widening can't quietly undo an earlier one.
+  it("sees through every HTML entity form", () => {
+    // The real leak, in each entity form: an entity MID-SENTENCE used to split the line
+    // into fragments too short to flag, so the whole sentence sailed past.
+    const entities = [
+      "Longer lists collapse behind &ldquo;Show more&rdquo;. Applies per project.", // named
+      "Longer lists collapse behind &#8220;Show more&#8221;. Applies per project.", // numeric
+      "Longer lists collapse behind &#x201C;Show more&#x201D;. Applies per project.", // hex
+      "Roughly &frac12; of the messages were unread today.", // named WITH a digit
+    ];
+    for (const raw of entities) {
+      const scanned = code(`<p>${raw}</p>`);
+      const hit = [...scanned.matchAll(/>\s*([A-Za-z][^<>{}]{1,})\s*</g)].some((m) =>
+        isCopy(m[1]),
+      );
+      expect(hit, `entity form not normalised: ${raw}`).toBe(true);
+    }
+  });
+
+  it("still flags a short button label", () => {
+    // The shape-based exemption ("one capitalised word is probably an enum") left
+    // `Delete` and `Send` live in the sidebar with this test green.
+    for (const label of ["Delete", "Send", "Go", "OK"]) expect(isCopy(label)).toBe(true);
+  });
+
+  it("still flags a mixed ternary", () => {
+    // {busy ? t("k") : "English"} — the scripted-apply failure mode, invisible while the
+    // scan required BOTH branches to be literals.
+    const scanned = code('<button>{busy ? t("a.b") : "Disconnect workspace"}</button>');
+    const branches = [
+      ...scanned.matchAll(
+        /(?<!className=)\{\s*[\w.!?]+(?:\([^()]*\))?\s*\?\s*(?:"([^"]+)"|t\("[^"]+"\)[^:{}]*)\s*:\s*(?:"([^"]*)"|t\("[^"]+"\)[^{}]*)\s*\}/g,
+      ),
+    ];
+    expect(branches.length).toBe(1);
+    expect(isCopy(branches[0][2] ?? "")).toBe(true);
   });
 });

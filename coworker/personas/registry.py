@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from ..agents.base import Agent
+from ..agents.assistant import assistant_agent
 from ..agents.chat import chat_agent
 from ..agents.code import CODE_CAPABILITIES, code_agent
 from ..agents.cowork import COWORK_CAPABILITIES, cowork_agent
@@ -153,6 +154,20 @@ class PersonaRegistry:
             [],
             workspace="none",
             default_surfaced=False,
+        )
+        # Connected-accounts assistant: the only persona that pairs connectors with
+        # "answer on screen". Cowork also has connectors but is prompted to produce a
+        # file, so asking it to summarise mail yields summary.md instead of an answer.
+        self._register_builder(
+            "assistant",
+            "Assistant",
+            "plug",
+            "Your connected accounts — answers in the chat",
+            assistant_agent,
+            needs_workspace=False,
+            family="knowledge",
+            tools=[],
+            workspace="none",
         )
         # Markdown-backed built-ins (Ops, …) — dogfood the manifest path.
         d = Path(builtin_dir) if builtin_dir else Path(__file__).parent / "builtin"

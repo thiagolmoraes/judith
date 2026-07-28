@@ -218,7 +218,7 @@ describe("New-session split button", () => {
   });
 
   it("primary starts the last-used persona; the menu lists enabled personas + Manage personas…", async () => {
-    localStorage.setItem("ocw.flag.personas", "1"); // Manage entry is launch-flagged off
+    localStorage.setItem("ocw.flag.personas", "1"); // explicit-on, independent of the default
     stubFetch([
       { match: "/v1/personas", method: "GET", json: PERSONAS },
       { match: "/v1/settings", method: "GET", json: { nav_layout: "flat" } },
@@ -249,8 +249,11 @@ describe("New-session split button", () => {
     expect(baseProps.onManagePersonas).toHaveBeenCalled();
   });
 
-  it("hides Manage personas… while the launch flag is off (the default)", async () => {
-    localStorage.removeItem("ocw.flag.personas");
+  it("hides Manage personas… when the flag is explicitly off", async () => {
+    // "0" force-hides regardless of the shipped default (which flipped to on when the
+    // Assistant persona landed — new personas ship disabled, and Settings ▸ Personas is
+    // the only place to enable them). This asserts the opt-OUT still works.
+    localStorage.setItem("ocw.flag.personas", "0");
     stubFetch([
       { match: "/v1/personas", method: "GET", json: PERSONAS },
       { match: "/v1/settings", method: "GET", json: { nav_layout: "flat" } },

@@ -932,6 +932,14 @@ export const ptBR: Catalog = {
   "trust.saving": "Salvando…",
   "trust.trustWorkspace": "Confiar na pasta",
   "cloudSignIn.blurbDefault": "Entrar libera as conexões em um clique — ou mude para Manual, que funciona sem isso.",
+  "settings.experimental": "Experimental",
+  "settings.personasFlag": "Gerenciamento de personas",
+  "settings.personasFlagHelp": "Adiciona a aba Personas e a entrada “Gerenciar personas…” no menu: ative coworkers extras, escolha quais aparecem no seletor e instale novos. Desligado por padrão enquanto o catálogo de personas ainda está se firmando.",
+  "settings.reloadsApp": "Recarrega o app",
+  "settings.sessionsPeekHelp": "Listas maiores ficam atrás de “Mostrar mais”. Vale por coworker e por projeto.",
+  "settings.pdfLimitsHelp": "PDFs acima destes limites não são anexados — você vê um aviso no compositor.",
+  "trust.title": "Confiar nos comandos desta pasta?",
+  "hubspot.accessPrivacy": "Acesso e privacidade",
   // -- tool-call one-liners (humanize.ts) -----------------------------------------
   // Assembled as pre + object + post so the UI can bold the object. Verb-object order
   // holds in Portuguese, so the shape survives translation unchanged; only the
