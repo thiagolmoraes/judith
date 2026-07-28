@@ -3,17 +3,26 @@ import { en } from "./en";
 import { ptBR } from "./pt-BR";
 import { translate } from "./index";
 
-// The always-visible chrome: the composer, the top bar, the sidebar. Every previous pass over
-// these screens shipped with strings still in English, because each sweep I wrote was narrower
+// Screens that have been through the translation sweep, guarded against regressing. Every
+// previous pass shipped with strings still in English, because each sweep I wrote was narrower
 // than the thing it was guarding — first tag text only, then template literals, then
 // interpolated sentences. This file is the widest form of that sweep, kept as a test so the
-// next edit can't quietly reintroduce a literal.
+// next edit can't quietly reintroduce a literal. Add a file here once it is translated.
 
-const FILES = import.meta.glob("../{App,components/Composer,components/Sidebar}.tsx", {
-  query: "?raw",
-  import: "default",
-  eager: false,
-});
+const FILES = import.meta.glob(
+  [
+    "../App.tsx",
+    "../components/Composer.tsx",
+    "../components/Sidebar.tsx",
+    // The management screens, translated in the same sweep.
+    "../components/ManageTabs.tsx",
+    "../components/Onboarding.tsx",
+    "../components/GalleryModal.tsx",
+    "../components/InboxConfigure.tsx",
+    "../components/PersonasTab.tsx",
+  ],
+  { query: "?raw", import: "default", eager: false },
+);
 
 /** Source with comments and imports stripped — prose about a string is not a string. */
 function code(text: string): string {
@@ -73,7 +82,7 @@ const isCopy = (raw: string, inAttribute = false) => {
   return !shapes.some((r) => r.test(s));
 };
 
-describe("the core shell has no untranslated user-facing text", () => {
+describe("translated screens have no untranslated user-facing text", () => {
   it("has no English sentences left in JSX attributes", async () => {
     // title / aria-label / placeholder are where the earlier passes leaked most: they read as
     // configuration rather than copy, so they get skipped by eye.
