@@ -1,0 +1,232 @@
+"""WhatsApp through a self-hosted Evolution API instance.
+
+Unlike Telegram (official bot API) and Slack (official app), WhatsApp has no first-party
+API for a personal number. Evolution API is a self-hosted server that speaks the
+unofficial multi-device protocol and exposes it as REST + webhooks; this connector talks
+to *that*, never to WhatsApp directly. Swapping Evolution for another server (WAHA, a
+whatsmeow wrapper) is a change confined to this file.
+
+Inbound is a webhook: Evolution POSTs to the sidecar. The sidecar's port is assigned at
+boot, so the adapter REGISTERS the webhook on connect with the port it is currently
+listening on — otherwise every restart would need the URL re-entered by hand.
+
+The operator must understand what this is: automating a personal WhatsApp account
+violates Meta's terms and the number can be banned. That belongs in the connector's
+copy, not buried here.
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+from typing import Any, Optional
+
+from .base import BasePlatformAdapter, MessageEvent, SendResult, SessionSource
+
+logger = logging.getLogger("coworker.connectors")
+
+# Evolution addresses chats as JIDs: "5511999999999@s.whatsapp.net" for a person,
+# "...@g.us" for a group. We keep the full JID as chat_id (it is what send takes back),
+# but need the bare number for display and for the allow-list.
+_JID_SUFFIX_RE = re.compile(r"@(s\.whatsapp\.net|g\.us|lid)$")
+
+
+def jid_to_number(jid: str) -> str:
+    """"5511999999999@s.whatsapp.net" → "5511999999999"."""
+    return _JID_SUFFIX_RE.sub("", jid or "")
+
+
+def is_group(jid: str) -> bool:
+    return (jid or "").endswith("@g.us")
+
+
+def extract_text(message: dict) -> str:
+    """The text of a message, across the shapes Evolution forwards.
+
+    WhatsApp has a separate message type per feature, so the text lives under a different
+    key for a plain message, a reply, a caption, or an interactive-list pick. Anything we
+    don't recognise (image without caption, sticker, audio) yields "" and is dropped by
+    the caller — better silence than a half-parsed event.
+    """
+    if not isinstance(message, dict):
+        return ""
+    if isinstance(message.get("conversation"), str):
+        return message["conversation"]
+    for key in ("extendedTextMessage", "imageMessage", "videoMessage", "documentMessage"):
+        node = message.get(key)
+        if isinstance(node, dict):
+            text = node.get("text") or node.get("caption")
+            if isinstance(text, str) and text:
+                return text
+    for key, field in (
+        ("buttonsResponseMessage", "selectedDisplayText"),
+        ("listResponseMessage", "title"),
+        ("templateButtonReplyMessage", "selectedDisplayText"),
+    ):
+        node = message.get(key)
+        if isinstance(node, dict) and isinstance(node.get(field), str):
+            return node[field]
+    return ""
+
+
+def webhook_to_event(payload: dict) -> Optional[MessageEvent]:
+    """Map one Evolution `messages.upsert` webhook body to a MessageEvent.
+
+    Returns None for anything that isn't an inbound text message: our own echoes
+    (`fromMe`), status broadcasts, and media without a caption. Dropping our own
+    messages is what stops the agent replying to itself in a loop.
+    """
+    if not isinstance(payload, dict):
+        return None
+    if payload.get("event") not in (None, "messages.upsert"):
+        return None
+    data = payload.get("data")
+    if isinstance(data, list):  # some versions batch
+        data = data[0] if data else None
+    if not isinstance(data, dict):
+        return None
+
+    key = data.get("key") or {}
+    if key.get("fromMe"):
+        return None
+    chat_id = str(key.get("remoteJid") or "")
+    if not chat_id or chat_id == "status@broadcast":
+        return None
+
+    text = extract_text(data.get("message") or {})
+    if not text:
+        return None
+
+    group = is_group(chat_id)
+    # In a group the sender is `participant`; in a DM it's the chat itself.
+    sender_jid = str(key.get("participant") or chat_id)
+    source = SessionSource(
+        platform="whatsapp",
+        chat_id=chat_id,
+        user_id=jid_to_number(sender_jid),
+        user_name=data.get("pushName") or None,
+        chat_type="group" if group else "dm",
+    )
+    return MessageEvent(
+        text=text,
+        source=source,
+        message_id=str(key.get("id") or ""),
+        # A DM is addressed to us by definition; in a group only an explicit @mention is.
+        mentions_me=not group,
+    )
+
+
+class WhatsAppAdapter(BasePlatformAdapter):
+    """Inbound via webhook, outbound via Evolution's REST API.
+
+    `connect()` does not open a socket — it verifies the instance is paired and points
+    Evolution's webhook at this sidecar. The FastAPI route hands events back through
+    `handle_message`.
+    """
+
+    platform = "whatsapp"
+
+    def __init__(self, base_url: str, api_key: str, instance: str, *, webhook_url: str = "") -> None:
+        super().__init__()
+        self.base_url = (base_url or "").rstrip("/")
+        self.api_key = api_key
+        self.instance = instance or "openworker"
+        self.webhook_url = webhook_url
+
+    def _headers(self) -> dict:
+        return {"apikey": self.api_key, "Content-Type": "application/json"}
+
+    async def connect(self) -> bool:
+        import httpx
+
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                state = await client.get(
+                    f"{self.base_url}/instance/connectionState/{self.instance}",
+                    headers=self._headers(),
+                )
+                body = state.json() if state.status_code == 200 else {}
+                status = ((body.get("instance") or {}).get("state")) or body.get("state")
+                if status != "open":
+                    logger.warning(
+                        "whatsapp instance %s is %s — pair it in the Evolution manager",
+                        self.instance,
+                        status or "unreachable",
+                    )
+                    return False
+
+                if self.webhook_url:
+                    # Re-registered every connect: the sidecar's port is assigned at boot,
+                    # so a URL stored from a previous run points nowhere.
+                    await client.post(
+                        f"{self.base_url}/webhook/set/{self.instance}",
+                        headers=self._headers(),
+                        json={
+                            "webhook": {
+                                "enabled": True,
+                                "url": self.webhook_url,
+                                "byEvents": False,
+                                "base64": False,
+                                "events": ["MESSAGES_UPSERT"],
+                            }
+                        },
+                    )
+        except Exception as exc:
+            logger.warning("whatsapp connect failed: %s", exc)
+            return False
+        logger.info("whatsapp adapter ready (instance %s)", self.instance)
+        return True
+
+    async def disconnect(self) -> None:
+        """Turn the webhook off, leaving the WhatsApp session paired.
+
+        Deliberately not a logout: pairing costs a QR scan on the phone, so stopping the
+        connector must not force one on the next start.
+        """
+        if not self.webhook_url:
+            return
+        import httpx
+
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                await client.post(
+                    f"{self.base_url}/webhook/set/{self.instance}",
+                    headers=self._headers(),
+                    json={"webhook": {"enabled": False, "url": self.webhook_url, "events": []}},
+                )
+        except Exception as exc:  # best effort — a dead Evolution isn't our problem here
+            logger.debug("whatsapp webhook teardown failed: %s", exc)
+
+    async def send(
+        self, chat_id: str, text: str, *, thread_id: Optional[str] = None
+    ) -> SendResult:
+        # thread_id is ignored: WhatsApp has no thread concept the way Slack does, and
+        # quoting a specific message needs the full message object, not just an id.
+        return send_whatsapp(self.base_url, self.api_key, self.instance, chat_id, text)
+
+
+def send_whatsapp(
+    base_url: str, api_key: str, instance: str, chat_id: str, text: str
+) -> SendResult:
+    """One-shot outbound send. Sync, like the other senders — the engine runs it in a thread."""
+    import httpx
+
+    number = jid_to_number(chat_id)
+    if not number:
+        return SendResult(False, error="empty WhatsApp recipient")
+    try:
+        resp = httpx.post(
+            f"{(base_url or '').rstrip('/')}/message/sendText/{instance}",
+            headers={"apikey": api_key, "Content-Type": "application/json"},
+            # Groups need the full JID; people are addressed by bare number.
+            json={"number": chat_id if is_group(chat_id) else number, "text": text},
+            timeout=30.0,
+        )
+        data = resp.json()
+    except Exception as exc:
+        return SendResult(False, error=str(exc))
+    if resp.status_code >= 400:
+        detail = data.get("response") or data.get("message") or data
+        return SendResult(False, error=str(detail)[:200])
+    key = data.get("key") or {}
+    return SendResult(True, message_id=str(key.get("id") or ""))

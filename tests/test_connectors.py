@@ -1724,4 +1724,10 @@ def test_experimental_package_loads_cleanly():
     from coworker.connectors.experimental import EXPERIMENTAL_DESCRIPTORS
 
     assert EXPERIMENTAL_DESCRIPTORS == []
-    assert all(d.experimental is False for d in DESCRIPTORS if d.name != "dangerzone")
+    # `dangerzone` is the test fixture. `whatsapp_evolution` is experimental on purpose:
+    # it drives a personal WhatsApp account over an unofficial protocol, so it stays
+    # hidden until the user opts into experimental connectors in Settings.
+    shipped_experimental = {"dangerzone", "whatsapp_evolution"}
+    assert all(
+        d.experimental is False for d in DESCRIPTORS if d.name not in shipped_experimental
+    )

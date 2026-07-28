@@ -18,6 +18,25 @@ from .base import SendResult
 
 Sender = Callable[[str, str, str, Optional[str]], SendResult]
 
+
+def _send_whatsapp_message(
+    token: str, chat_id: str, text: str, thread_id: Optional[str] = None
+) -> SendResult:
+    """WhatsApp's `token` is packed: "base_url|api_key|instance".
+
+    The Sender contract is a single opaque token, and WhatsApp needs three values (the
+    server is self-hosted, so its address is per-install). Packing keeps the registry
+    uniform rather than widening the signature for one platform.
+    """
+    from .whatsapp import send_whatsapp
+
+    parts = (token or "").split("|")
+    if len(parts) < 2:
+        return SendResult(False, error="whatsapp connector is not configured")
+    base, key = parts[0], parts[1]
+    instance = parts[2] if len(parts) > 2 and parts[2] else "openworker"
+    return send_whatsapp(base, key, instance, chat_id, text)
+
 _TIMEOUT = 30.0
 
 
@@ -140,6 +159,7 @@ def _send_slack_interactive(
 
 DEFAULT_SENDERS: dict[str, Sender] = {
     "telegram": _send_telegram,
+    "whatsapp_evolution": _send_whatsapp_message,
     "slack": _send_slack,
 }
 

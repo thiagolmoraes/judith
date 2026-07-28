@@ -2414,10 +2414,23 @@ class SessionManager:
                 relay_url=relay_ws_url,
                 relay_hub=relay_hub,
                 github_token_client=_github_token,
+                webhook_url=self._local_webhook_url(platform),
             )
             if adapter is not None:
                 self.gateway.register(adapter)
         return await self.gateway.start()
+
+    def _local_webhook_url(self, platform: str) -> str:
+        """Where a self-hosted server should POST inbound events for `platform`.
+
+        The port is assigned at boot (run.py exports COWORKER_PORT), so this is computed
+        per start and re-registered by the adapter — a URL saved from a previous run
+        would point at whatever now holds that port, or at nothing.
+        """
+        if platform != "whatsapp_evolution":
+            return ""
+        port = os.environ.get("COWORKER_PORT") or ""
+        return f"http://127.0.0.1:{port}/webhook/whatsapp" if port else ""
 
     async def stop_gateway(self) -> None:
         if self.gateway is not None:
