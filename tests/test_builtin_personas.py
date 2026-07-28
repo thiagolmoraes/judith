@@ -147,3 +147,37 @@ def test_assistant_ships_disabled_until_the_user_enables_it(tmp_path):
     reopened = PersonaRegistry(state_path=state)
     assert reopened.is_enabled("assistant") is True
     assert "assistant" in [p["name"] for p in reopened.sidebar()]
+
+
+def test_assistant_is_told_to_reply_on_the_platform_it_was_messaged_on():
+    """"Answer in the conversation" is ambiguous once a message arrives from WhatsApp:
+    the model read it as the app window and answered into the void, so a real inbound
+    WhatsApp message got a silent non-reply. Inbound platform messages carry a
+    `reply→<target>` handle (MessageEvent.framed) and the ONLY way back is send_message
+    with that target."""
+    prompt = PersonaRegistry().agent("assistant").system_prompt
+    assert "reply→" in prompt, "the persona must name the handle it will actually see"
+    assert "send_message" in prompt
+    # And it must not answer a Portuguese message in English, as it did on the first try.
+    assert "language the message was written in" in prompt
+
+
+def test_assistant_can_actually_send_once_a_platform_is_connected(tmp_path):
+    """The instruction is worthless if the tool isn't there. send_message appears when
+    `messaging=True` AND some platform is connected — a deliberate pair: offering a send
+    tool with nowhere to send would just invite a failed call. This asserts both halves,
+    since the first draft of this test used an empty store and read the absence as a
+    persona bug."""
+    from coworker.agent import build_engine
+    from coworker.secrets import SecretStore
+
+    store = SecretStore(tmp_path / "secrets.json")
+    agent = PersonaRegistry().agent("assistant")
+
+    # Nothing connected: no send tool, and nothing to send to.
+    bare = build_engine(agent=agent, workspace=None, secrets=store)
+    assert "send_message" not in bare.registry.names()
+
+    store.put("telegram:default", {"bot_token": "123:abc", "allowed_users": ["7"]})
+    wired = build_engine(agent=agent, workspace=None, secrets=store)
+    assert "send_message" in wired.registry.names()
