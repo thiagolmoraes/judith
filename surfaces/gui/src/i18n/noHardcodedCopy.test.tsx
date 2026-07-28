@@ -40,6 +40,12 @@ const FICTIONAL: Record<string, string[]> = {
     "Priya N",
     "Emma W",
     "Agents & apps",
+    // Post-entity forms: code() rewrites &amp;/&rsquo; to ' before the scans run.
+    "Agents ' apps",
+    "Drafts ' sent",
+    "Allow ' deliver",
+    "Each teammate's",
+    "mention waits for your OK — then they're on the People list and it flows.",
     "⌕ Describe what you are looking for",
     "Message #launch-room",
     "Today ▾",
@@ -99,7 +105,11 @@ function code(text: string): string {
     .replace(/^import[\s\S]*?from\s*["'][^"']+["'];?$/gm, " ")
     // `=> Promise<void>` reads as JSX text to the >…< scan below. Generic type arguments
     // are not copy, so drop them before scanning.
-    .replace(/=>\s*[A-Z]\w*</g, "=> <");
+    .replace(/=>\s*[A-Z]\w*</g, "=> <")
+    // HTML entities are prose, but their & and ; look like markup/code to the scans
+    // below: `&ldquo;Show more&rdquo;` split a sentence into fragments too short to
+    // flag, so an English line sat in Settings with this guard green.
+    .replace(/&[a-z]+;/g, "'");
 }
 
 // Exempting by SHAPE was the bug in the first version of this guard: "a single capitalised word
