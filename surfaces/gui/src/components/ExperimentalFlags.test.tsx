@@ -35,15 +35,24 @@ describe("Experimental flags card", () => {
   it("writes the flag and reloads when switched on", () => {
     const reload = vi.fn();
     vi.stubGlobal("location", { ...window.location, reload });
+    localStorage.setItem("ocw.flag.personas", "0"); // start from an explicit off
     renderSettings();
 
-    expect(showPersonas()).toBe(false); // the shipped default
+    expect(showPersonas()).toBe(false);
     fireEvent.click(screen.getByTestId("experimental-card").querySelector("button")!);
 
     expect(localStorage.getItem("ocw.flag.personas")).toBe("1");
     expect(showPersonas()).toBe(true);
     // Without this the Personas tab stays hidden until an unrelated re-render.
     expect(reload).toHaveBeenCalled();
+  });
+
+  it("is on by default, with no key stored", () => {
+    // The shipped default flipped to on: new personas (Assistant) ship disabled, and
+    // Settings ▸ Personas is the only place to enable them — hiding that tab made them
+    // unreachable without DevTools.
+    localStorage.removeItem("ocw.flag.personas");
+    expect(showPersonas()).toBe(true);
   });
 
   it("writes \"0\" when switched off, not just removing the key", () => {
