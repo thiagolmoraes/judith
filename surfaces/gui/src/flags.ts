@@ -15,7 +15,10 @@ function flag(key: string, fallback: boolean): boolean {
   return fallback;
 }
 
-/** Personas management is hidden for launch (owner call, 2026-07-19): the Settings tab
- * and the "Manage personas…" menu entry stay off until the persona catalog is ready.
- * The e2e suite sets `ocw.flag.personas` to keep the hidden flows covered. */
-export const showPersonas = () => flag("ocw.flag.personas", false);
+/** Personas management: the Settings tab and the "Manage personas…" menu entry.
+ *
+ * Hidden for launch (owner call, 2026-07-19) and on by default since 2026-07-28 in this
+ * fork — the catalog settled and the Assistant persona is unreachable without it, since
+ * new personas ship disabled and this is the only place to enable them. Settings ▸
+ * General ▸ Experimental toggles it; an explicit "0" there still force-hides it. */
+export const showPersonas = () => flag("ocw.flag.personas", true);

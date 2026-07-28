@@ -1,3 +1,4 @@
+from .assistant import assistant_agent
 from .base import Agent, AgentContext
 from .chat import chat_agent
 from .code import code_agent
@@ -8,6 +9,7 @@ from .registry import get_agent, list_agents
 __all__ = [
     "Agent",
     "AgentContext",
+    "assistant_agent",
     "code_agent",
     "chat_agent",
     "cowork_agent",

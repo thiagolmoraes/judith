@@ -42,6 +42,7 @@ import { ModelsTab } from "./ManageTabs";
 import { GalleryModal } from "./GalleryModal";
 import { PersonasTab } from "./PersonasTab";
 import { showPersonas } from "../flags";
+import { Toggle } from "./Toggle";
 
 // Settings, restructured (Option 2) into a full-page surface that mirrors IntegrationsView's shell:
 // a left sub-nav (Appearance · Files · Models · Personas) + centered panel, replacing the old
@@ -464,6 +465,8 @@ function AppearanceSection() {
 
       <TrustedWorkspacesCard />
 
+      <ExperimentalCard />
+
       {desktop && (
         <div className={CARD + " p-4"}>
           <div className={FIELD_LABEL + " mb-2.5"}>{t("settings.alwaysOn")}</div>
@@ -699,9 +702,48 @@ function TokenSavingsCard() {
         </label>
       </div>
       <div className={FIELD_HELP}>
-        PDFs over these limits are not attached — you&rsquo;ll see a notice in the composer
-        instead.
+        {t("settings.pdfLimitsHelp")}
       </div>
+    </div>
+  );
+}
+
+// Launch flags a user can flip without DevTools. Personas management is the only one
+// today; the card appears whenever there is at least one flag to show.
+//
+// The flag lives in localStorage and is read at render time by flags.ts, but nothing
+// subscribes to it — so flipping it reloads, which is also the honest thing to do: the
+// gate changes the shape of the nav and of the new-session menu.
+function ExperimentalCard() {
+  const { t } = useI18n();
+  const [personas, setPersonas] = useState(showPersonas);
+
+  const toggle = (on: boolean) => {
+    setPersonas(on);
+    try {
+      localStorage.setItem("ocw.flag.personas", on ? "1" : "0");
+    } catch {
+      /* private mode — the toggle just won't persist */
+    }
+    window.location.reload();
+  };
+
+  return (
+    <div className={CARD + " p-4 mb-4"} data-testid="experimental-card">
+      <div className={FIELD_LABEL + " mb-2.5"}>{t("settings.experimental")}</div>
+      <label className="flex items-start gap-3 py-2">
+        <Toggle
+          checked={personas}
+          onChange={toggle}
+          title={t("settings.personasFlag")}
+        />
+        <span className="min-w-0">
+          <span className="block text-[13px] text-ink">{t("settings.personasFlag")}</span>
+          <span className={FIELD_HELP}>
+            {t("settings.personasFlagHelp")} · {t("settings.reloadsApp")}
+          </span>
+        </span>
+      </label>
     </div>
   );
 }
@@ -738,7 +780,7 @@ function SidebarCard() {
         />
       </label>
       <div className={FIELD_HELP}>
-        Longer lists collapse behind &ldquo;Show more&rdquo;. Applies per coworker and per project.
+        {t("settings.sessionsPeekHelp")}
       </div>
     </div>
   );

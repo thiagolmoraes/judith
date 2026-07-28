@@ -909,6 +909,14 @@ export const en: Catalog = {
   "trust.saving": "Saving…",
   "trust.trustWorkspace": "Trust workspace",
   "cloudSignIn.blurbDefault": "Sign-in unlocks one-click connects — or switch to Manual, which works without it.",
+  "settings.experimental": "Experimental",
+  "settings.personasFlag": "Persona management",
+  "settings.personasFlagHelp": "Adds the Personas tab and the “Manage personas…” menu entry: enable extra coworkers, choose which appear in the picker, and install new ones. Off by default while the persona catalog is still settling.",
+  "settings.reloadsApp": "Reloads the app",
+  "settings.sessionsPeekHelp": "Longer lists collapse behind “Show more”. Applies per coworker and per project.",
+  "settings.pdfLimitsHelp": "PDFs over these limits are not attached — you'll see a notice in the composer instead.",
+  "trust.title": "Trust this workspace's commands?",
+  "hubspot.accessPrivacy": "Access & privacy",
   // -- tool-call one-liners (humanize.ts) -----------------------------------------
   // Assembled as pre + object + post so the UI can bold the object. Verb-object order
   // holds in Portuguese, so the shape survives translation unchanged; only the
