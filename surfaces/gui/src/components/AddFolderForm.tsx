@@ -71,7 +71,7 @@ export function AddFolderForm({
         </button>
       </div>
       <div className="addfolder-actions">
-        <label className="addfolder-write" title="Off = read-only. Tick to let the agent write here.">
+        <label className="addfolder-write" title={t("folder.writeTitle")}>
           <input type="checkbox" checked={writable} onChange={(e) => setWritable(e.target.checked)} />
           {t("folder.allowWrites")}
         </label>

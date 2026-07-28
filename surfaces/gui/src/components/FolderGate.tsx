@@ -10,7 +10,7 @@ import { useI18n } from "../i18n/useLocale";
 interface Props {
   onChoose: (path: string, branch?: string | null) => void;
   onCancel?: () => void; // present when changing folder mid-session
-  create?: boolean; // "New project" mode: create the folder if missing
+  create?: boolean; // t("folder.newProject") mode: create the folder if missing
 }
 
 export function FolderGate({ onChoose, onCancel, create }: Props) {
@@ -42,11 +42,11 @@ export function FolderGate({ onChoose, onCancel, create }: Props) {
     <div className="gate-overlay">
       <div className="gate">
         <div className="gate-mark">✦</div>
-        <h2>{create ? "New project" : "Choose a project folder"}</h2>
+        <h2>{create ? "New project" : t("folder.chooseProject")}</h2>
         <p className="gate-sub">
           {create
-            ? "Pick a folder or enter a path. If the path doesn't exist, it will be created."
-            : "This coworker needs a workspace to read, edit, and run in."}
+            ? t("folder.pickOrEnter")
+            : t("folder.needsWorkspace")}
         </p>
 
         <div className="gate-input">
@@ -61,7 +61,7 @@ export function FolderGate({ onChoose, onCancel, create }: Props) {
             {t("folder.browse")}
           </button>
           <button className="btn primary" onClick={() => open(path, create)} disabled={!path.trim()}>
-            {create ? "Create" : "Open"}
+            {create ? t("folder.create") : t("folder.open")}
           </button>
         </div>
         {error && <div className="gate-error">{error}</div>}

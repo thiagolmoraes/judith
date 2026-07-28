@@ -304,3 +304,80 @@ def test_explicit_prefs_bypass_the_cache(state):
     i18n.invalidate_locale_cache()
     assert current_locale({"locale": "pt-BR"}) == "pt-BR"
     assert current_locale() == "en"  # the file still wins when nothing is passed
+
+
+# -- automation schedule labels ---------------------------------------------------
+def test_schedule_labels_follow_the_locale(state):
+    """Schedule.human() renders in the sidebar and the Automations page, so it is
+    user-facing despite being built server-side. It was shipping raw English."""
+    from coworker.automation.models import Schedule
+
+    _set_locale(state, "pt-BR")
+    i18n.invalidate_locale_cache()
+
+    assert Schedule(kind="once", fire_at="2026-07-27T22:52:01-03:00").human() == (
+        "Uma vez em 2026-07-27T22:52:01-03:00"
+    )
+    assert Schedule(kind="cron", cron="10 19 * * *").human() == (
+        "Todo dia por volta de 19:10"
+    )
+    assert Schedule(kind="cron", cron="10 19 15 * *").human() == (
+        "Todo mês no dia 15 por volta de 19:10"
+    )
+
+
+def test_schedule_weekday_indexing_matches_cron(state):
+    """In cron, day-of-week 0 is SUNDAY. The old list started at Monday, so every
+    weekly label named the wrong day — a Sunday automation read "Every Monday"."""
+    from coworker.automation.models import Schedule
+
+    _set_locale(state, "en")
+    i18n.invalidate_locale_cache()
+    assert Schedule(kind="cron", cron="0 9 * * 0").human() == "Every Sunday at ~9:00 AM"
+    assert Schedule(kind="cron", cron="0 9 * * 6").human() == (
+        "Every Saturday at ~9:00 AM"
+    )
+
+    _set_locale(state, "pt-BR")
+    i18n.invalidate_locale_cache()
+    assert Schedule(kind="cron", cron="0 9 * * 0").human() == (
+        "todo domingo por volta de 09:00"
+    )
+
+
+def test_schedule_time_follows_the_locale_convention(state):
+    """12-hour AM/PM is an English convention; pt-BR reads 24-hour. This is a
+    formatting rule, not a translation, which is why _human_time takes the locale."""
+    from coworker.automation.models import Schedule
+
+    _set_locale(state, "en")
+    i18n.invalidate_locale_cache()
+    assert "7:10 PM" in Schedule(kind="cron", cron="10 19 * * *").human()
+
+    _set_locale(state, "pt-BR")
+    i18n.invalidate_locale_cache()
+    assert "19:10" in Schedule(kind="cron", cron="10 19 * * *").human()
+
+
+def test_schedule_weekday_gender_agreement(state):
+    """sábado and domingo are masculine, the -feira weekdays feminine — a fixed
+    "Toda {day}" frame is wrong two days out of seven, so the article rides with
+    the day name."""
+    from coworker.automation.models import Schedule
+
+    _set_locale(state, "pt-BR")
+    i18n.invalidate_locale_cache()
+    assert Schedule(kind="cron", cron="0 9 * * 6").human().startswith("todo sábado")
+    assert Schedule(kind="cron", cron="0 9 * * 1").human().startswith(
+        "toda segunda-feira"
+    )
+
+
+def test_schedule_falls_back_to_raw_cron_untranslated(state):
+    """Ranges and steps have no natural-language frame; the raw cron shows as-is in
+    both locales rather than half-translating."""
+    from coworker.automation.models import Schedule
+
+    _set_locale(state, "pt-BR")
+    i18n.invalidate_locale_cache()
+    assert Schedule(kind="cron", cron="*/5 * * * *").human() == "*/5 * * * *"

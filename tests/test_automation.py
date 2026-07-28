@@ -32,11 +32,26 @@ def _task(**kw) -> ScheduledTask:
 
 
 # -- model / schedule ----------------------------------------------------------
-def test_schedule_human():
+def test_schedule_human(tmp_path, monkeypatch):
+    # Pin the locale: human() reads the GUI pref now, and without isolation this test's
+    # English assertions would depend on whatever a previous test left in the cache.
+    from coworker import i18n
+
+    monkeypatch.setenv("COWORKER_STATE_DIR", str(tmp_path / "state"))
+    (tmp_path / "state").mkdir(parents=True, exist_ok=True)
+    i18n.invalidate_locale_cache()
+
     assert Schedule("cron", cron="10 19 * * *").human() == "Every day at ~7:10 PM"
-    assert "Monday" in Schedule("cron", cron="0 9 * * 0").human()
+    # In cron, day-of-week 0 is SUNDAY. This line used to assert "Monday" — it was
+    # pinning the off-by-one bug, not guarding against it.
+    assert "Sunday" in Schedule("cron", cron="0 9 * * 0").human()
+    assert "Saturday" in Schedule("cron", cron="0 9 * * 6").human()
     assert Schedule("cron", cron="0 9 5 * *").human() == "Monthly on day 5 at ~9:00 AM"
     assert Schedule("once", fire_at="2026-07-01T09:00:00").human().startswith("Once at")
+    # A restricted month falls back to raw cron: "0 9 * 12 *" runs only in December,
+    # and calling it "Every day" would overstate it.
+    assert Schedule("cron", cron="0 9 * 12 *").human() == "0 9 * 12 *"
+    assert Schedule("cron", cron="0 9 15 12 *").human() == "0 9 15 12 *"
 
 
 def test_task_gets_own_thread_id():

@@ -283,7 +283,7 @@ function DisconnectBtn({ teamId, busy, onClick }: { teamId: string; busy: boolea
       onClick={onClick}
       disabled={busy}
     >
-      {busy ? "Disconnecting…" : "Disconnect workspace"}
+      {busy ? t("conn.disconnecting") : t("slack.disconnectWorkspace")}
     </button>
   );
 }

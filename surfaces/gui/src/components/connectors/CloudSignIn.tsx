@@ -16,6 +16,7 @@ import { useI18n } from "../../i18n/useLocale";
 // relying on "some other section's 5s poll" left the rail stuck on the prompt
 // (FB-013).
 export function CloudSignInInline({ blurb }: { blurb?: string }) {
+  const { t } = useI18n();
   const [waiting, setWaiting] = useState(false);
   const cancelRef = useRef<(() => void) | null>(null);
   // Gate here rather than at each of the five call sites: with the cloud switched off the
@@ -49,10 +50,10 @@ export function CloudSignInInline({ blurb }: { blurb?: string }) {
           });
         }}
       >
-        {waiting ? "Check your browser…" : "Sign in to OpenWorker Cloud"}
+        {waiting ? t("cloudSignIn.checkBrowser") : t("cloudSignIn.signIn")}
       </button>
       <div className="text-[11.5px] text-faint">
-        {blurb || "Sign-in unlocks one-click connects — or switch to Manual, which works without it."}
+        {blurb || t("cloudSignIn.blurbDefault")}
       </div>
     </div>
   );

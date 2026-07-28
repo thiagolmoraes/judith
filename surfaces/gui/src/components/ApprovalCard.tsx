@@ -143,7 +143,11 @@ function Buttons({
       {offerStanding && (
         <button
           className="btn"
-          title={`Always allow ${item.name} → ${item.standingTarget} for “${runTask?.title || "this automation"}” — revoke any time on its Automations page`}
+          title={t("approval.alwaysTaskTitle", {
+            tool: item.name,
+            target: item.standingTarget ?? "",
+            task: runTask?.title || t("approval.thisAutomation"),
+          })}
           onClick={() => onApprove("always_task")}
         >
           {t("approval.allowEveryTime")}
@@ -157,7 +161,9 @@ function Buttons({
       {!connector && !offerStanding && item.name !== "run_shell" && (
         <button
           className="btn"
-          title={`Always allow ${TOOL_VERBS[item.name]?.toLowerCase() || item.name} for this session`}
+          title={t("approval.alwaysToolTitle", {
+            verb: TOOL_VERBS[item.name]?.toLowerCase() || item.name,
+          })}
           onClick={() => onApprove("always_tool")}
         >
           {t("approval.alwaysAllow")}
@@ -245,7 +251,7 @@ export function ApprovalCard({
               <Icon name="file" size={13} />
             </span>
             {String(item.args?.path ?? "").split("/").pop() || "file"}
-            {item.args?.as_screenshot ? " · as a PNG screenshot" : ""}
+            {item.args?.as_screenshot ? t("approval.asPng") : ""}
           </span>
           {item.args?.comment && (
             <MessagePreview text={String(item.args.comment)} label="With the message" />

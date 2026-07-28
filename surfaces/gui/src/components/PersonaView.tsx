@@ -85,7 +85,7 @@ export function PersonaView({
             className="inline-flex items-center gap-1 text-[12.5px] text-muted hover:text-ink"
             onClick={onBack}
           >
-            <Icon name="arrowLeft" size={15} />{t("persona.back")}</button>
+            <Icon name="arrowLeft" size={15} /> {t("persona.back")}</button>
           <span className="text-faint">·</span>
         </>
       )}
@@ -119,7 +119,7 @@ export function PersonaView({
               <p className="text-[13px] text-muted mt-0.5">{detail.tagline}</p>
             </div>
             <div className="ml-auto flex items-center gap-2">
-              <span className="text-[12px] text-muted">{detail.enabled ? "Enabled" : "Disabled"}</span>
+              <span className="text-[12px] text-muted">{detail.enabled ? t("persona.enabled") : t("persona.disabled")}</span>
               <Toggle checked={detail.enabled} onChange={toggleEnabled} title={t("persona.enableThis")} />
             </div>
           </header>
@@ -189,7 +189,7 @@ export function PersonaView({
                           className={r.tier === "core" && !isMcp ? BTN_ACCENT : BTN_BORDERED}
                           onClick={onOpenIntegrations}
                         >
-                          {isMcp ? "Add" : "Connect"}
+                          {isMcp ? t("persona.add") : t("persona.connect")}
                         </button>
                       )}
                     </div>
@@ -227,7 +227,7 @@ export function PersonaView({
                       checked={c.enabled}
                       disabled={!c.connected}
                       onChange={(next) => toggleDefault(c.connector, next)}
-                      title={c.connected ? "On by default for new sessions" : "Connect this first"}
+                      title={c.connected ? t("persona.onByDefault") : t("persona.connectFirst")}
                     />
                   </div>
                 ))}

@@ -47,7 +47,7 @@ export function WorkspaceTrustPrompt({
             {t("trust.keepAsking")}
           </button>
           <button className="btn primary" onClick={() => void trust()} disabled={saving}>
-            {saving ? "Saving…" : "Trust workspace"}
+            {saving ? t("trust.saving") : t("trust.trustWorkspace")}
           </button>
         </div>
       </div>

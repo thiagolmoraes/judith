@@ -75,7 +75,7 @@ export function IntegrationsView() {
             <section>
               <PanelHead
                 title={t("integrations.connectors")}
-                sub="Apps and tools your coworkers can use. Connected ones come first."
+                sub={t("integrations.connectorsSub")}
               />
               <ConnectorsSection />
             </section>
@@ -83,7 +83,7 @@ export function IntegrationsView() {
             <section>
               <PanelHead
                 title={t("integrations.mcpServers")}
-                sub="External tool servers (stdio or HTTP), shared across all agents."
+                sub={t("integrations.mcpSub")}
               />
               <McpTab />
             </section>
