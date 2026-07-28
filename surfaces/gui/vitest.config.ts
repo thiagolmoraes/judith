@@ -9,8 +9,8 @@ export default defineConfig({
     environment: "jsdom",
     // jsdom needs a non-opaque origin for localStorage; about:blank has none.
     environmentOptions: { jsdom: { url: "http://localhost/" } },
-    // Node 25 turned its own `localStorage` global on by default (22–24 kept it
-    // behind --experimental-webstorage). Without --localstorage-file it is a
+    // Node 25 turned its own `localStorage` global on by default (22.4–24 kept it
+    // behind --experimental-webstorage; before 22.4 the flag did not exist). Without --localstorage-file it is a
     // method-less object — and it shadows jsdom's Storage everywhere, so every
     // localStorage call in a test throws "not a function". Seven Sidebar tests failed
     // exactly this way on Node 25 while passing on older Node. Disabling Node's

@@ -40,7 +40,7 @@
 
 1. ~~**`Sidebar.test.tsx`: 7 testes falham**~~ **Corrigido (PR #20).** O diagnóstico original ("mock do teste") estava errado: a causa era o `localStorage` global do próprio Node — ligado por padrão no Node 25, sem métodos sem `--localstorage-file` — sombreando o Storage do jsdom nos workers do vitest. Duas linhas de config (`--no-experimental-webstorage` no execArgv + URL não-opaca no jsdom) e a suíte fechou **153/153** pela primeira vez.
 
-2. ~~**Strings de backend em inglês que a GUI pode exibir**~~ **Corrigido (PR #21)** — as oito passaram pelo catálogo:
+2. ~~**Strings de backend em inglês que a GUI pode exibir**~~ **Corrigido (PR #21)** — as cinco abaixo, mais três descobertas durante o fix (`workspace not connected`, a variante "cloud inacessível" da galeria e a mensagem de clone), passaram pelo catálogo:
    - `"connector not connected"` — `POST /v1/connectors/{name}/allow`
    - `"Slack is not connected."` — `POST /v1/inbox/routing/binding`
    - `"gallery requires cloud sign-in"` — `GET /v1/cloud/gallery` (a GalleryModal mostra copy própria, então prioridade baixa)
@@ -53,7 +53,7 @@
 
 5. ~~**PR #19**~~ **Mergeado.**
 
-6. ~~**App instalado desatualizado**~~ **Rebuildado e reinstalado** do `deploy/hml` final da madrugada; falta só um rebuild após #20/#21 mergearem.
+6. ~~**App instalado desatualizado**~~ **Rebuildado e reinstalado** do `deploy/hml` da madrugada (`fcb7f8c`). Um rebuild final acontece quando #20/#21 mergearem — nada do que eles mudam afeta o app em execução (teste de config e strings de erro raras).
 
 ## 🟡 Observações (não são bugs)
 
@@ -77,4 +77,4 @@
 
 ## Estado dos PRs
 
-`#13 ✓ #18(=14) ✓ #15 ✓ #16 ✓ #17 ✓` mergeados em `deploy/hml` · `#19` aberto aguardando review · GUI **100% traduzida** com guard cobrindo todo o `src/` (allowlist exata, cena fictícia do Slack documentada como exceção).
+`#13 ✓ #18(=14) ✓ #15 ✓ #16 ✓ #17 ✓ #19 ✓` mergeados em `deploy/hml` · `#20` (fix dos testes do Sidebar) e `#21` (erros de backend) em review · GUI **100% traduzida** com guard cobrindo todo o `src/` (allowlist exata, cena fictícia do Slack documentada como exceção).
