@@ -378,3 +378,68 @@ def test_make_adapter_builds_from_the_profile():
     assert adapter.webhook_url == "http://127.0.0.1:5000/webhook/whatsapp"
     # An unconfigured profile yields nothing rather than a half-built adapter.
     assert make_adapter("whatsapp_evolution", {}) is None
+
+
+# -- foreign payloads ----------------------------------------------------------
+# Evolution is self-hosted: the user may run a different version, or a fork. Anything
+# that reaches .get() on a non-dict raises INSIDE a webhook handler, turning a foreign
+# payload into a 500 — so every field read from the wire is shape-checked.
+@pytest.mark.parametrize(
+    "data",
+    [
+        {"key": ["not", "a", "dict"], "message": {"conversation": "hi"}},
+        {"key": "MSG1", "message": {"conversation": "hi"}},
+        {"key": {"remoteJid": "5511@s.whatsapp.net"}, "message": "just a string"},
+        {"key": {"remoteJid": "5511@s.whatsapp.net"}, "message": ["a", "list"]},
+        {"key": None, "message": None},
+    ],
+)
+def test_webhook_survives_unexpected_shapes(data):
+    assert webhook_to_event({"event": "messages.upsert", "data": data}) is None
+
+
+@pytest.mark.parametrize(
+    "body,expected",
+    [
+        ({"instance": {"state": "open"}}, "open"),
+        ({"state": "open"}, "open"),  # flat, as some versions answer
+        ({"instance": "open"}, ""),  # a string where a dict was expected
+        ({"instance": None}, ""),
+        (["open"], ""),
+        ("open", ""),
+        ({}, ""),
+    ],
+)
+def test_connection_state_reads_every_shape(body, expected):
+    """An unknown shape must read as "not connected", never raise: this runs inside
+    validate(), which is expected to RETURN a failure, not throw one."""
+    from coworker.connectors.whatsapp import _connection_state
+
+    assert _connection_state(body) == expected
+
+
+def test_validate_reports_a_foreign_response_instead_of_raising(monkeypatch):
+    """A server answering valid JSON in another shape used to raise AttributeError out
+    of validate(), past the error handling the rest of the function does."""
+    import httpx
+
+    from coworker.connectors.descriptors import get_descriptor
+
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _Resp(200, ["unexpected"]))
+    result = get_descriptor("whatsapp_evolution").validate(
+        {"base_url": "http://x", "api_key": "K", "instance": "openworker"}
+    )
+    assert result.ok is False
+    assert "not connected" in (result.error or "")
+
+
+def test_send_survives_a_non_dict_response(monkeypatch):
+    import httpx
+
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: _Resp(201, ["ok"]))
+    result = send_whatsapp("http://x", "K", "openworker", "5511@s.whatsapp.net", "hi")
+    assert result.ok is True and result.message_id == ""
+
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: _Resp(500, "internal error"))
+    failed = send_whatsapp("http://x", "K", "openworker", "5511@s.whatsapp.net", "hi")
+    assert failed.ok is False and "internal error" in (failed.error or "")

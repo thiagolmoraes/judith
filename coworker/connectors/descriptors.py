@@ -123,7 +123,9 @@ def _validate_whatsapp_evolution(creds: dict) -> ValidationResult:
         data = resp.json()
     except Exception:
         return ValidationResult(False, error="that URL did not answer with JSON — is it Evolution?")
-    state = ((data.get("instance") or {}).get("state")) or data.get("state")
+    from .whatsapp import _connection_state
+
+    state = _connection_state(data)
     if state != "open":
         return ValidationResult(
             False,

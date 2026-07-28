@@ -40,6 +40,22 @@ def is_group(jid: str) -> bool:
     return (jid or "").endswith("@g.us")
 
 
+def _connection_state(body: Any) -> str:
+    """The instance's state, from whichever shape the server used.
+
+    Evolution reports it as `{"instance": {"state": …}}`; some versions and forks answer
+    a flat `{"state": …}`. Anything else (a list, a string, an error page decoded as
+    JSON) yields "" — an unknown state, treated as not-connected, never an exception.
+    """
+    if not isinstance(body, dict):
+        return ""
+    instance = body.get("instance")
+    if isinstance(instance, dict) and instance.get("state"):
+        return str(instance["state"])
+    state = body.get("state")
+    return str(state) if isinstance(state, str) else ""
+
+
 def extract_text(message: dict) -> str:
     """The text of a message, across the shapes Evolution forwards.
 
@@ -86,14 +102,20 @@ def webhook_to_event(payload: dict) -> Optional[MessageEvent]:
     if not isinstance(data, dict):
         return None
 
-    key = data.get("key") or {}
+    key = data.get("key")
+    # A different Evolution version (or a fork) can answer valid JSON in another shape.
+    # `key` being a list or a string would make .get() raise inside a webhook handler,
+    # which turns a foreign payload into a 500 instead of a quiet drop.
+    if not isinstance(key, dict):
+        return None
     if key.get("fromMe"):
         return None
     chat_id = str(key.get("remoteJid") or "")
     if not chat_id or chat_id == "status@broadcast":
         return None
 
-    text = extract_text(data.get("message") or {})
+    message = data.get("message")
+    text = extract_text(message if isinstance(message, dict) else {})
     if not text:
         return None
 
@@ -152,7 +174,7 @@ class WhatsAppAdapter(BasePlatformAdapter):
                     headers=self._headers(),
                 )
                 body = state.json() if state.status_code == 200 else {}
-                status = ((body.get("instance") or {}).get("state")) or body.get("state")
+                status = _connection_state(body)
                 if status != "open":
                     logger.warning(
                         "whatsapp instance %s is %s — pair it in the Evolution manager",
@@ -232,7 +254,14 @@ def send_whatsapp(
     except Exception as exc:
         return SendResult(False, error=str(exc))
     if resp.status_code >= 400:
-        detail = data.get("response") or data.get("message") or data
+        # The error body's shape varies by version; anything non-dict is reported as-is
+        # rather than crashing on .get() while already handling a failure.
+        detail = (
+            (data.get("response") or data.get("message") or data)
+            if isinstance(data, dict)
+            else data
+        )
         return SendResult(False, error=str(detail)[:200])
-    key = data.get("key") or {}
-    return SendResult(True, message_id=str(key.get("id") or ""))
+    key = data.get("key") if isinstance(data, dict) else None
+    message_id = key.get("id") if isinstance(key, dict) else None
+    return SendResult(True, message_id=str(message_id or ""))
