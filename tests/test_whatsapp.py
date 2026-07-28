@@ -70,7 +70,9 @@ def test_dm_becomes_an_addressed_event():
     event = webhook_to_event(_upsert())
     assert event is not None
     assert event.text == "oi"
-    assert event.source.platform == "whatsapp"
+    # The same id everywhere: the gateway looks up the allow-list by source.platform,
+    # so a mismatch reads the official connector's (empty) settings and drops the message.
+    assert event.source.platform == "whatsapp_evolution"
     assert event.source.chat_id == "5511999999999@s.whatsapp.net"
     assert event.source.user_id == "5511999999999"  # bare, for the allow-list
     assert event.source.user_name == "Ana"
@@ -286,3 +288,93 @@ async def test_disconnect_disables_the_webhook_without_logging_out(monkeypatch):
     await adapter.disconnect()
     assert posted[0]["json"]["webhook"]["enabled"] is False
     assert all("logout" not in p["url"] for p in posted)
+
+
+# -- the experimental gate -----------------------------------------------------
+def test_connector_is_experimental_and_states_the_risk():
+    """Both halves matter. `experimental` hides it until the user opts in; the risk
+    notice is what they are shown before connecting, and connect_connector REFUSES
+    without an acknowledgement. A descriptor with the flag but no notice would gate on
+    an empty string — technically hidden, but the user accepts nothing."""
+    from coworker.connectors.descriptors import get_descriptor
+
+    d = get_descriptor("whatsapp_evolution")
+    assert d is not None
+    assert d.experimental is True
+    assert d.risk_notice, "an experimental connector with no risk notice gates on nothing"
+    lowered = d.risk_notice.lower()
+    assert "ban" in lowered  # the concrete consequence, not a vague warning
+    assert "spare" in lowered
+
+
+def test_connect_refuses_without_acknowledgement(tmp_path, monkeypatch):
+    from coworker.connectors import setup as setup_mod
+    from coworker.secrets import SecretStore
+
+    store = SecretStore(tmp_path / "secrets.json")
+    monkeypatch.setattr(setup_mod, "experimental_enabled", lambda _s: True)
+    result = setup_mod.connect_connector(
+        store,
+        "whatsapp_evolution",
+        {"base_url": "http://localhost:8090", "api_key": "K"},
+        validate=False,
+    )
+    assert result["ok"] is False
+    # The notice travels WITH the refusal, so the GUI has something to show.
+    assert result["risk_notice"]
+
+
+def test_official_and_self_hosted_whatsapp_coexist():
+    """There are two WhatsApp connectors on purpose: Meta's official Cloud API
+    (outbound, business number) and this one (two-way, personal number). Collapsing
+    them would silently change which API a connected user is on."""
+    from coworker.connectors.descriptors import DESCRIPTORS
+
+    official = [d for d in DESCRIPTORS if d.name == "whatsapp"][0]
+    self_hosted = [d for d in DESCRIPTORS if d.name == "whatsapp_evolution"][0]
+    assert official.two_way is False and official.experimental is False
+    assert self_hosted.two_way is True and self_hosted.experimental is True
+
+
+# -- gateway wiring ------------------------------------------------------------
+def test_platform_is_registered_for_the_gateway():
+    """PLATFORMS is what the gateway iterates and what decides whether connecting the
+    connector restarts the listeners. Omitting it leaves a connector that saves fine,
+    reports connected, and never receives a single message — which is exactly what
+    happened before this line existed."""
+    from coworker.connectors.config import PLATFORMS
+
+    assert "whatsapp_evolution" in PLATFORMS
+
+
+def test_enablement_keys_on_the_server_address_not_a_token(tmp_path):
+    """Every other platform enables on `bot_token`. A self-hosted server has none — its
+    address is the thing that proves it is configured."""
+    from coworker.connectors.config import load_settings
+    from coworker.secrets import SecretStore
+
+    store = SecretStore(tmp_path / "secrets.json")
+    assert load_settings(store)["whatsapp_evolution"].enabled is False
+
+    store.put(
+        "whatsapp_evolution:default",
+        {"base_url": "http://localhost:8090", "api_key": "K", "allowed_users": ["5511999"]},
+    )
+    settings = load_settings(store)["whatsapp_evolution"]
+    assert settings.enabled is True
+    assert settings.allowed_users == {"5511999"}
+
+
+def test_make_adapter_builds_from_the_profile():
+    from coworker.connectors.adapters import make_adapter
+
+    adapter = make_adapter(
+        "whatsapp_evolution",
+        {"base_url": "http://localhost:8090", "api_key": "K", "instance": "openworker"},
+        webhook_url="http://127.0.0.1:5000/webhook/whatsapp",
+    )
+    assert adapter is not None
+    assert adapter.platform == "whatsapp_evolution"
+    assert adapter.webhook_url == "http://127.0.0.1:5000/webhook/whatsapp"
+    # An unconfigured profile yields nothing rather than a half-built adapter.
+    assert make_adapter("whatsapp_evolution", {}) is None

@@ -101,7 +101,10 @@ def webhook_to_event(payload: dict) -> Optional[MessageEvent]:
     # In a group the sender is `participant`; in a DM it's the chat itself.
     sender_jid = str(key.get("participant") or chat_id)
     source = SessionSource(
-        platform="whatsapp",
+        # Same string as the adapter and the descriptor: the gateway looks up the
+        # allow-list by this, so "whatsapp" would read the OFFICIAL connector's
+        # settings — an empty allow-list, silently dropping every message.
+        platform="whatsapp_evolution",
         chat_id=chat_id,
         user_id=jid_to_number(sender_jid),
         user_name=data.get("pushName") or None,
@@ -124,7 +127,10 @@ class WhatsAppAdapter(BasePlatformAdapter):
     `handle_message`.
     """
 
-    platform = "whatsapp"
+    # Must match the descriptor name: the gateway registers adapters by this string and
+    # the webhook route looks one up by it. "whatsapp" would collide with the official
+    # Cloud API connector and leave inbound messages unroutable.
+    platform = "whatsapp_evolution"
 
     def __init__(self, base_url: str, api_key: str, instance: str, *, webhook_url: str = "") -> None:
         super().__init__()

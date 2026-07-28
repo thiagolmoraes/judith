@@ -502,6 +502,13 @@ DESCRIPTORS: list[ConnectorDescriptor] = [
         # the cloud has nothing to broker. Self-hosted is the only route.
         managed=False,
         experimental=True,
+        risk_notice=(
+            "This drives a personal WhatsApp account through the unofficial multi-device "
+            "protocol, which Meta's terms forbid. The number can be banned — permanently, "
+            "with no appeal and no warning. Use a spare SIM you can afford to lose, never "
+            "the number you rely on. Everyone who messages that number can reach the "
+            "agent, subject to the allow-list below."
+        ),
         fields=[
             Field(
                 "base_url",

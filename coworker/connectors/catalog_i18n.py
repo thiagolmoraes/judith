@@ -275,6 +275,7 @@ PT_BR: dict[str, str] = {
     "Where your Evolution server listens.": "Onde o seu servidor Evolution escuta.",
     "AUTHENTICATION_API_KEY from the Evolution .env.": "AUTHENTICATION_API_KEY do .env da Evolution.",
     "The paired Evolution instance. Defaults to `openworker`.": "A instância pareada da Evolution. O padrão é `openworker`.",
+    "This drives a personal WhatsApp account through the unofficial multi-device protocol, which Meta's terms forbid. The number can be banned — permanently, with no appeal and no warning. Use a spare SIM you can afford to lose, never the number you rely on. Everyone who messages that number can reach the agent, subject to the allow-list below.": "Isso dirige uma conta pessoal do WhatsApp pelo protocolo multi-device não-oficial, que os termos da Meta proíbem. O número pode ser banido — em definitivo, sem recurso e sem aviso. Use um chip reserva que você possa perder, nunca o número do qual você depende. Todo mundo que mandar mensagem para esse número alcança o agente, sujeito à lista de permitidos abaixo.",
 }
 
 

@@ -14,7 +14,7 @@ from typing import Optional
 from ..secrets import SecretStore
 from .base import SessionSource
 
-PLATFORMS = ("telegram", "slack", "github")
+PLATFORMS = ("telegram", "slack", "github", "whatsapp_evolution")
 
 
 @dataclass
@@ -89,6 +89,11 @@ def load_settings(
             enabled = bool(profile.get("enabled", True))
         elif platform == "github":
             enabled = False
+        elif platform == "whatsapp_evolution":
+            # No bot_token: the server is self-hosted, so its ADDRESS is what proves
+            # the connector is configured. Keying on `token` here would leave the
+            # gateway permanently blind to it.
+            enabled = bool(profile.get("base_url")) and profile.get("enabled", True)
         else:
             enabled = bool(token) and profile.get("enabled", True)
         teams: dict[str, TeamAuth] = {}
