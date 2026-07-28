@@ -2414,10 +2414,33 @@ class SessionManager:
                 relay_url=relay_ws_url,
                 relay_hub=relay_hub,
                 github_token_client=_github_token,
+                webhook_url=self._local_webhook_url(platform),
             )
             if adapter is not None:
                 self.gateway.register(adapter)
         return await self.gateway.start()
+
+    def _local_webhook_url(self, platform: str) -> str:
+        """Where a self-hosted server should POST inbound events for `platform`.
+
+        The port is assigned at boot (run.py exports COWORKER_PORT), so this is computed
+        per start and re-registered by the adapter — a URL saved from a previous run
+        would point at whatever now holds that port, or at nothing.
+        """
+        if platform != "whatsapp_evolution":
+            return ""
+        port = os.environ.get("COWORKER_PORT") or ""
+        if not port:
+            return ""
+        # NOT 127.0.0.1. The typical Evolution runs in Docker, where loopback is the
+        # CONTAINER — a webhook aimed there dies with ECONNREFUSED and the connector
+        # looks connected while receiving nothing. `host.docker.internal` resolves to
+        # the host from inside a container (compose needs
+        # `extra_hosts: ["host.docker.internal:host-gateway"]` on Linux), and resolves
+        # on the host too on macOS/Windows, so one URL serves both. Override with
+        # COWORKER_WEBHOOK_HOST when Evolution runs on another machine.
+        host = os.environ.get("COWORKER_WEBHOOK_HOST") or "host.docker.internal"
+        return f"http://{host}:{port}/webhook/whatsapp"
 
     async def stop_gateway(self) -> None:
         if self.gateway is not None:

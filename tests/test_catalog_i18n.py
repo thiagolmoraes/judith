@@ -31,6 +31,11 @@ def _catalogue_strings() -> list[tuple[str, str]]:
         for field in d.fields or []:
             if field.help:
                 out.append((f"{d.name}.{field.key}.help", field.help))
+        # The risk notice was outside this sweep, which meant the ONE string an
+        # experimental connector most needs a user to understand was the one that could
+        # ship untranslated.
+        if d.risk_notice:
+            out.append((f"{d.name}.risk_notice", d.risk_notice))
     for name, text in catalog_copy.ABOUT.items():
         if text:
             out.append((f"about.{name}", text))

@@ -119,7 +119,18 @@ def _resolve_token(secrets: SecretStore, platform: str, chat_id: str) -> Optiona
     selects that team's bot token from its `slack:team:<team_id>` profile. Manual
     Socket-Mode (single workspace, bare "C…") uses `slack:default`. Non-Slack
     platforms always use `<platform>:default`.
+
+    WhatsApp has no bot token: the server is self-hosted, so a send needs its address,
+    key and instance. Those are packed into one opaque string here to keep the Sender
+    contract (a single token) intact — `_send_whatsapp_message` unpacks it.
     """
+    if platform == "whatsapp_evolution":
+        creds = secrets.get("whatsapp_evolution:default") or {}
+        base = creds.get("base_url") or ""
+        if not base:
+            return None
+        instance = creds.get("instance") or "openworker"
+        return f"{base}|{creds.get('api_key', '')}|{instance}"
     if platform == "slack":
         from .slack_addr import split
 
