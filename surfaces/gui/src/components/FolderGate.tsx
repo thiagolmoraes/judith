@@ -42,7 +42,7 @@ export function FolderGate({ onChoose, onCancel, create }: Props) {
     <div className="gate-overlay">
       <div className="gate">
         <div className="gate-mark">✦</div>
-        <h2>{create ? "New project" : t("folder.chooseProject")}</h2>
+        <h2>{create ? t("folder.newProject") : t("folder.chooseProject")}</h2>
         <p className="gate-sub">
           {create
             ? t("folder.pickOrEnter")

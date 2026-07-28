@@ -261,7 +261,7 @@ function SlackOneClick({ c, cloud }: { c: Connector; cloud: CloudStatus | null }
       </p>
       {cloud?.signed_in ? (
         <button className={PILL_ACCENT + " w-full !py-2"} data-testid="modal-add-to-slack" onClick={go} disabled={waiting}>
-          {waiting ? "Check your browser…" : t("addConn.addToSlack")}
+          {waiting ? t("mt.checkBrowser") : t("addConn.addToSlack")}
         </button>
       ) : cloud ? (
         <CloudSignInInline />
@@ -299,7 +299,7 @@ function GithubOneClick({ c, cloud }: { c: Connector; cloud: CloudStatus | null 
            redirects the same tab on to the install page (the old "Already installed? Link
            it" question and the Configure dead-end are gone). */
         <button className={PILL_ACCENT + " w-full !py-2"} data-testid="modal-install-github-app" onClick={() => go()} disabled={waiting}>
-          {waiting ? "Check your browser…" : t("addConn.connectGithub")}
+          {waiting ? t("mt.checkBrowser") : t("addConn.connectGithub")}
         </button>
       ) : cloud ? (
         <CloudSignInInline />
@@ -356,7 +356,7 @@ function HubSpotOneClick({ c, cloud }: { c: Connector; cloud: CloudStatus | null
       </div>
       {cloud?.signed_in ? (
         <button className={PILL_ACCENT + " w-full !py-2"} data-testid="modal-connect-hubspot" onClick={go} disabled={waiting}>
-          {waiting ? "Check your browser…" : t("addConn.connectHubspot")}
+          {waiting ? t("mt.checkBrowser") : t("addConn.connectHubspot")}
         </button>
       ) : cloud ? (
         <CloudSignInInline />
