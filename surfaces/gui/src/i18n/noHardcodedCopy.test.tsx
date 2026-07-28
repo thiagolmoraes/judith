@@ -12,24 +12,82 @@ import { translate } from "./index";
 // shape-based exemptions this guard used to have: a new screen is born outside it and nobody
 // notices. Opting out is possible but has to be deliberate and explained.
 
-const EXEMPT = [
-  // Most of this file draws a FICTIONAL Slack workspace to teach how mentions arrive. It
-  // imitates Slack's own interface, so a Portuguese rendering would depict a product that
-  // doesn't exist. Its own copy — heading, tabs, captions, sticky notes — IS translated.
-  "SlackHowItWorks.tsx",
-];
-
 const ALL = import.meta.glob("../**/*.tsx", {
   query: "?raw",
   import: "default",
   eager: false,
 });
 const FILES = Object.fromEntries(
-  Object.entries(ALL).filter(
-    ([path]) =>
-      !path.includes(".test.") && !EXEMPT.some((name) => path.endsWith(name)),
-  ),
+  Object.entries(ALL).filter(([path]) => !path.includes(".test.")),
 );
+
+// Strings allowed ONLY in the named file. SlackHowItWorks draws a FICTIONAL Slack
+// workspace ("Lumina Labs", Priya N, #launch-room) to teach how mentions arrive; the
+// scene imitates Slack's interface, so a Portuguese rendering would depict a product
+// that doesn't exist. Its own copy — heading, tabs, captions, sticky notes — IS
+// translated and IS guarded. Listing the fictional strings here (instead of exempting
+// the file, as an earlier version did) means a regression in the file's real copy, or
+// any NEW hardcoded string, still fails the test.
+const FICTIONAL: Record<string, string[]> = {
+  "SlackHowItWorks.tsx": [
+    "Lumina Labs ▾",
+    "Threads",
+    "Drafts & sent",
+    "Channels",
+    "# general",
+    "# launch-room",
+    "Direct messages",
+    "Priya N",
+    "Emma W",
+    "Agents & apps",
+    "⌕ Describe what you are looking for",
+    "Message #launch-room",
+    "Today ▾",
+    "Thread",
+    "Reply…",
+    "1 reply",
+    "2 replies",
+    "Today at 6:34 PM",
+    "Today at 6:36 PM",
+    "after you allow",
+    "signups are spiking since the post 📈",
+    "summarize this thread",
+    "@OpenWorker summarize this thread",
+    "break it down by country?",
+    "pull the signup numbers?",
+    "Launch traction: signups up 3.4× since the post…",
+    "Launch traction: signups up 3.4×…",
+    "Top: US 41% · India 22% · Germany 9%…",
+    "Top countries: US 41%, India 22%, Germany 9% — context kept from the whole thread.",
+    "Reading the thread… signups up 3.4×, top referrer is the press page. (replying in the Slack thread)",
+    "＋ New session",
+    "⌕ Search",
+    "◷ Automations",
+    "RECENT",
+    "Jira vs Linear",
+    "Summarize #launch-room",
+    "via Slack",
+    "via Slack · now",
+    "via Slack — same session",
+    "Message OpenWorker…",
+    "is waiting",
+    "Allow & deliver",
+    "Each teammate's first mention waits for your OK — then they're on the People list and it flows.",
+    "You",
+    "OW",
+    "APP",
+  ],
+};
+
+const allowedInFile = (path: string, s: string): boolean => {
+  for (const [name, strings] of Object.entries(FICTIONAL)) {
+    if (path.endsWith(name)) {
+      // Substring, not equality: the scan tears multi-element lines into fragments.
+      return strings.some((f) => f.includes(s) || s.includes(f));
+    }
+  }
+  return false;
+};
 
 /** Source with comments and imports stripped — prose about a string is not a string. */
 function code(text: string): string {
@@ -75,13 +133,15 @@ const ALLOWED = new Set([
 ]);
 
 // Shapes that can't be user-facing copy no matter what they say.
-const LOWERCASE_WORDS = /^[a-z0-9-]+(?:[ ][a-z0-9-]+)*$/;
+const LOWERCASE_WORDS = /^[a-z0-9\-./:%_()\[\],#! ]+$/;
 const NOT_COPY = [
   /^[a-z][a-zA-Z0-9]*$/, // camelCase identifier
   LOWERCASE_WORDS, // css classes / kebab ids, lowercase throughout
   /^[\W\d\s]+$/, // punctuation, digits, emoji
   /^\p{Extended_Pictographic}/u,
-  /[;{}()=]|=>/, // a fragment of code the regex tore out of context
+  // `;`, braces or `=>` mark code the regex tore out of context. Bare `=` and parens
+  // stay allowed: "Off = read-only" and "(optional)" are real copy.
+  /[;{}]|=>|&&|\|\||===/,
 ];
 
 /** Does this literal read as something a person would see?
@@ -108,9 +168,10 @@ describe("translated screens have no untranslated user-facing text", () => {
     for (const [path, load] of Object.entries(FILES)) {
       const text = code((await load()) as string);
       for (const m of text.matchAll(
-        /(?:title|placeholder|aria-label|ariaLabel|alt)=\{?"([^"]+)"/g,
+        /(?:title|placeholder|aria-label|ariaLabel|alt|sub|blurb)=\{?"([^"]+)"/g,
       )) {
-        if (isCopy(m[1], true)) offenders.push(`${path}: ${m[1]}`);
+        if (isCopy(m[1], true) && !allowedInFile(path, m[1]))
+          offenders.push(`${path}: ${m[1]}`);
       }
     }
     expect(offenders, `hardcoded attribute copy:\n${offenders.join("\n")}`).toEqual([]);
@@ -124,10 +185,32 @@ describe("translated screens have no untranslated user-facing text", () => {
       const text = code((await load()) as string).replace(/\s+/g, " ");
       // {1,} not {4,}: a short label is exactly what the shape-based exemption used to hide.
       for (const m of text.matchAll(/>\s*([A-Za-z][^<>{}]{1,})\s*</g)) {
-        if (isCopy(m[1])) offenders.push(`${path}: ${m[1].trim()}`);
+        if (isCopy(m[1]) && !allowedInFile(path, m[1].trim()))
+          offenders.push(`${path}: ${m[1].trim()}`);
       }
     }
     expect(offenders, `hardcoded JSX copy:\n${offenders.join("\n")}`).toEqual([]);
+  });
+
+  it("has no English sentences left in JSX ternaries", async () => {
+    // {busy ? "Disconnecting…" : "Disconnect workspace"} is invisible to the JSX-text
+    // scan (it sits inside braces) and to the template-literal scan (no ${}). Both
+    // branches are copy; either being English fails.
+    const offenders: string[] = [];
+    for (const [path, load] of Object.entries(FILES)) {
+      const text = code((await load()) as string).replace(/\s+/g, " ");
+      for (const m of text.matchAll(
+        // Lookbehind: a ternary in className={...} picks between class strings.
+        /(?<!className=)\{\s*[\w.!?]+(?:\([^()]*\))?\s*\?\s*"([^"]+)"\s*:\s*"([^"]*)"\s*\}/g,
+      )) {
+        for (const branch of [m[1], m[2]]) {
+          if (branch && isCopy(branch) && !allowedInFile(path, branch)) {
+            offenders.push(`${path}: ${branch}`);
+          }
+        }
+      }
+    }
+    expect(offenders, `hardcoded ternary copy:\n${offenders.join("\n")}`).toEqual([]);
   });
 
   it("builds no sentence with an inline English plural rule", async () => {

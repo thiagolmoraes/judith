@@ -399,7 +399,7 @@ function McpRow({
               ? t("mt.toolCount", { count: server.tool_count })
               : ""}
             {server.requires_approval ? t("mt.asks") : ""}
-            {isOauth ? " · oauth" : ""}
+            {isOauth ? t("mt.oauthSuffix") : ""}
           </div>
         </div>
         {isOauth &&

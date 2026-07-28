@@ -105,6 +105,10 @@ class Schedule:
             when = _human_time(int(hour), int(minute), locale)
         except ValueError:
             return self.cron  # non-trivial cron (ranges/steps) — show as-is
+        # A restricted month makes every frame below a lie — "0 9 * 12 *" runs only in
+        # December, so "Every day" would overstate it. Raw cron is honest; these are rare.
+        if month != "*":
+            return self.cron
         if dom == "*" and dow == "*":
             return _t("sched.everyDay", locale=locale, time=when)
         if dom == "*" and dow.isdigit():

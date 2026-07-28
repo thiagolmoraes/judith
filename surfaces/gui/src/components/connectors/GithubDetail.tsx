@@ -233,7 +233,7 @@ function DisconnectBtn({ id, busy, onClick }: { id: string; busy: boolean; onCli
       onClick={onClick}
       disabled={busy}
     >
-      {busy ? "Disconnecting…" : "Disconnect installation"}
+      {busy ? t("conn.disconnecting") : t("github.disconnectInstallation")}
     </button>
   );
 }

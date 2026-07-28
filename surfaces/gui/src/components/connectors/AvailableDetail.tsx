@@ -72,7 +72,7 @@ export function AvailableDetail({
               <span className="min-w-0 flex-1 text-muted">
                 {tools.length} tool{tools.length === 1 ? "" : "s"} this connector adds
               </span>
-              <span className="text-faint text-[13px] shrink-0">{showTools ? "Hide" : "View"}</span>
+              <span className="text-faint text-[13px] shrink-0">{showTools ? t("available.hide") : t("available.view")}</span>
             </button>
             {showTools &&
               tools.map((t) => (

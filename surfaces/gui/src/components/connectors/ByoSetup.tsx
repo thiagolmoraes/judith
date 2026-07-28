@@ -190,7 +190,7 @@ export function ByoSetup({
   return (
     <div className="px-5 py-4 space-y-3">
       <p className="text-[13px] text-muted">
-        Use your own {isGithub ? "GitHub App" : "OAuth app"} instead of OpenWorker's. Same
+        Use your own {isGithub ? t("byo.githubApp") : t("byo.oauthApp")} instead of OpenWorker's. Same
         click-and-approve, no cloud sign-in, and the agent acts as your app.
       </p>
 
@@ -249,7 +249,7 @@ export function ByoSetup({
                 />
               </label>
               <label className="block space-y-1">
-                <span className={LABEL}>Private key (.pem contents)</span>
+                <span className={LABEL}>{t("byo.privateKey")}</span>
                 <textarea
                   className={INPUT + " font-mono text-[11px] h-24 resize-y"}
                   value={privateKey}
@@ -277,12 +277,12 @@ export function ByoSetup({
                   type="password"
                   value={clientSecret}
                   onChange={(e) => setClientSecret(e.target.value)}
-                  placeholder={configured ? "•••••• (leave blank to keep)" : ""}
+                  placeholder={configured ? t("byo.keepSecret") : ""}
                   data-testid="byo-client-secret"
                 />
               </label>
               <label className="block space-y-1">
-                <span className={LABEL}>Scopes (optional)</span>
+                <span className={LABEL}>{t("byo.scopes")}</span>
                 <input
                   className={INPUT}
                   value={scopes}
@@ -301,7 +301,7 @@ export function ByoSetup({
               disabled={busy || (isGithub ? !appId.trim() : !clientId.trim())}
               data-testid="byo-save"
             >
-              {busy ? "Saving…" : "Save app"}
+              {busy ? t("byo.saving") : t("byo.saveApp")}
             </button>
             {configured && (
               <button className={PILL_LINE} onClick={() => setEditing(false)} disabled={busy}>
