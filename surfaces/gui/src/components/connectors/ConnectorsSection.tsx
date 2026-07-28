@@ -19,6 +19,7 @@ import { GmailDetail } from "./GmailDetail";
 import { HubSpotDetail } from "./HubSpotDetail";
 import { SlackDetail } from "./SlackDetail";
 import { GRP } from "./ui";
+import { useI18n } from "../../i18n/useLocale";
 
 // Connectors surface = LIST ⇄ per-connector DETAIL SUBPAGE (UX-DECISIONS §21). The
 // Integrations sub-nav never grows per-connector items; detail pages live behind a
@@ -50,6 +51,7 @@ const DETAIL_PAGES: Record<string, (p: DetailProps) => JSX.Element> = {
 };
 
 export function ConnectorsSection() {
+  const { t } = useI18n();
   const [detail, setDetail] = useState<string | null>(null);
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [cloud, setCloud] = useState<CloudStatus | null>(null);
@@ -81,7 +83,7 @@ export function ConnectorsSection() {
           ‹ Connectors
         </button>
         {!c ? (
-          <div className="text-[13px] text-muted">Loading…</div>
+          <div className="text-[13px] text-muted">{t("conn.loading")}</div>
         ) : !c.connected ? (
           /* Pre-connect page (§38). When a connect completes, the poll flips
              c.connected and this same route re-renders as the connected page. */
@@ -122,6 +124,7 @@ function GenericDetail({
   onChanged,
   onGone,
 }: DetailProps & { onGone: () => void }) {
+  const { t } = useI18n();
   return (
     <div>
       <div className="flex items-center gap-3.5 mb-5">
@@ -142,7 +145,7 @@ function GenericDetail({
               onGone();
             }}
           >
-            Disconnect
+            {t("conn.disconnect")}
           </button>
         )}
       </div>
