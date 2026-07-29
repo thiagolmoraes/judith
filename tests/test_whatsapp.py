@@ -473,3 +473,86 @@ def test_no_webhook_url_for_other_platforms(monkeypatch, tmp_path):
 
     monkeypatch.setenv("COWORKER_PORT", "51234")
     assert SessionManager(workspace=tmp_path)._local_webhook_url("slack") == ""
+
+
+# -- duplicate suppression -----------------------------------------------------
+def test_an_identical_resend_is_suppressed(tmp_path):
+    """Observed live: five identical WhatsApp messages in one second, from a model that
+    had just been told to send exactly one. Small models re-call a tool after seeing it
+    succeed; the person on the other end gets spammed. No prompt wording fixed it, so
+    the tool enforces it."""
+    from coworker.connectors.base import SendResult
+    from coworker.connectors.tools import make_send_message_tool
+    from coworker.secrets import SecretStore
+
+    sent: list[str] = []
+
+    def fake_sender(token, chat_id, text, thread_id):
+        sent.append(text)
+        return SendResult(True, message_id=f"M{len(sent)}")
+
+    store = SecretStore(tmp_path / "secrets.json")
+    store.put("telegram:default", {"bot_token": "T"})
+    tool = make_send_message_tool(store, senders={"telegram": fake_sender})
+
+    first = tool("telegram:123", "hello")
+    assert first["ok"] is True and first.get("duplicate") is None
+
+    second = tool("telegram:123", "hello")
+    # Reported as ok, NOT as an error: the message the model wanted delivered has been
+    # delivered, and calling it a failure would invite the retry this prevents.
+    assert second["ok"] is True
+    assert second["duplicate"] is True
+    assert sent == ["hello"], "the second call must not reach the network"
+
+
+def test_a_different_message_still_goes_through(tmp_path):
+    """The window suppresses repeats, not conversation."""
+    from coworker.connectors.base import SendResult
+    from coworker.connectors.tools import make_send_message_tool
+    from coworker.secrets import SecretStore
+
+    sent: list[tuple[str, str]] = []
+
+    def fake_sender(token, chat_id, text, thread_id):
+        sent.append((chat_id, text))
+        return SendResult(True, message_id="M")
+
+    store = SecretStore(tmp_path / "secrets.json")
+    store.put("telegram:default", {"bot_token": "T"})
+    tool = make_send_message_tool(store, senders={"telegram": fake_sender})
+
+    tool("telegram:123", "hello")
+    tool("telegram:123", "a different answer")  # same target, new text
+    tool("telegram:999", "hello")  # same text, different person
+    assert len(sent) == 3
+
+
+def test_the_window_expires(tmp_path, monkeypatch):
+    """A person who genuinely repeats themselves ("ping" … later "ping") must still get
+    through — this is a loop-breaker, not a permanent block."""
+    from coworker.connectors import tools as tools_mod
+    from coworker.connectors.base import SendResult
+    from coworker.secrets import SecretStore
+
+    sent: list[str] = []
+
+    def fake_sender(token, chat_id, text, thread_id):
+        sent.append(text)
+        return SendResult(True, message_id="M")
+
+    store = SecretStore(tmp_path / "secrets.json")
+    store.put("telegram:default", {"bot_token": "T"})
+    tool = tools_mod.make_send_message_tool(store, senders={"telegram": fake_sender})
+
+    tool("telegram:123", "ping")
+    clock = [0.0]
+    monkeypatch.setattr(
+        tools_mod, "_DUPLICATE_WINDOW_SECONDS", 30.0, raising=False
+    )
+    import time
+
+    real = time.time
+    monkeypatch.setattr(time, "time", lambda: real() + 3600)  # an hour later
+    tool("telegram:123", "ping")
+    assert sent == ["ping", "ping"]
