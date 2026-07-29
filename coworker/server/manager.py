@@ -90,6 +90,20 @@ _SCOPES = {s.value for s in Scope}
 logger = logging.getLogger("coworker.manager")
 
 
+# Models echo the framing header back at the top of their reply — "[WhatsApp DM · Ana
+# | reply→whatsapp_evolution:5511…]" — because it is the first thing they saw. Harmless
+# in the app transcript, but this text goes to a phone, where it is unreadable noise
+# with a raw JID in it. Stripped at the edge: the model is not reliably talked out of
+# echoing, and the shape is unambiguous enough to remove safely.
+_REPLY_HEADER_RE = re.compile(
+    r"^\s*\[[^\]\n]*reply→[^\]\n]*\]\s*:?\s*", re.IGNORECASE
+)
+
+
+def _strip_reply_header(text: str) -> str:
+    return _REPLY_HEADER_RE.sub("", text or "").strip()
+
+
 def _grants_of(engine) -> dict[str, Any]:
     """The engine's session-scoped "Always allow" approvals, in persistable shape."""
     tools = sorted(getattr(engine.permissions, "session_allow_tools", None) or ())
@@ -2976,6 +2990,9 @@ class SessionManager:
         from ..connectors.senders import DEFAULT_SENDERS
         from ..connectors.tools import make_send_message_tool
 
+        text = _strip_reply_header(text)
+        if not text:
+            return
         try:
             send = make_send_message_tool(self.secrets, senders=DEFAULT_SENDERS)
             result = await asyncio.to_thread(send, target, text)

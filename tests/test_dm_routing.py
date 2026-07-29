@@ -231,3 +231,36 @@ def test_a_turn_that_already_sent_is_not_double_delivered(tmp_path, monkeypatch)
     asyncio.run(mgr._dispatch_inbound(_dm("oi")))
     # The engine's own send_message is a different path; the net must add nothing.
     assert sent == []
+
+
+# -- the echoed header ----------------------------------------------------------
+def test_the_echoed_framing_header_is_stripped():
+    """Models repeat the framing header at the top of their reply — it is the first
+    thing they saw. Harmless in the app transcript; this text goes to a PHONE, where
+    "[WhatsApp DM · Thiago | reply→whatsapp_evolution:5524…@s.whatsapp.net]" is
+    unreadable noise with a raw JID in it. The user received exactly that."""
+    from coworker.server.manager import _strip_reply_header
+
+    echoed = (
+        "[WhatsApp DM · Thiago Mangia | reply→whatsapp_evolution:5524998797932"
+        "@s.whatsapp.net]   Olá novamente! 😊 Como posso ajudar?"
+    )
+    assert _strip_reply_header(echoed) == "Olá novamente! 😊 Como posso ajudar?"
+
+
+def test_stripping_leaves_an_ordinary_reply_alone():
+    from coworker.server.manager import _strip_reply_header
+
+    plain = "Olá! Encontrei três emails não lidos."
+    assert _strip_reply_header(plain) == plain
+    # Only a LEADING header goes: the arrow mid-sentence is someone's prose.
+    mid = "Use a sintaxe reply→destino para responder."
+    assert _strip_reply_header(mid) == mid
+
+
+def test_a_reply_that_is_only_a_header_is_not_sent(tmp_path, monkeypatch):
+    """Stripping can empty the text. Sending "" would deliver a blank WhatsApp
+    message, which is worse than sending nothing."""
+    from coworker.server.manager import _strip_reply_header
+
+    assert _strip_reply_header("[WhatsApp DM · x | reply→slack:C1]") == ""
