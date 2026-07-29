@@ -556,3 +556,29 @@ def test_the_window_expires(tmp_path, monkeypatch):
     monkeypatch.setattr(time, "time", lambda: real() + 3600)  # an hour later
     tool("telegram:123", "ping")
     assert sent == ["ping", "ping"]
+
+
+def test_the_duplicate_cache_is_bounded_under_a_burst(tmp_path):
+    """Pruning only EXPIRED entries is not a bound: a session sending more than the cap
+    inside one window prunes nothing and grows forever. Oldest-first eviction is what
+    makes the cap real."""
+    from coworker.connectors import tools as tools_mod
+    from coworker.connectors.base import SendResult
+    from coworker.secrets import SecretStore
+
+    store = SecretStore(tmp_path / "secrets.json")
+    store.put("telegram:default", {"bot_token": "T"})
+    tool = tools_mod.make_send_message_tool(
+        store, senders={"telegram": lambda *a: SendResult(True, message_id="M")}
+    )
+
+    # Every message distinct and all inside one window, so nothing can expire.
+    for i in range(tools_mod._DUPLICATE_CACHE_MAX * 3):
+        tool("telegram:123", f"message {i}")
+
+    # The newest entry still suppresses (the cap keeps recent ones)...
+    last = tools_mod._DUPLICATE_CACHE_MAX * 3 - 1
+    assert tool("telegram:123", f"message {last}")["duplicate"] is True
+    # ...and the very first was evicted, so it sends again rather than being remembered
+    # forever.
+    assert tool("telegram:123", "message 0").get("duplicate") is None

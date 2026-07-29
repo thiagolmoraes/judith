@@ -116,6 +116,8 @@ def _resolve_slack_channel(
 # absorb a tool-call loop, short enough that a person deliberately repeating themselves
 # ("ping" … "ping") still gets through.
 _DUPLICATE_WINDOW_SECONDS = 30.0
+# Hard cap on how many (target, text) pairs are remembered at once.
+_DUPLICATE_CACHE_MAX = 64
 
 
 def _resolve_token(secrets: SecretStore, platform: str, chat_id: str) -> Optional[str]:
@@ -201,12 +203,19 @@ def make_send_message_tool(
         result = sender(token, chat_id, text, thread_id)
         if result.ok:
             recent_sends[key] = now
-            # Bound the memory: a long session must not accumulate every message it
-            # ever sent. Only recent entries can suppress anything anyway.
-            if len(recent_sends) > 64:
+            # Bound the memory. Dropping only EXPIRED entries is not a bound: a busy
+            # session sending more than the cap within one window would prune nothing
+            # and grow without limit. So expire first, then, if it is still over,
+            # evict oldest-first until it fits. Losing an old entry only means an
+            # ancient message could be re-sent — the thing this guards is a burst.
+            if len(recent_sends) > _DUPLICATE_CACHE_MAX:
                 cutoff = now - _DUPLICATE_WINDOW_SECONDS
                 for k, t in list(recent_sends.items()):
                     if t < cutoff:
+                        del recent_sends[k]
+                if len(recent_sends) > _DUPLICATE_CACHE_MAX:
+                    oldest = sorted(recent_sends, key=recent_sends.get)
+                    for k in oldest[: len(recent_sends) - _DUPLICATE_CACHE_MAX]:
                         del recent_sends[k]
             return {"ok": True, "message_id": result.message_id, "target": target}
         return {"error": result.error or "send failed"}
