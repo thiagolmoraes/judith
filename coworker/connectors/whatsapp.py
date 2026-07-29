@@ -184,8 +184,36 @@ class WhatsAppAdapter(BasePlatformAdapter):
                     return False
 
                 if self.webhook_url:
-                    # Re-registered every connect: the sidecar's port is assigned at boot,
-                    # so a URL stored from a previous run points nowhere.
+                    # Re-registered every connect: the sidecar's port is assigned at
+                    # boot, so a URL stored from a previous run points nowhere.
+                    #
+                    # When the URL has CHANGED, disable the old one first. Evolution
+                    # retries a failing webhook ten times with backoff, and those
+                    # retries queue ahead of live traffic — after a few restarts on new
+                    # ports, real messages arrive minutes late or not at all, while the
+                    # connector looks healthy. Cost me an evening; the fix is one extra
+                    # call.
+                    try:
+                        current = await client.get(
+                            f"{self.base_url}/webhook/find/{self.instance}",
+                            headers=self._headers(),
+                        )
+                        old = (current.json() or {}) if current.status_code == 200 else {}
+                        old_url = old.get("url") if isinstance(old, dict) else None
+                        if old_url and old_url != self.webhook_url:
+                            logger.info(
+                                "whatsapp webhook moved %s → %s; disabling the stale one",
+                                old_url,
+                                self.webhook_url,
+                            )
+                            await client.post(
+                                f"{self.base_url}/webhook/set/{self.instance}",
+                                headers=self._headers(),
+                                json={"webhook": {"enabled": False, "url": old_url, "events": []}},
+                            )
+                    except Exception as exc:  # best effort — never block the connect
+                        logger.debug("could not clear the previous webhook: %s", exc)
+
                     await client.post(
                         f"{self.base_url}/webhook/set/{self.instance}",
                         headers=self._headers(),

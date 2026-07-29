@@ -11,3 +11,13 @@ dist/
 # PyInstaller sidecar Tauri copies into the .app.
 surfaces/gui/src-tauri/target/
 surfaces/gui/src-tauri/binaries/
+
+# Secrets. `infra/*/.env` holds API keys and passwords; the checked-in
+# `.env.example` is the template. Also guard the shapes that carry credentials, so a
+# stray key or PEM can't be committed by accident.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets.json

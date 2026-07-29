@@ -1,0 +1,96 @@
+# Evolution API — the server the `whatsapp_evolution` connector talks to.
+#
+# Everything binds 127.0.0.1. The sidecar runs on this same machine, so loopback is
+# enough — and it keeps an API that can read and send WhatsApp messages off the LAN.
+# If you need remote access, put it behind a tunnel with its own auth rather than
+# binding 0.0.0.0.
+#
+# WARNING: this drives a personal WhatsApp account over the unofficial multi-device
+# protocol, against Meta's terms. The number can be banned. Use a spare SIM.
+
+services:
+  evolution:
+    image: evoapicloud/evolution-api:latest
+    container_name: evolution-api
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${EVOLUTION_PORT}:8080"
+    environment:
+      SERVER_URL: http://localhost:${EVOLUTION_PORT}
+
+      # Every request must carry this in an `apikey` header.
+      AUTHENTICATION_API_KEY: ${AUTHENTICATION_API_KEY}
+
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://evolution:${POSTGRES_PASSWORD}@postgres:5432/evolution?schema=public
+      DATABASE_CONNECTION_CLIENT_NAME: evolution
+
+      # Persisted so the pairing and history survive a restart. Turn
+      # SAVE_MESSAGE_UPDATE off if the database grows faster than you'd like.
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "true"
+      DATABASE_SAVE_MESSAGE_UPDATE: "true"
+      DATABASE_SAVE_DATA_CONTACTS: "true"
+      DATABASE_SAVE_DATA_CHATS: "true"
+
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://redis:6379/6
+      CACHE_REDIS_PREFIX_KEY: evolution
+      CACHE_LOCAL_ENABLED: "false"
+
+      # Off on purpose: the webhook is registered PER INSTANCE by the connector, on
+      # every connect, because the desktop app gives the sidecar a fresh port each
+      # boot. A fixed global URL would point at a dead port after the first restart.
+      WEBHOOK_GLOBAL_ENABLED: "false"
+
+      LOG_LEVEL: ERROR,WARN,INFO
+      LOG_COLOR: "true"
+      DEL_INSTANCE: "false"
+      QRCODE_LIMIT: "10"
+    # The sidecar runs on the HOST, and inside this container 127.0.0.1 is the
+    # container itself — so a webhook aimed at 127.0.0.1 dies with ECONNREFUSED.
+    # This maps the host's address to a name the container can resolve.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - evolution_instances:/evolution/instances
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: evolution-postgres
+    restart: unless-stopped
+    ports:
+      # Exposto só no loopback, e numa porta alternativa — 5432 já está em uso aqui.
+      - "127.0.0.1:${POSTGRES_PORT}:5432"
+    environment:
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: evolution
+    volumes:
+      - evolution_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # A API sobe antes do banco aceitar conexões e morre no boot sem isto.
+      test: ["CMD-SHELL", "pg_isready -U evolution -d evolution"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: evolution-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${REDIS_PORT}:6379"
+    volumes:
+      - evolution_redis:/data
+
+volumes:
+  evolution_instances:
+  evolution_pgdata:
+  evolution_redis:
