@@ -10,10 +10,17 @@ you depend on.
 ```sh
 cd infra/whatsapp-evolution
 cp .env.example .env
-python3 -c "import secrets; print(secrets.token_urlsafe(32))"   # → AUTHENTICATION_API_KEY
-python3 -c "import secrets; print(secrets.token_urlsafe(24))"   # → POSTGRES_PASSWORD
+
+# Append both secrets — the file starts with them EMPTY, and compose would come up
+# with an unauthenticated API and a passwordless database.
+python3 -c "import secrets; print('AUTHENTICATION_API_KEY=' + secrets.token_urlsafe(32))" >> .env
+python3 -c "import secrets; print('POSTGRES_PASSWORD=' + secrets.token_urlsafe(24))" >> .env
+
 docker compose up -d
 ```
+
+(The appended lines win over the empty ones above them — later assignments override
+earlier ones in a `.env`. Delete the blank pair if you prefer a tidy file.)
 
 Then open `http://localhost:8090/manager`, paste the API key, create an instance named
 `openworker`, and pair it: **WhatsApp → Settings → Linked devices → Link a device**.

@@ -40,6 +40,17 @@ def is_group(jid: str) -> bool:
     return (jid or "").endswith("@g.us")
 
 
+def _url_port(url: str) -> str:
+    """The port of a URL, for logging. Keeps a token or signature in the query string
+    out of the log while still identifying which sidecar the webhook points at."""
+    from urllib.parse import urlparse
+
+    try:
+        return str(urlparse(url).port or "?")
+    except Exception:
+        return "?"
+
+
 def _connection_state(body: Any) -> str:
     """The instance's state, from whichever shape the server used.
 
@@ -200,17 +211,27 @@ class WhatsAppAdapter(BasePlatformAdapter):
                         )
                         old = (current.json() or {}) if current.status_code == 200 else {}
                         old_url = old.get("url") if isinstance(old, dict) else None
-                        if old_url and old_url != self.webhook_url:
+                        if isinstance(old_url, str) and old_url and old_url != self.webhook_url:
+                            # Port only, never the whole URL: a configured webhook can
+                            # carry a token or signature in its query string, and this
+                            # line would persist it in the log.
                             logger.info(
-                                "whatsapp webhook moved %s → %s; disabling the stale one",
-                                old_url,
-                                self.webhook_url,
+                                "whatsapp webhook moved to port %s; disabling the previous one",
+                                _url_port(self.webhook_url),
                             )
-                            await client.post(
+                            cleared = await client.post(
                                 f"{self.base_url}/webhook/set/{self.instance}",
                                 headers=self._headers(),
                                 json={"webhook": {"enabled": False, "url": old_url, "events": []}},
                             )
+                            # httpx does not raise on 4xx/5xx, so without this the
+                            # cleanup could no-op silently and leave the old webhook
+                            # retrying — the exact failure this code exists to prevent.
+                            if cleared.status_code >= 400:
+                                logger.warning(
+                                    "could not disable the previous whatsapp webhook (HTTP %s)",
+                                    cleared.status_code,
+                                )
                     except Exception as exc:  # best effort — never block the connect
                         logger.debug("could not clear the previous webhook: %s", exc)
 

@@ -678,3 +678,74 @@ async def test_a_failing_lookup_does_not_block_the_connect(monkeypatch):
     adapter = WhatsAppAdapter("http://x", "K", "openworker", webhook_url="http://h:3333/w")
     assert await adapter.connect() is True
     assert posted[0]["webhook"]["enabled"] is True
+
+
+def test_the_log_line_carries_the_port_not_the_url():
+    """A configured webhook URL can carry a token or signature in its query string; an
+    info-level log of the whole URL would persist that secret."""
+    from coworker.connectors.whatsapp import _url_port
+
+    assert _url_port("http://host.docker.internal:64932/webhook/whatsapp?token=SECRET") == "64932"
+    assert _url_port("http://x/webhook") == "?"
+    assert _url_port("not a url at all") == "?"
+
+
+async def test_a_failed_cleanup_is_reported_not_swallowed(monkeypatch, caplog):
+    """httpx does not raise on 4xx/5xx. Without checking the status, the cleanup could
+    no-op silently and leave the old webhook retrying — the very failure this prevents."""
+    import logging
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, url, headers=None):
+            if "connectionState" in url:
+                return _Resp(200, {"instance": {"state": "open"}})
+            return _Resp(200, {"url": "http://host:1111/webhook/whatsapp"})
+
+        async def post(self, url, headers=None, json=None):
+            # The disable call is refused; the register call succeeds.
+            enabled = (json or {}).get("webhook", {}).get("enabled")
+            return _Resp(200 if enabled else 403, {"ok": bool(enabled)})
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **k: _Client())
+    adapter = WhatsAppAdapter("http://x", "K", "openworker", webhook_url="http://host:2222/w")
+    with caplog.at_level(logging.WARNING, logger="coworker.connectors"):
+        assert await adapter.connect() is True  # best effort: never blocks the connect
+    assert any("could not disable" in r.message for r in caplog.records)
+
+
+async def test_a_non_string_old_url_is_ignored(monkeypatch):
+    """A fork answering `{"url": {...}}` must not reach the disable call with a dict."""
+    posted: list[dict] = []
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, url, headers=None):
+            if "connectionState" in url:
+                return _Resp(200, {"instance": {"state": "open"}})
+            return _Resp(200, {"url": {"unexpected": "shape"}})
+
+        async def post(self, url, headers=None, json=None):
+            posted.append(json)
+            return _Resp(200, {"ok": True})
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **k: _Client())
+    adapter = WhatsAppAdapter("http://x", "K", "openworker", webhook_url="http://host:2222/w")
+    assert await adapter.connect() is True
+    # Only the registration — no disable call built from a dict.
+    assert len(posted) == 1
+    assert posted[0]["webhook"]["enabled"] is True
