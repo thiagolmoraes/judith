@@ -2856,6 +2856,18 @@ class SessionManager:
     async def _resume_wake(self, wake) -> None:
         await self.deliver_to_session(wake.session_id, self._wake_message(wake))
 
+    def force_idle(self, session_id: str) -> dict[str, Any]:
+        """Clear a session's running flag by hand.
+
+        The flag is in-memory and per-process: nothing outside this manager can observe
+        or clear it, so a turn that dies without running its cleanup leaves the session
+        permanently "busy". Every later message is queued into a turn that will never
+        execute — silently, since the queue is invisible. This is the escape hatch.
+        """
+        was = session_id in self._running_sessions
+        self.mark_idle(session_id)
+        return {"ok": True, "was_running": was}
+
     async def deliver_to_session(
         self, session_id: str, message: str, *, source: Optional[dict[str, Any]] = None
     ) -> None:
@@ -2868,8 +2880,20 @@ class SessionManager:
         """
         engine = self.get_engine(session_id)
         if engine is None:
+            # No engine and none can be built (a code surface whose folder is gone).
+            # Park it: an inbound WhatsApp/Slack message that vanishes here is
+            # indistinguishable, to the sender, from one nobody read.
+            logger.warning("no engine for %s — parking inbound", session_id)
+            self.unrouted.record(
+                session_id, "-", message, reason="session could not be resumed"
+            )
             return
         if not self.try_mark_running(session_id):
+            # Mid-turn: steer it into the live run at the next step. Recorded because a
+            # session whose running flag is STUCK looks identical to a busy one from
+            # here — every later message queues into a turn that will never execute, and
+            # the queue is invisible. This line is the only trace that they arrived.
+            logger.info("session %s busy — queued steering message", session_id)
             engine.queue_steering(message, source)
             return
         try:
