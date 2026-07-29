@@ -353,3 +353,69 @@ def test_a_scheduling_turn_does_not_deliver_its_narration(tmp_path, monkeypatch)
     asyncio.run(mgr._dispatch_inbound(_dm("me manda uma mensagem daqui 3 minutos")))
 
     assert sent == [], "nothing should go out until the timer fires"
+
+
+# -- one rule, three paths ------------------------------------------------------
+def test_an_automation_inherits_the_reply_target_of_the_chat_that_made_it(tmp_path):
+    """Asked over WhatsApp for a daily good-morning, the automation runs under a FRESH
+    session id — no contact mapping of its own. `origin_session_id` was recorded at
+    creation and never read, so the run would fire on time and answer into a session
+    nobody is watching.
+
+    This is the third path to get the destination wrong (inbound message, self-wake,
+    scheduled run), which is why it is now one lookup rather than three."""
+    from coworker.automation.models import Schedule, ScheduledTask
+
+    mgr = SessionManager(workspace=tmp_path, provider=ScriptedProvider())
+    mgr.dm_sessions.set("whatsapp_evolution:5511@s.whatsapp.net", "chat-1", channel="x")
+
+    task = ScheduledTask(
+        title="Bom dia",
+        instructions="mande bom dia",
+        schedule=Schedule(kind="cron", cron="0 8 * * *"),
+        workspace="",
+        origin_session_id="chat-1",
+    )
+    assert mgr._origin_reply_target(task) == "whatsapp_evolution:5511@s.whatsapp.net"
+
+
+def test_an_automation_made_in_the_app_has_no_platform_target(tmp_path):
+    """One created from the Automations page answers in the app, as it always did."""
+    from coworker.automation.models import Schedule, ScheduledTask
+
+    mgr = SessionManager(workspace=tmp_path, provider=ScriptedProvider())
+    task = ScheduledTask(
+        title="x",
+        instructions="y",
+        schedule=Schedule(kind="cron", cron="0 8 * * *"),
+        workspace="",
+        origin_session_id="",
+    )
+    assert mgr._origin_reply_target(task) == ""
+
+
+def test_the_three_paths_agree_on_the_destination(tmp_path):
+    """The whole point of the single lookup: an inbound message, a wake, and an
+    automation descended from the same chat must all answer the same person."""
+    mgr = SessionManager(workspace=tmp_path, provider=ScriptedProvider())
+    target = "whatsapp_evolution:5511@s.whatsapp.net"
+    mgr.dm_sessions.set(target, "chat-1", channel="x")
+
+    from_message = mgr._reply_target_for(
+        "chat-1",
+        {"connector": "whatsapp_evolution", "channel_id": "5511@s.whatsapp.net"},
+    )
+    from_wake = mgr._reply_target_for("chat-1", None)
+
+    from coworker.automation.models import Schedule, ScheduledTask
+
+    from_task = mgr._origin_reply_target(
+        ScheduledTask(
+            title="x",
+            instructions="y",
+            schedule=Schedule(kind="cron", cron="0 8 * * *"),
+            workspace="",
+            origin_session_id="chat-1",
+        )
+    )
+    assert from_message == from_wake == from_task == target

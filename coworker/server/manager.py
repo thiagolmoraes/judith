@@ -2979,19 +2979,20 @@ class SessionManager:
             await self.broadcast_session(session_id, {"type": "turn_done", "data": {}})
 
     def _reply_target_for(
-        self, session_id: str, source: Optional[dict[str, Any]]
+        self, session_id: str, source: Optional[dict[str, Any]] = None
     ) -> str:
-        """Where an answer from this turn has to go, or "" for the app.
+        """Where output from this session has to go, or "" for the app window.
 
-        Two ways in. An inbound message carries its own sidecar, and connector +
-        channel_id is exactly what format_target consumes. A SELF-WAKE carries none —
-        it is the session resuming itself — but a session spawned for one contact still
-        belongs to that contact, so the durable map answers it.
+        One rule, asked in one place: work that ORIGINATES on a platform is answered on
+        that platform. It took three separate bugs to learn that, each a different path
+        rediscovering the destination for itself and one of them getting it wrong —
+        an inbound message, a self-wake, and a scheduled run.
 
-        The wake case is not hypothetical: asked to send a message in ten minutes, the
-        agent scheduled correctly, woke on time, wrote the reply, and it went nowhere,
-        because the wake turn had no sidecar and nothing else knew where the session
-        pointed.
+        Three ways to know:
+          - the message's own sidecar, when the turn is answering one;
+          - the durable contact map, for a session spawned to talk to one person
+            (a wake carries no sidecar — the session is resuming ITSELF);
+          - the session this one descends from, for an automation created from a chat.
         """
         from ..connectors.base import format_target
 
@@ -3000,10 +3001,20 @@ class SessionManager:
             return format_target(
                 str(connector), str((source or {}).get("channel_id") or ""), None
             )
-        # No sidecar: fall back to what this session was created to talk to.
         for target in self.dm_sessions.targets_for(session_id):
             return target
         return ""
+
+    def _origin_reply_target(self, task) -> str:
+        """The reply target a scheduled run inherits from the chat that created it.
+
+        A run executes under a FRESH session id, so it has no contact mapping of its
+        own. `origin_session_id` was recorded at creation and never read — asked from
+        WhatsApp for a daily good-morning, the automation would run on time and answer
+        into a session nobody is watching.
+        """
+        origin = getattr(task, "origin_session_id", "") or ""
+        return self._reply_target_for(origin) if origin else ""
 
     async def _deliver_unsent_reply(
         self, session_id: str, target: str, text: str
@@ -3333,10 +3344,29 @@ class SessionManager:
             "result. The schedule already exists — do not create or modify any scheduled tasks.\n\n"
             f"{task.instructions}"
         )
+        # An automation created from a platform chat answers on that platform. Without
+        # this the run happens on time and its result lands in a session nobody reads.
+        run_reply_target = self._origin_reply_target(task)
+        if run_reply_target:
+            opening += (
+                f"\n\nThis automation was created from a conversation on "
+                f"{run_reply_target.split(':', 1)[0]}. Deliver the result there by "
+                f'calling send_message with target "{run_reply_target}" — the person '
+                f"who asked for it is not looking at this app."
+            )
+        sent_from_run = False
         try:
             async for _event in engine.run(opening):
-                pass
+                if _event.type.value == "assistant_message":
+                    if "send_message" in ((_event.data or {}).get("tool_calls") or []):
+                        sent_from_run = True
             run.result_text = _last_assistant_text(engine.messages)
+            if run_reply_target and not sent_from_run and run.result_text:
+                # Same safety net the inbound path has: the model was told where to
+                # answer and sometimes answers on screen anyway. Silent either way.
+                await self._deliver_unsent_reply(
+                    run.session_id, run_reply_target, run.result_text
+                )
             run.artifacts = _recent_files(task.workspace, since=run.started_at)
             run.status = "ok"
             if task.notify_on_completion:
