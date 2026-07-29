@@ -112,6 +112,14 @@ def _resolve_slack_channel(
     return chat_id, None
 
 
+# How long an identical (target, text) is treated as already-sent. Long enough to
+# absorb a tool-call loop, short enough that a person deliberately repeating themselves
+# ("ping" … "ping") still gets through.
+_DUPLICATE_WINDOW_SECONDS = 30.0
+# Hard cap on how many (target, text) pairs are remembered at once.
+_DUPLICATE_CACHE_MAX = 64
+
+
 def _resolve_token(secrets: SecretStore, platform: str, chat_id: str) -> Optional[str]:
     """Pick the outbound token for a reply.
 
@@ -149,6 +157,11 @@ def make_send_message_tool(
 ) -> Callable[..., Any]:
     """Build the `send_message` tool bound to a SecretStore (and optional sender registry)."""
     senders = senders if senders is not None else DEFAULT_SENDERS
+    # (target, text) → when it was last sent. Smaller models re-call a tool after
+    # seeing it succeed — observed live: five identical WhatsApp messages in one
+    # second, from a model that had just been told to send exactly one. The person on
+    # the other end gets spammed, and no amount of prompt wording reliably stops it.
+    recent_sends: dict[tuple[str, str], float] = {}
 
     def send_message(target: str, text: str) -> dict[str, Any]:
         try:
@@ -170,8 +183,40 @@ def make_send_message_tool(
             from .attribution import sender_prefix
 
             text = sender_prefix(secrets, chat_id) + text
+        # Suppress an identical resend inside a short window. Reported as ok with
+        # `duplicate: True` rather than as an error: the message the model wanted
+        # delivered HAS been delivered, and calling it a failure would invite a retry —
+        # the exact loop this prevents.
+        import time as _time
+
+        key = (target, text)
+        now = _time.time()
+        last = recent_sends.get(key)
+        if last is not None and now - last < _DUPLICATE_WINDOW_SECONDS:
+            return {
+                "ok": True,
+                "duplicate": True,
+                "target": target,
+                "note": "identical message already sent moments ago; not sent again",
+            }
+
         result = sender(token, chat_id, text, thread_id)
         if result.ok:
+            recent_sends[key] = now
+            # Bound the memory. Dropping only EXPIRED entries is not a bound: a busy
+            # session sending more than the cap within one window would prune nothing
+            # and grow without limit. So expire first, then, if it is still over,
+            # evict oldest-first until it fits. Losing an old entry only means an
+            # ancient message could be re-sent — the thing this guards is a burst.
+            if len(recent_sends) > _DUPLICATE_CACHE_MAX:
+                cutoff = now - _DUPLICATE_WINDOW_SECONDS
+                for k, t in list(recent_sends.items()):
+                    if t < cutoff:
+                        del recent_sends[k]
+                if len(recent_sends) > _DUPLICATE_CACHE_MAX:
+                    oldest = sorted(recent_sends, key=recent_sends.get)
+                    for k in oldest[: len(recent_sends) - _DUPLICATE_CACHE_MAX]:
+                        del recent_sends[k]
             return {"ok": True, "message_id": result.message_id, "target": target}
         return {"error": result.error or "send failed"}
 
