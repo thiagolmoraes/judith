@@ -714,6 +714,11 @@ export function App() {
           if (d.model) setModel(d.model);
           setItems((p) => [...p, { kind: "notice", tone: "info", text: d.text || t("app.noticeModelSwitched") }]);
           break;
+        case "compacted":
+          // Auto-compaction marker (OPE-27): outbound-only — the transcript stays intact,
+          // this divider just shows where the model's memory was summarized.
+          setItems((p) => [...p, { kind: "notice", tone: "info", text: d.text || "Context compacted" }]);
+          break;
         case "interrupted":
           flushPartialStream();
           setItems((p) => [...p, { kind: "notice", tone: "warn", text: t("app.noticeInterrupted") }]);
