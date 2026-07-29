@@ -264,3 +264,45 @@ def test_a_reply_that_is_only_a_header_is_not_sent(tmp_path, monkeypatch):
     from coworker.server.manager import _strip_reply_header
 
     assert _strip_reply_header("[WhatsApp DM · x | reply→slack:C1]") == ""
+
+
+def test_a_self_wake_still_knows_where_to_reply(tmp_path, monkeypatch):
+    """Asked to send a message in ten minutes, the agent scheduled it correctly, woke
+    on time, wrote the reply — and it went nowhere. A wake turn carries no message
+    sidecar (the session is resuming ITSELF), so the reply target was empty and the
+    safety net stayed out.
+
+    A session spawned for one contact still belongs to that contact, and the durable
+    map already knows it."""
+    sent: list[tuple[str, str]] = []
+
+    def fake_tool(secrets, senders=None):
+        def send_message(target: str, text: str):
+            sent.append((target, text))
+            return {"ok": True, "message_id": "M", "target": target}
+
+        return send_message
+
+    import coworker.connectors.tools as tools_mod
+
+    monkeypatch.setattr(tools_mod, "make_send_message_tool", fake_tool)
+
+    mgr = SessionManager(workspace=tmp_path, provider=_AnswersWithoutSending())
+    # First message spawns the per-contact session and its durable mapping.
+    asyncio.run(mgr._dispatch_inbound(_dm("oi")))
+    sent.clear()
+
+    sid = mgr.dm_sessions.all()[0].session_id
+    # Now the wake: same session, NO sidecar — exactly what _resume_wake does.
+    asyncio.run(mgr.deliver_to_session(sid, "⏰ Wake — the timer you set has fired."))
+
+    assert len(sent) == 1, "the woken turn's reply must still reach the contact"
+    assert sent[0][0] == "slack:D1"
+
+
+def test_an_app_session_gets_no_reply_target(tmp_path):
+    """A session nobody messaged from a platform must not acquire one: answering on
+    screen IS the answer there, and sending would surprise whoever is typing."""
+    mgr = SessionManager(workspace=tmp_path, provider=ScriptedProvider())
+    assert mgr._reply_target_for("some-app-session", None) == ""
+    assert mgr._reply_target_for("some-app-session", {"connector": "gui"}) == ""

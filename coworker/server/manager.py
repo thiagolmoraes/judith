@@ -2925,13 +2925,7 @@ class SessionManager:
         # below — see _deliver_unsent_reply. Rebuilt from the sidecar rather than stored
         # separately: connector + channel_id is exactly what format_target consumes, and
         # a second copy of the same fact could drift from it.
-        reply_target = ""
-        if source and source.get("connector") and source.get("connector") != "gui":
-            from ..connectors.base import format_target
-
-            reply_target = format_target(
-                str(source["connector"]), str(source.get("channel_id") or ""), None
-            )
+        reply_target = self._reply_target_for(session_id, source)
         sent_any = False
         last_text = ""
         try:
@@ -2970,6 +2964,33 @@ class SessionManager:
         finally:
             self.mark_idle(session_id)
             await self.broadcast_session(session_id, {"type": "turn_done", "data": {}})
+
+    def _reply_target_for(
+        self, session_id: str, source: Optional[dict[str, Any]]
+    ) -> str:
+        """Where an answer from this turn has to go, or "" for the app.
+
+        Two ways in. An inbound message carries its own sidecar, and connector +
+        channel_id is exactly what format_target consumes. A SELF-WAKE carries none —
+        it is the session resuming itself — but a session spawned for one contact still
+        belongs to that contact, so the durable map answers it.
+
+        The wake case is not hypothetical: asked to send a message in ten minutes, the
+        agent scheduled correctly, woke on time, wrote the reply, and it went nowhere,
+        because the wake turn had no sidecar and nothing else knew where the session
+        pointed.
+        """
+        from ..connectors.base import format_target
+
+        connector = (source or {}).get("connector")
+        if connector and connector != "gui":
+            return format_target(
+                str(connector), str((source or {}).get("channel_id") or ""), None
+            )
+        # No sidecar: fall back to what this session was created to talk to.
+        for target in self.dm_sessions.targets_for(session_id):
+            return target
+        return ""
 
     async def _deliver_unsent_reply(
         self, session_id: str, target: str, text: str
