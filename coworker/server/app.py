@@ -422,6 +422,13 @@ def create_app(manager: SessionManager) -> FastAPI:
     def get_unattended(session_id: str) -> dict[str, Any]:
         return {"unattended": manager.unattended.is_unattended(session_id)}
 
+    @app.post("/v1/sessions/{session_id}/force-idle")
+    def session_force_idle(session_id: str) -> dict[str, Any]:
+        """Clear a stuck running flag. Safe: a genuinely running turn keeps going (the
+        flag only gates NEW turns), so the worst case for a mistaken call is two turns
+        racing, which the engine already tolerates."""
+        return manager.force_idle(session_id)
+
     @app.post("/v1/sessions/{session_id}/unattended")
     def set_unattended(session_id: str, body: dict) -> dict[str, Any]:
         # The GUI gates the on-transition behind a one-tap confirm.
@@ -1960,13 +1967,21 @@ def create_app(manager: SessionManager) -> FastAPI:
             # or flush an in-progress assistant stream in the GUI.
             await ws.send_json({"type": "input_rejected", "data": {"error": reason}})
 
+        # The running turn, held so a disconnect can cancel it. Without this the task is
+        # orphaned: if it dies writing to the dead socket, run_turn's `finally` never
+        # runs, the session stays marked running forever, and every later message —
+        # including inbound WhatsApp/Slack DMs — is queued into a turn that will never
+        # execute. A stuck session is indistinguishable from a busy one, and nothing in
+        # the UI can clear it.
+        turn_task: dict[str, Optional[asyncio.Task]] = {"task": None}
+
         async def claim_turn(*, retry: bool = False, content=None) -> None:
             if not manager.try_mark_running(session_id):
                 await reject_input(
                     "This session is already running a turn. Wait for it to finish or stop it."
                 )
                 return
-            asyncio.create_task(run_turn(content, retry=retry))
+            turn_task["task"] = asyncio.create_task(run_turn(content, retry=retry))
 
         try:
             while True:
@@ -2129,6 +2144,15 @@ def create_app(manager: SessionManager) -> FastAPI:
             pass
         finally:
             manager.unregister_session_client(session_id, ws.send_json)
+            # A turn that is still running when the socket closes keeps going — the
+            # session is durable and the result persists. But if it ends because the
+            # socket died, its own cleanup may never run, so release the lock here as
+            # the backstop. mark_idle is idempotent, so doing it twice is harmless.
+            task = turn_task["task"]
+            if task is not None and not task.done():
+                task.add_done_callback(lambda _t: manager.mark_idle(session_id))
+            elif manager.is_running(session_id):
+                manager.mark_idle(session_id)
 
     @app.websocket("/ws/events")
     async def ws_events(ws: WebSocket) -> None:
