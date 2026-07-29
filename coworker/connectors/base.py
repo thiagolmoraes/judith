@@ -104,7 +104,23 @@ class MessageEvent:
         """
         if self.source.platform == "gui":
             return f"[Owner, in the app]: {self.text}"
-        return f"[{self.source.label()} | reply→{self.source.target}]: {self.text}"
+        # The instruction is part of the message, not just the system prompt. A channel
+        # mention already carries one ("you must respond… with the send_message tool");
+        # a DM carried only the bare handle, and models answered in plain text — which
+        # goes to the app window, where the sender is not looking. The reply simply
+        # never arrived, with nothing anywhere reporting a failure.
+        #
+        # "AFTER any tools" is the half that matters for real work: research, mail
+        # triage and multi-step tasks end with a final answer, and without this the
+        # model runs its tools and then reports to the window instead of the person
+        # waiting on their phone.
+        return (
+            f"[{self.source.label()} | reply→{self.source.target}]: {self.text}\n"
+            f"(This came from {self.source.platform}, not the app. You MUST answer by "
+            f'calling send_message with target "{self.source.target}" — plain text goes '
+            f"to the app window, which they cannot see. Do any research or tool work "
+            f"first, then send ONE send_message with the finished answer.)"
+        )
 
 
 @dataclass
