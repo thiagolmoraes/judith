@@ -94,3 +94,74 @@ def test_force_idle_over_rest(tmp_path, monkeypatch):
         body = client.post("/v1/sessions/s1/force-idle").json()
         assert body == {"ok": True, "was_running": True}
         assert mgr.is_running("s1") is False
+
+
+# -- how a platform message asks to be answered --------------------------------
+# A channel mention always carried "you must respond… with the send_message tool". A DM
+# carried only the bare `reply→` handle, and models answered in plain text — which goes
+# to the app window, where the sender is not looking. The reply never arrived and
+# nothing reported a failure.
+def test_a_platform_message_names_the_tool_and_the_target():
+    from coworker.connectors.base import MessageEvent, SessionSource
+
+    event = MessageEvent(
+        text="tudo bem?",
+        source=SessionSource(
+            platform="whatsapp_evolution",
+            chat_id="5511999@s.whatsapp.net",
+            user_name="Ana",
+        ),
+    )
+    framed = event.tagged_text()
+    assert "tudo bem?" in framed
+    assert "send_message" in framed
+    # The exact target, not a placeholder — the model must not have to construct it.
+    assert 'target "whatsapp_evolution:5511999@s.whatsapp.net"' in framed
+
+
+def test_it_says_to_answer_AFTER_the_tool_work():
+    """The scenario that motivated this: "pesquise algo e me responda". Without it the
+    model runs its tools and then reports to the app window, leaving the person on
+    WhatsApp waiting for an answer that already exists."""
+    from coworker.connectors.base import MessageEvent, SessionSource
+
+    framed = MessageEvent(
+        text="pesquise X",
+        source=SessionSource(platform="slack", chat_id="C01"),
+    ).tagged_text()
+    assert "first" in framed.lower()
+    assert "ONE send_message" in framed
+
+
+def test_the_app_owner_is_still_answered_on_screen():
+    """The GUI has no reply handle and needs none — framing it like a platform message
+    would make the agent try to send_message to the person typing in front of it."""
+    from coworker.connectors.base import MessageEvent, SessionSource
+
+    framed = MessageEvent(
+        text="oi", source=SessionSource(platform="gui", chat_id="local")
+    ).tagged_text()
+    assert framed == "[Owner, in the app]: oi"
+    assert "send_message" not in framed
+
+
+def test_the_persona_distinguishes_the_two_destinations():
+    from coworker.personas.registry import PersonaRegistry
+
+    prompt = PersonaRegistry().agent("assistant").system_prompt
+    assert "do the work first" in prompt  # tools before the reply
+    assert "send_message ONCE" in prompt  # one final answer, not progress notes
+    assert "app itself" in prompt  # and NOT for messages typed in the app
+
+
+def test_announcing_applies_to_new_threads_not_to_the_reply():
+    """These two rules contradicted each other: "send ONE send_message with the finished
+    answer" and "say what you are about to send before you send it". Obeying both means
+    either an invisible announcement (it goes to the app window) or a second WhatsApp
+    message saying a reply is coming."""
+    from coworker.personas.registry import PersonaRegistry
+
+    prompt = PersonaRegistry().agent("assistant").system_prompt
+    assert "does NOT apply to answering" in prompt
+    # The announce rule survives for what it was for: unprompted outbound actions.
+    assert "NEW outbound thread" in prompt
