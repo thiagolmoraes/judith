@@ -150,3 +150,84 @@ def test_superagent_surface_is_gone(tmp_path):
     client = TestClient(create_app(mgr))
     # the retired routes 404
     assert client.get("/v1/superagent").status_code == 404
+
+
+# -- the answer that never left -------------------------------------------------
+class _AnswersWithoutSending(ProviderClient):
+    """Answers from its own knowledge — no tool call, so no send_message."""
+
+    def complete(self, *, model, messages, tools=None, **settings):
+        return AssistantTurn(text="Minhas ferramentas são: busca, envio…", tool_calls=[])
+
+    def capabilities(self, model):
+        return ModelCapabilities()
+
+
+def test_an_answer_composed_but_never_sent_is_delivered(tmp_path, monkeypatch):
+    """Observed in a real WhatsApp conversation: every question that triggered a search
+    or a timer was delivered, and "quais ferramentas você tem?" — answered from the
+    model's own knowledge, touching no tool — was written to the app window and never
+    sent. The person on WhatsApp got nothing, with no error anywhere.
+
+    Prompt wording has not fixed this reliably and the failure is silent. The server
+    knows the message came from a platform and knows the turn produced text without
+    sending it, so it closes the gap."""
+    sent: list[tuple[str, str]] = []
+
+    def fake_tool(secrets, senders=None):
+        def send_message(target: str, text: str):
+            sent.append((target, text))
+            return {"ok": True, "message_id": "M1", "target": target}
+
+        return send_message
+
+    import coworker.connectors.tools as tools_mod
+
+    monkeypatch.setattr(tools_mod, "make_send_message_tool", fake_tool)
+
+    mgr = SessionManager(workspace=tmp_path, provider=_AnswersWithoutSending())
+    asyncio.run(mgr._dispatch_inbound(_dm("quais ferramentas voce tem?")))
+
+    assert len(sent) == 1, "the composed answer should have been delivered"
+    target, text = sent[0]
+    assert target == "slack:D1"  # rebuilt from the message's own sidecar
+    assert "ferramentas" in text
+
+
+class _AnswersAndSends(ProviderClient):
+    """Calls send_message itself, like a well-behaved turn."""
+
+    def __init__(self):
+        self._calls = 0
+
+    def complete(self, *, model, messages, tools=None, **settings):
+        self._calls += 1
+        if self._calls == 1:
+            return AssistantTurn(
+                text="", tool_calls=[ToolCall(id="1", name="send_message", arguments={})]
+            )
+        return AssistantTurn(text="done", tool_calls=[])
+
+    def capabilities(self, model):
+        return ModelCapabilities()
+
+
+def test_a_turn_that_already_sent_is_not_double_delivered(tmp_path, monkeypatch):
+    """The net must not turn one reply into two."""
+    sent: list[tuple[str, str]] = []
+
+    def fake_tool(secrets, senders=None):
+        def send_message(target: str, text: str):
+            sent.append((target, text))
+            return {"ok": True, "message_id": "M", "target": target}
+
+        return send_message
+
+    import coworker.connectors.tools as tools_mod
+
+    monkeypatch.setattr(tools_mod, "make_send_message_tool", fake_tool)
+
+    mgr = SessionManager(workspace=tmp_path, provider=_AnswersAndSends())
+    asyncio.run(mgr._dispatch_inbound(_dm("oi")))
+    # The engine's own send_message is a different path; the net must add nothing.
+    assert sent == []

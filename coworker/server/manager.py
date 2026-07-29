@@ -2906,6 +2906,20 @@ class SessionManager:
             logger.info("session %s busy — queued steering message", session_id)
             engine.queue_steering(message, source)
             return
+        # When the message came from a platform, the ONLY way back is send_message.
+        # Track what the turn actually did so an answer that never left can be rescued
+        # below — see _deliver_unsent_reply. Rebuilt from the sidecar rather than stored
+        # separately: connector + channel_id is exactly what format_target consumes, and
+        # a second copy of the same fact could drift from it.
+        reply_target = ""
+        if source and source.get("connector") and source.get("connector") != "gui":
+            from ..connectors.base import format_target
+
+            reply_target = format_target(
+                str(source["connector"]), str(source.get("channel_id") or ""), None
+            )
+        sent_any = False
+        last_text = ""
         try:
             async for event in engine.run(message, source=source):
                 # Stream every event to any socket viewing this session, so a background turn
@@ -2913,6 +2927,13 @@ class SessionManager:
                 await self.broadcast_session(
                     session_id, {"type": event.type.value, "data": event.data}
                 )
+                if reply_target and event.type.value == "assistant_message":
+                    data = event.data or {}
+                    if "send_message" in (data.get("tool_calls") or []):
+                        sent_any = True
+                    text = (data.get("text") or "").strip()
+                    if text:
+                        last_text = text
                 # A background turn has no user watching to read an inline error: a dead model or
                 # tool failure would otherwise vanish. Log it and park it in the dead-letter store.
                 if event.type.value == "error":
@@ -2921,6 +2942,8 @@ class SessionManager:
                         "background turn failed for %s: %s", session_id, reason
                     )
                     self.unrouted.record(session_id, "-", message, reason=reason)
+            if reply_target and not sent_any and last_text:
+                await self._deliver_unsent_reply(session_id, reply_target, last_text)
             self.save(session_id, engine)
         except (
             Exception
@@ -2933,6 +2956,42 @@ class SessionManager:
         finally:
             self.mark_idle(session_id)
             await self.broadcast_session(session_id, {"type": "turn_done", "data": {}})
+
+    async def _deliver_unsent_reply(
+        self, session_id: str, target: str, text: str
+    ) -> None:
+        """Send an answer the model composed but never sent.
+
+        A message from a platform can only be answered with send_message; plain
+        assistant text goes to the app window, which the sender is not looking at. Told
+        that, models mostly comply — but not when they answer from their own knowledge
+        without touching a tool first. Observed: every question that triggered a search
+        or a timer was delivered; "what tools do you have?" was answered on screen and
+        the person on WhatsApp got nothing, with no error anywhere.
+
+        No amount of prompt wording has fixed that reliably, and the failure is silent,
+        which is the worst kind. The server knows the message came from a platform and
+        knows the turn produced text without sending it, so it can close the gap.
+        """
+        from ..connectors.senders import DEFAULT_SENDERS
+        from ..connectors.tools import make_send_message_tool
+
+        try:
+            send = make_send_message_tool(self.secrets, senders=DEFAULT_SENDERS)
+            result = await asyncio.to_thread(send, target, text)
+        except Exception as exc:
+            logger.warning("could not deliver unsent reply for %s: %s", session_id, exc)
+            self.unrouted.record(session_id, "-", text, reason=f"unsent reply: {exc}")
+            return
+        if result.get("error"):
+            logger.warning(
+                "unsent reply for %s refused: %s", session_id, result["error"]
+            )
+            self.unrouted.record(
+                session_id, "-", text, reason=f"unsent reply: {result['error']}"
+            )
+            return
+        logger.info("delivered an answer %s composed but never sent", session_id)
 
     # -- channel subscriptions (inbound messaging) ------------------------------
     async def _dispatch_inbound(self, event) -> None:
