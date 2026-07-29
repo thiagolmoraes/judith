@@ -152,3 +152,16 @@ def test_the_persona_distinguishes_the_two_destinations():
     assert "do the work first" in prompt  # tools before the reply
     assert "send_message ONCE" in prompt  # one final answer, not progress notes
     assert "app itself" in prompt  # and NOT for messages typed in the app
+
+
+def test_announcing_applies_to_new_threads_not_to_the_reply():
+    """These two rules contradicted each other: "send ONE send_message with the finished
+    answer" and "say what you are about to send before you send it". Obeying both means
+    either an invisible announcement (it goes to the app window) or a second WhatsApp
+    message saying a reply is coming."""
+    from coworker.personas.registry import PersonaRegistry
+
+    prompt = PersonaRegistry().agent("assistant").system_prompt
+    assert "does NOT apply to answering" in prompt
+    # The announce rule survives for what it was for: unprompted outbound actions.
+    assert "NEW outbound thread" in prompt
