@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from coworker.connectors.base import MessageEvent, SessionSource
 from coworker.providers import AssistantTurn, ModelCapabilities, ProviderClient
+from coworker.providers.base import ToolCall
 from coworker.server import create_app
 from coworker.server.manager import SessionManager
 
@@ -306,3 +307,49 @@ def test_an_app_session_gets_no_reply_target(tmp_path):
     mgr = SessionManager(workspace=tmp_path, provider=ScriptedProvider())
     assert mgr._reply_target_for("some-app-session", None) == ""
     assert mgr._reply_target_for("some-app-session", {"connector": "gui"}) == ""
+
+
+class _SchedulesThenTalks(ProviderClient):
+    """Schedules a wake and narrates what it will do — the observed shape of "send me a
+    message in 3 minutes"."""
+
+    def __init__(self):
+        self._calls = 0
+
+    def complete(self, *, model, messages, tools=None, **settings):
+        self._calls += 1
+        if self._calls == 1:
+            return AssistantTurn(
+                text="", tool_calls=[ToolCall(id="1", name="sleep_for", arguments={})]
+            )
+        return AssistantTurn(text="Teste de 3 minutos! 🕒", tool_calls=[])
+
+    def capabilities(self, model):
+        return ModelCapabilities()
+
+
+def test_a_scheduling_turn_does_not_deliver_its_narration(tmp_path, monkeypatch):
+    """Asked for a message in three minutes, the agent scheduled correctly AND wrote the
+    message immediately. The safety net delivered that text one minute after the ask,
+    then the woken turn delivered the real one — two messages, the first at the wrong
+    time.
+
+    Text from a turn that scheduled a wake is a plan, not an answer. The woken turn is
+    the reply, and it is already covered."""
+    sent: list[tuple[str, str]] = []
+
+    def fake_tool(secrets, senders=None):
+        def send_message(target: str, text: str):
+            sent.append((target, text))
+            return {"ok": True, "message_id": "M", "target": target}
+
+        return send_message
+
+    import coworker.connectors.tools as tools_mod
+
+    monkeypatch.setattr(tools_mod, "make_send_message_tool", fake_tool)
+
+    mgr = SessionManager(workspace=tmp_path, provider=_SchedulesThenTalks())
+    asyncio.run(mgr._dispatch_inbound(_dm("me manda uma mensagem daqui 3 minutos")))
+
+    assert sent == [], "nothing should go out until the timer fires"

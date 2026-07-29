@@ -100,6 +100,11 @@ _REPLY_HEADER_RE = re.compile(
 )
 
 
+# Tools that mean "I will act later". Text from a turn that called one of these is a
+# plan, not an answer, so the safety net leaves it alone and waits for the woken turn.
+_SCHEDULING_TOOLS = frozenset({"sleep_for", "sleep_until", "wake_on"})
+
+
 def _strip_reply_header(text: str) -> str:
     return _REPLY_HEADER_RE.sub("", text or "").strip()
 
@@ -2927,6 +2932,7 @@ class SessionManager:
         # a second copy of the same fact could drift from it.
         reply_target = self._reply_target_for(session_id, source)
         sent_any = False
+        deferred = False
         last_text = ""
         try:
             async for event in engine.run(message, source=source):
@@ -2937,8 +2943,15 @@ class SessionManager:
                 )
                 if reply_target and event.type.value == "assistant_message":
                     data = event.data or {}
-                    if "send_message" in (data.get("tool_calls") or []):
+                    calls = data.get("tool_calls") or []
+                    if "send_message" in calls:
                         sent_any = True
+                    # A turn that scheduled a wake is not answering — it is describing
+                    # what it will do LATER. Delivering that text sends the user their
+                    # "message in 3 minutes" one minute after they asked, and then
+                    # again when the timer fires. The woken turn is the real reply.
+                    if any(c in _SCHEDULING_TOOLS for c in calls):
+                        deferred = True
                     text = (data.get("text") or "").strip()
                     if text:
                         last_text = text
@@ -2950,7 +2963,7 @@ class SessionManager:
                         "background turn failed for %s: %s", session_id, reason
                     )
                     self.unrouted.record(session_id, "-", message, reason=reason)
-            if reply_target and not sent_any and last_text:
+            if reply_target and not sent_any and not deferred and last_text:
                 await self._deliver_unsent_reply(session_id, reply_target, last_text)
             self.save(session_id, engine)
         except (
