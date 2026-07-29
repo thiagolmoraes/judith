@@ -220,6 +220,11 @@ class SessionManager:
         # Also the durable source of the thread's standing send_message grant (re-seeded
         # onto the engine in get_engine).
         self.mention_sessions = MentionSessionStore(base / "mention_threads.json")
+        # Same store, different key space: a DM has no threads, so the key is the
+        # CONTACT ("whatsapp_evolution:5511…@s.whatsapp.net"). It buys the same two
+        # things the mention router needs — dedupe, and a standing grant that
+        # get_engine re-derives on every rebuild.
+        self.dm_sessions = MentionSessionStore(base / "dm_contacts.json")
         # Unauthorized inbound messages, parked instead of dropped (one-step allow-and-deliver).
         self.parked = ParkedStore(base / "parked.json")
         # People directory: "platform:user_id" → display name, noted from every inbound
@@ -477,6 +482,11 @@ class SessionManager:
         for thread_target in self.mention_sessions.targets_for(session_id):
             engine.permissions.task_rules.setdefault("send_message", set()).add(
                 thread_target
+            )
+        # Same for a DM session: replies to the contact it belongs to stay pre-approved.
+        for contact_target in self.dm_sessions.targets_for(session_id):
+            engine.permissions.task_rules.setdefault("send_message", set()).add(
+                contact_target
             )
         if record is not None and record.grants:
             self._apply_grants(engine, record.grants)
@@ -2983,19 +2993,84 @@ class SessionManager:
                         pass
                 return
             return  # channel with no subscribers — nobody is listening
-        # DM (or any non-channel): route to the designated session, else park it for visibility.
+        # DM (or any non-channel). A designated DM session, when the user set one, keeps
+        # its behaviour — some people want one inbox for everything. Otherwise each
+        # CONTACT gets their own session, the way a Slack mention gets one per thread.
+        #
+        # Per-contact is not just tidiness. A single shared session is also open in the
+        # app, so "reply to this" is genuinely ambiguous — the agent answered on screen
+        # and the person on WhatsApp waited for a message that never came. A session
+        # that exists only for one contact has one way out, and it carries a standing
+        # grant for that one target so the conversation never stalls on an approval the
+        # sender cannot see.
         dm = self.dm_session()
-        if dm and self._inbound_connector_allowed(dm, src.platform):
-            await self.deliver_to_session(dm, event.tagged_text(), source=ms.to_dict())
-        elif dm:
-            # Designated, but this session has muted the connector → park rather than deliver.
+        if dm:
+            if self._inbound_connector_allowed(dm, src.platform):
+                await self.deliver_to_session(dm, event.tagged_text(), source=ms.to_dict())
+            else:
+                # Designated, but this session has muted the connector → park.
+                self.unrouted.record(
+                    src.target, who, text, reason="connector muted for DM session"
+                )
+            return
+        await self._route_direct_message(event, ms)
+
+    async def _route_direct_message(self, event, ms: MessageSource) -> None:
+        """One session per contact, spawned on their first message and steered after.
+
+        Keyed on the CHAT, not the thread: a DM has no threads, and every message from
+        the same person belongs to the same conversation.
+        """
+        from ..connectors.base import format_target
+
+        src = event.source
+        contact_target = format_target(src.platform, src.chat_id, None)
+        sid = self.dm_sessions.get(contact_target)
+        if sid and self.session_store.load(sid) is not None:
+            await self.deliver_to_session(sid, event.tagged_text(), source=ms.to_dict())
+            return
+        await self._spawn_dm_session(event, ms, contact_target)
+
+    async def _spawn_dm_session(
+        self, event, ms: MessageSource, contact_target: str
+    ) -> None:
+        """First message from a contact: a visible session that owns the conversation."""
+        import uuid
+
+        src = event.source
+        who = src.user_name or src.user_id or "?"
+        sid = uuid.uuid4().hex
+        engine = self.get_engine(sid, agent=self.personas.default_id())
+        if engine is None:
             self.unrouted.record(
-                src.target, who, text, reason="connector muted for DM session"
+                src.target, who, event.text, reason="could not spawn DM session"
             )
-        else:
-            self.unrouted.record(
-                src.target, who, text, reason="no DM session designated"
-            )
+            return
+        # Mapping FIRST, so a fast second message dedupes into steering rather than
+        # spawning a second session for the same person.
+        self.dm_sessions.set(
+            contact_target, sid, channel=f"{src.platform}:{src.chat_id}"
+        )
+        # Standing grant, exact target (§25): replies to THIS contact never prompt.
+        # Anything else — another number, a file, an external action — still asks.
+        engine.permissions.task_rules.setdefault("send_message", set()).add(
+            contact_target
+        )
+        self.save(sid, engine)  # the sessions row must exist before rename/set_origin
+        self.session_store.rename(sid, who)
+        self.session_store.set_origin(sid, src.platform, who)
+        opening = (
+            f"💬 {who} messaged you on {src.platform}: {event.text}\n\n"
+            f"You own this conversation. It exists only for {who} — they are not "
+            f"looking at this app, so the ONLY way to answer them is the send_message "
+            f'tool with target "{contact_target}". Replies to this target are '
+            f"pre-approved and never prompt. Do any research or tool work first, then "
+            f"send ONE message with the finished answer, in the language they wrote in."
+        )
+        try:
+            await self.deliver_to_session(sid, opening, source=ms.to_dict())
+        except Exception:
+            logger.exception("DM session %s opening turn failed", sid)
 
     # -- mention router (§31) ----------------------------------------------------
     async def _route_mention(self, event, ms: MessageSource, subs) -> None:
@@ -3705,6 +3780,7 @@ class SessionManager:
         self.subscriptions.remove_session(session_id)
         # ...and releases any Slack threads it owned (§31): the next tag there spawns fresh.
         self.mention_sessions.remove_session(session_id)
+        self.dm_sessions.remove_session(session_id)
         # ...and drops its per-session connector overrides (§4.2, like subscriptions).
         self.session_connections.remove_session(session_id)
         # ...and closes its pending Inbox items — an orphaned approval/question can never be

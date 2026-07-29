@@ -173,10 +173,13 @@ def test_dispatch_fans_out_to_subscribers(tmp_path, monkeypatch):
     assert delivered == []
     assert mgr.channel_buffer.recent("slack:C2")[-1]["text"] == "noise"
 
-    # a DM with no designated session → parked as unrouted, nobody delivered
+    # a DM with no designated session → its own session for that contact (it used to
+    # park as unrouted). It is NOT fanned out to channel subscribers, which is what
+    # this test is about.
+    delivered.clear()
     asyncio.run(mgr._dispatch_inbound(_event("hi there", chat_type="dm", chat_id="D1")))
-    assert delivered == []
-    assert mgr.unrouted.list()[0]["reason"] == "no DM session designated"
+    assert {sid for sid, _ in delivered} == {mgr.dm_sessions.all()[0].session_id}
+    assert "sA" not in {sid for sid, _ in delivered}
 
     # a DM with a designated session → delivered to it
     mgr.set_dm_session("sDM")

@@ -7,14 +7,27 @@ import pytest
 from fastapi.testclient import TestClient
 
 from coworker.connectors.base import MessageEvent, SessionSource
-from coworker.providers import ModelCapabilities, ProviderClient
+from coworker.providers import AssistantTurn, ModelCapabilities, ProviderClient
 from coworker.server import create_app
 from coworker.server.manager import SessionManager
 
 
 class ScriptedProvider(ProviderClient):
+    """Fails if a turn runs — several tests here assert that nothing was dispatched."""
+
     def complete(self, *, model, messages, tools=None, **settings):
         raise AssertionError("no turns expected")
+
+    def capabilities(self, model):
+        return ModelCapabilities()
+
+
+class QuietProvider(ProviderClient):
+    """Answers with empty text. Spawning a DM session runs an opening turn by design,
+    so tests about the SPAWN need a provider that lets it complete."""
+
+    def complete(self, *, model, messages, tools=None, **settings):
+        return AssistantTurn(text="", tool_calls=[])
 
     def capabilities(self, model):
         return ModelCapabilities()
@@ -58,15 +71,45 @@ def test_dm_with_designated_session_delivers(tmp_path, monkeypatch):
     assert mgr.unrouted.list() == []
 
 
-def test_dm_without_designation_is_parked(tmp_path):
-    mgr = SessionManager(workspace=tmp_path, provider=ScriptedProvider())
+def test_dm_without_designation_spawns_a_session_for_that_contact(tmp_path):
+    """This used to park the message. It now opens a session that belongs to the
+    sender, the way a Slack mention opens one per thread.
+
+    The parking was not just unhelpful — a single shared DM session is also open in the
+    app, so "reply to this" was genuinely ambiguous and the agent answered on screen
+    while the person waited on their phone. A session that exists for ONE contact has
+    one way out."""
+    mgr = SessionManager(workspace=tmp_path, provider=QuietProvider())
     assert mgr.dm_session() is None
 
     asyncio.run(mgr._dispatch_inbound(_dm("hello there")))
-    parked = mgr.unrouted.list()
-    assert len(parked) == 1
-    assert parked[0]["text"] == "hello there"
-    assert parked[0]["reason"] == "no DM session designated"
+
+    assert mgr.unrouted.list() == [], "nothing should be parked any more"
+    contacts = mgr.dm_sessions.all()
+    assert len(contacts) == 1
+    sid = contacts[0].session_id
+    assert mgr.session_store.load(sid) is not None
+
+    # The standing grant is what stops the conversation stalling on an approval the
+    # sender cannot see — scoped to this contact, so any other target still asks.
+    engine = mgr.get_engine(sid)
+    assert contacts[0].thread_target in engine.permissions.task_rules["send_message"]
+
+
+def test_a_second_message_steers_the_same_session(tmp_path):
+    """One session per contact, not per message."""
+    mgr = SessionManager(workspace=tmp_path, provider=QuietProvider())
+    asyncio.run(mgr._dispatch_inbound(_dm("first")))
+    asyncio.run(mgr._dispatch_inbound(_dm("second")))
+    assert len(mgr.dm_sessions.all()) == 1
+
+
+def test_a_designated_dm_session_still_wins(tmp_path):
+    """Some people want one inbox for everything; setting a DM route keeps that."""
+    mgr = SessionManager(workspace=tmp_path, provider=ScriptedProvider())
+    mgr.set_dm_session("my-inbox")
+    asyncio.run(mgr._dispatch_inbound(_dm("hello there")))
+    assert mgr.dm_sessions.all() == [], "no per-contact session when one is designated"
 
 
 def test_dm_route_endpoints(tmp_path):
