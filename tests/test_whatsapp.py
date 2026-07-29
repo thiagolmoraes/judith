@@ -582,3 +582,170 @@ def test_the_duplicate_cache_is_bounded_under_a_burst(tmp_path):
     # ...and the very first was evicted, so it sends again rather than being remembered
     # forever.
     assert tool("telegram:123", "message 0").get("duplicate") is None
+# -- stale webhook -------------------------------------------------------------
+async def test_a_moved_webhook_disables_the_old_url_first(monkeypatch):
+    """Evolution retries a failing webhook ten times with backoff, and those retries
+    queue AHEAD of live traffic. After a few restarts on new ports, real messages
+    arrive minutes late or not at all — while the connector reports healthy. Cost an
+    evening of debugging; the fix is disabling the previous URL before registering."""
+    posted: list[dict] = []
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, url, headers=None):
+            if "connectionState" in url:
+                return _Resp(200, {"instance": {"state": "open"}})
+            return _Resp(200, {"url": "http://host.docker.internal:1111/webhook/whatsapp"})
+
+        async def post(self, url, headers=None, json=None):
+            posted.append(json)
+            return _Resp(200, {"ok": True})
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **k: _Client())
+    adapter = WhatsAppAdapter(
+        "http://x", "K", "openworker", webhook_url="http://host.docker.internal:2222/webhook/whatsapp"
+    )
+    assert await adapter.connect() is True
+
+    # Old one disabled first, then the new one registered — order matters.
+    assert posted[0]["webhook"]["enabled"] is False
+    assert posted[0]["webhook"]["url"].endswith(":1111/webhook/whatsapp")
+    assert posted[1]["webhook"]["enabled"] is True
+    assert posted[1]["webhook"]["url"].endswith(":2222/webhook/whatsapp")
+
+
+async def test_an_unchanged_webhook_is_not_disabled(monkeypatch):
+    """The common case — a restart on the same port. Disabling and re-enabling would
+    open a window where inbound messages are dropped."""
+    posted: list[dict] = []
+    url = "http://host.docker.internal:2222/webhook/whatsapp"
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, u, headers=None):
+            if "connectionState" in u:
+                return _Resp(200, {"instance": {"state": "open"}})
+            return _Resp(200, {"url": url})
+
+        async def post(self, u, headers=None, json=None):
+            posted.append(json)
+            return _Resp(200, {"ok": True})
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **k: _Client())
+    assert await WhatsAppAdapter("http://x", "K", "openworker", webhook_url=url).connect() is True
+    assert len(posted) == 1
+    assert posted[0]["webhook"]["enabled"] is True
+
+
+async def test_a_failing_lookup_does_not_block_the_connect(monkeypatch):
+    """Clearing the old webhook is a nicety; failing to do it must not stop the
+    connector from coming up."""
+    posted: list[dict] = []
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, u, headers=None):
+            if "connectionState" in u:
+                return _Resp(200, {"instance": {"state": "open"}})
+            raise RuntimeError("find endpoint unavailable on this version")
+
+        async def post(self, u, headers=None, json=None):
+            posted.append(json)
+            return _Resp(200, {"ok": True})
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **k: _Client())
+    adapter = WhatsAppAdapter("http://x", "K", "openworker", webhook_url="http://h:3333/w")
+    assert await adapter.connect() is True
+    assert posted[0]["webhook"]["enabled"] is True
+
+
+def test_the_log_line_carries_the_port_not_the_url():
+    """A configured webhook URL can carry a token or signature in its query string; an
+    info-level log of the whole URL would persist that secret."""
+    from coworker.connectors.whatsapp import _url_port
+
+    assert _url_port("http://host.docker.internal:64932/webhook/whatsapp?token=SECRET") == "64932"
+    assert _url_port("http://x/webhook") == "?"
+    assert _url_port("not a url at all") == "?"
+
+
+async def test_a_failed_cleanup_is_reported_not_swallowed(monkeypatch, caplog):
+    """httpx does not raise on 4xx/5xx. Without checking the status, the cleanup could
+    no-op silently and leave the old webhook retrying — the very failure this prevents."""
+    import logging
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, url, headers=None):
+            if "connectionState" in url:
+                return _Resp(200, {"instance": {"state": "open"}})
+            return _Resp(200, {"url": "http://host:1111/webhook/whatsapp"})
+
+        async def post(self, url, headers=None, json=None):
+            # The disable call is refused; the register call succeeds.
+            enabled = (json or {}).get("webhook", {}).get("enabled")
+            return _Resp(200 if enabled else 403, {"ok": bool(enabled)})
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **k: _Client())
+    adapter = WhatsAppAdapter("http://x", "K", "openworker", webhook_url="http://host:2222/w")
+    with caplog.at_level(logging.WARNING, logger="coworker.connectors"):
+        assert await adapter.connect() is True  # best effort: never blocks the connect
+    assert any("could not disable" in r.message for r in caplog.records)
+
+
+async def test_a_non_string_old_url_is_ignored(monkeypatch):
+    """A fork answering `{"url": {...}}` must not reach the disable call with a dict."""
+    posted: list[dict] = []
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, url, headers=None):
+            if "connectionState" in url:
+                return _Resp(200, {"instance": {"state": "open"}})
+            return _Resp(200, {"url": {"unexpected": "shape"}})
+
+        async def post(self, url, headers=None, json=None):
+            posted.append(json)
+            return _Resp(200, {"ok": True})
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **k: _Client())
+    adapter = WhatsAppAdapter("http://x", "K", "openworker", webhook_url="http://host:2222/w")
+    assert await adapter.connect() is True
+    # Only the registration — no disable call built from a dict.
+    assert len(posted) == 1
+    assert posted[0]["webhook"]["enabled"] is True
