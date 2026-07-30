@@ -690,7 +690,7 @@ pub fn run() {
             //    Overlay title bar (macOS): traffic lights float over the edge-to-edge UI.
             let mut builder =
                 WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-                    .title("OpenWorker")
+                    .title("Judith")
                     .inner_size(1360.0, 900.0)
                     .min_inner_size(980.0, 640.0)
                     // Let the WEBVIEW receive OS file drags: Tauri's own drag-drop handler
@@ -722,7 +722,7 @@ pub fn run() {
             });
 
             // 3. System tray: Open / Settings / Quit.
-            let open_i = MenuItem::with_id(app, "open", "Open OpenWorker", true, None::<&str>)?;
+            let open_i = MenuItem::with_id(app, "open", "Open Judith", true, None::<&str>)?;
             let settings_i = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&open_i, &settings_i, &quit_i])?;
@@ -753,7 +753,7 @@ pub fn run() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("error while building the OpenWorker desktop app")
+        .expect("error while building the Judith desktop app")
         .run(|app, event| {
             // Also on Exit: belt-and-suspenders in case a quit path reaches teardown without
             // a preceding ExitRequested (observed with macOS Cmd+Q under the tray setup).
