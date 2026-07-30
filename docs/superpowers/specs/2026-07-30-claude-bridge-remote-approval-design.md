@@ -73,7 +73,7 @@ Flow:
 1. Validate: `tty` non-blank; `decision` in `{"approve", "deny"}`; token, when given,
    a string.
 2. Resolve session by tty → `session_gone` if absent.
-3. `session.status != "waiting_approval"` → `{"error": "not_waiting", "status": <atual>}`
+3. `session.status != "waiting_approval"` → `{"error": "not_waiting", "current_status": <atual>}`
    (also covers `session_id is None` → `no_registry` + install hint, same as watch).
 4. Read the waiting prompt message from the registry (`SessionState.message`, may be
    empty → treated as `""` for hashing; the echo then says "a permission request").

@@ -86,14 +86,14 @@ def test_send_keys_false_on_missing_session_or_crash():
 ```python
 def _waiting_session(tmp_path, message="permission to run: git push",
                      session_id="sess-1", status="waiting_approval"):
-    from tests.test_claude_bridge_registry import _write_state  # reuse the fixture shape
-
+    # As built: a local _write_bridge_state helper writes the registry file (tests/
+    # is not a package, so importing another test module's fixture doesn't work).
     s = _session_with_id(session_id=session_id)
     s.status = status
     t = _write_transcript(tmp_path, ["before"])
     s.transcript = t
-    _write_state(tmp_path, session_id, status=status, message=message,
-                 transcript_path=str(t))
+    _write_bridge_state(tmp_path, session_id, status=status, message=message,
+                        transcript_path=str(t))
     return s
 
 
@@ -102,7 +102,9 @@ def _respond_tools(tmp_path, sessions, driver=None, clock=None, sleep=None):
         FakeDiscovery(sessions),
         driver or FakeDriver(),
         bridge_dir=tmp_path,
-        clock=clock or (lambda: 0.0),
+        # As built: a counting clock — a constant clock would never reach the verify
+        # deadline and the poll loop would spin forever.
+        clock=clock or iter(range(1000)).__next__,
         sleep=sleep or (lambda s: None),
     )
     return {t.__name__: t for t in tools}

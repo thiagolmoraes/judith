@@ -413,17 +413,25 @@ def test_respond_approve_with_token_presses_1_and_verifies(tmp_path):
     assert driver.keys == [("w0t0p0:ABC", "1")]
 
 
-def test_respond_deny_presses_3(tmp_path):
+def test_respond_deny_presses_3_and_verifies(tmp_path):
+    import os as _os
+
     s = _waiting_session(tmp_path)
     driver = FakeDriver()
-    t = _respond_tools(tmp_path, [s], driver=driver)
+
+    def sleep(_):
+        # the denial reached Claude: the turn continues, the transcript moves
+        _os.utime(s.transcript, (9_999_999_999, 9_999_999_999))
+
+    t = _respond_tools(tmp_path, [s], driver=driver, sleep=sleep)
     token = t["respond_to_claude_prompt"](tty="ttys000", decision="deny")[
         "confirm_token"
     ]
     result = t["respond_to_claude_prompt"](
         tty="ttys000", decision="deny", confirm_token=token
     )
-    assert result["status"] in ("denied", "sent_unverified")
+    assert result["status"] == "denied"
+    assert result["verified"] is True
     assert driver.keys == [("w0t0p0:ABC", "3")]
 
 

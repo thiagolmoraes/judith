@@ -133,6 +133,16 @@ _UNWATCH_SCHEMA = {
 }
 
 
+def _no_registry_error() -> dict[str, Any]:
+    return {
+        "error": "no_registry",
+        "hint": (
+            "This session has no hook registry entry — install the bridge "
+            "hooks with: python -m coworker.claude_bridge.install"
+        ),
+    }
+
+
 def _prompt_token(session_id: str, message: str) -> str:
     """Binds a confirmation to the exact prompt text: if another permission request
     replaces the echoed one, the token no longer matches and the wrong command can't
@@ -288,13 +298,7 @@ def claude_session_tools(
         if session is None:
             return {"error": "session_gone"}
         if session.session_id is None:
-            return {
-                "error": "no_registry",
-                "hint": (
-                    "This session has no hook registry entry — install the bridge "
-                    "hooks with: python -m coworker.claude_bridge.install"
-                ),
-            }
+            return _no_registry_error()
         assert watches is not None
         if not watches.add(session.session_id, platform, chat_id):
             return {"error": "already_watched"}
@@ -328,13 +332,7 @@ def claude_session_tools(
         if session is None:
             return {"error": "session_gone"}
         if session.session_id is None:
-            return {
-                "error": "no_registry",
-                "hint": (
-                    "This session has no hook registry entry — install the bridge "
-                    "hooks with: python -m coworker.claude_bridge.install"
-                ),
-            }
+            return _no_registry_error()
         if session.status != "waiting_approval":
             return {"error": "not_waiting", "current_status": session.status}
         assert bridge_dir is not None
