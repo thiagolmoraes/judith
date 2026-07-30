@@ -115,6 +115,18 @@ def test_read_without_transcript():
     assert t["read_claude_transcript"](tty="ttys000") == {"error": "no_transcript"}
 
 
+def test_read_rejects_bad_arguments_and_caps_n(tmp_path: Path):
+    path = _write_transcript(tmp_path, ["a"])
+    t = _tools(FakeDiscovery([_session(transcript=path)]), FakeDriver())
+    assert t["read_claude_transcript"](tty="") == {"error": "invalid_arguments"}
+    assert t["read_claude_transcript"](tty=123) == {"error": "invalid_arguments"}
+    # a huge n must not dump a whole transcript: capped, not honoured
+    big = _write_transcript(tmp_path, [f"m{i}" for i in range(9)])
+    t = _tools(FakeDiscovery([_session(transcript=big)]), FakeDriver())
+    result = t["read_claude_transcript"](tty="ttys000", n=10_000)
+    assert len(result["entries"]) == 9  # all there — the cap (100) exceeds the file
+
+
 def test_send_replies(tmp_path: Path):
     path = _write_transcript(tmp_path, ["earlier"])
     driver = FakeDriver()
@@ -156,6 +168,39 @@ def test_send_write_failure():
     }
 
 
+def test_send_rejects_blank_text_and_bad_types():
+    driver = FakeDriver()
+    t = _tools(FakeDiscovery([_session()]), driver)
+    assert t["send_to_claude_session"](tty="ttys000", text="   ") == {
+        "error": "invalid_arguments"
+    }
+    assert t["send_to_claude_session"](tty="ttys000", text=None) == {
+        "error": "invalid_arguments"
+    }
+    assert t["send_to_claude_session"](tty="", text="hi") == {
+        "error": "invalid_arguments"
+    }
+    assert driver.sent == []  # nothing reached the terminal
+
+
+def test_send_caps_wait_seconds(tmp_path: Path):
+    path = _write_transcript(tmp_path, ["earlier"])
+    waits: list[float] = []
+
+    def waiter(p, after, timeout):
+        waits.append(timeout)
+        return "ok"
+
+    t = _tools(
+        FakeDiscovery([_session(transcript=path)]),
+        FakeDriver(),
+        waiter=waiter,
+        now=lambda: NOW,
+    )
+    t["send_to_claude_session"](tty="ttys000", text="x", wait_seconds=999_999)
+    assert waits == [600.0]  # capped — a turn can't be pinned indefinitely
+
+
 def test_send_without_transcript_reports_sent_no_reply():
     t = _tools(
         FakeDiscovery([_session(transcript=None)]), FakeDriver(), now=lambda: NOW
@@ -173,12 +218,29 @@ def test_default_factory_builds_three_tools():
     }
 
 
-def test_agent_module_gates_bridge_on_macos():
-    # Registration wiring: agent.py must reference the factory and the darwin gate.
-    import inspect
+def _assistant_tool_names(tmp_path, monkeypatch, platform: str) -> set[str]:
+    """The Assistant persona's built toolset under a given platform — through
+    build_engine, so the test proves the wiring, not a source substring."""
+    import sys
 
-    import coworker.agent as agent_module
+    from coworker.agent import build_engine
+    from coworker.personas.registry import PersonaRegistry
+    from coworker.secrets import SecretStore
 
-    source = inspect.getsource(agent_module)
-    assert "claude_bridge_tools" in source
-    assert 'sys.platform == "darwin"' in source
+    monkeypatch.setattr(sys, "platform", platform)
+    engine = build_engine(
+        agent=PersonaRegistry().agent("assistant"),
+        workspace=None,
+        secrets=SecretStore(tmp_path / f"secrets-{platform}.json"),
+    )
+    return set(engine.registry.names())
+
+
+def test_bridge_registered_for_messaging_persona_on_macos_only(tmp_path, monkeypatch):
+    bridge = {
+        "find_claude_sessions",
+        "read_claude_transcript",
+        "send_to_claude_session",
+    }
+    assert bridge <= _assistant_tool_names(tmp_path, monkeypatch, "darwin")
+    assert not bridge & _assistant_tool_names(tmp_path, monkeypatch, "linux")

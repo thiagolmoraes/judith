@@ -12,8 +12,9 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
 
 @dataclass
@@ -27,9 +28,14 @@ def _parse_timestamp(raw: object) -> datetime | None:
     if not isinstance(raw, str):
         return None
     try:
-        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
     except ValueError:
         return None
+    # A timestamp without an offset parses naive; comparing that against the aware
+    # `after` in wait_for_reply would raise TypeError. Real transcripts are UTC.
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
 
 
 def _block_text(content: object) -> str:
@@ -79,14 +85,19 @@ def tail(path: Path, n: int = 20) -> list[Entry]:
 
 
 def last_branch(path: Path) -> str | None:
-    """The session's git branch, from the newest line that recorded one."""
+    """The session's git branch, from the newest line that recorded one. Sidechain
+    (subagent) lines are skipped — a subagent may run elsewhere."""
     branch: str | None = None
     for line in _lines(path):
         try:
             data = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if isinstance(data, dict) and isinstance(data.get("gitBranch"), str):
+        if (
+            isinstance(data, dict)
+            and not data.get("isSidechain")
+            and isinstance(data.get("gitBranch"), str)
+        ):
             branch = data["gitBranch"]
     return branch
 
@@ -98,28 +109,32 @@ def wait_for_reply(
     timeout: float = 120.0,
     poll: float = 1.0,
     settle: float = 5.0,
-    sleep=time.sleep,
-    clock=time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
 ) -> str | None:
     """Assistant text newer than `after`, once the transcript has been quiet.
 
     A turn can emit several assistant entries (narration between tool calls), so a reply
-    only counts as final after `settle` seconds with no new entry. On timeout, whatever
-    arrived is returned anyway (partial beats silence); None means nothing arrived.
+    only counts as final after `settle` seconds with no new entry. Quiet is judged on a
+    snapshot of the entries, not their count — once the 50-entry window fills, a new
+    message shifts the window without changing the count. On timeout, whatever arrived
+    is returned anyway (partial beats silence); None means nothing arrived.
     """
     deadline = clock() + timeout
-    seen = 0
     quiet_since: float | None = None
+    prev: list[tuple[datetime | None, str]] | None = None
     texts: list[str] = []
     while True:
-        texts = [
-            e.text
+        fresh = [
+            e
             for e in tail(path, 50)
             if e.role == "assistant" and e.timestamp and e.timestamp > after
         ]
-        if texts:
-            if len(texts) != seen:
-                seen = len(texts)
+        texts = [e.text for e in fresh]
+        snapshot = [(e.timestamp, e.text) for e in fresh]
+        if snapshot:
+            if snapshot != prev:
+                prev = snapshot
                 quiet_since = clock()
             elif quiet_since is not None and clock() - quiet_since >= settle:
                 return "\n\n".join(texts)

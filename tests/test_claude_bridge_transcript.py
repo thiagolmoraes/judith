@@ -73,6 +73,14 @@ def test_parse_skips_non_message_and_sidechain_and_garbage():
     assert parse_line("") is None
 
 
+def test_parse_naive_timestamp_becomes_utc_aware():
+    # No offset in the timestamp → must not produce a naive datetime, or the
+    # aware-vs-naive comparison inside wait_for_reply would raise TypeError.
+    entry = parse_line(_user_line("hi", ts="2026-07-30T10:00:00"))
+    assert entry is not None
+    assert entry.timestamp == datetime(2026, 7, 30, 10, 0, 0, tzinfo=timezone.utc)
+
+
 def test_parse_skips_entries_without_visible_text():
     # tool_result-only user line: content is a block list with no text blocks
     line = json.dumps(
@@ -113,6 +121,19 @@ def test_last_branch_takes_latest(tmp_path: Path):
     )
     assert last_branch(path) == "fix/webhook"
     assert last_branch(Path("/nonexistent/nope.jsonl")) is None
+
+
+def test_last_branch_ignores_sidechain_lines(tmp_path: Path):
+    # A subagent (sidechain) may report a different branch — not the session's.
+    path = tmp_path / "s.jsonl"
+    path.write_text(
+        _user_line("a", gitBranch="main")
+        + "\n"
+        + _assistant_line("sub", gitBranch="subagent/other", isSidechain=True)
+        + "\n",
+        encoding="utf-8",
+    )
+    assert last_branch(path) == "main"
 
 
 class _Clock:
@@ -167,6 +188,42 @@ def test_wait_for_reply_ignores_older_entries_and_times_out(tmp_path: Path):
     )
     assert reply is None
     assert fake.now >= 10.0
+
+
+def test_wait_for_reply_detects_activity_when_window_full(tmp_path: Path):
+    # 50 replies after `after` fill the tail window; a 51st shifts the window but
+    # keeps the count at 50. Quiet detection must see that as fresh activity.
+    path = tmp_path / "s.jsonl"
+    lines = [_user_line("q", ts="2026-07-30T10:00:00.000Z")]
+    for i in range(50):
+        lines.append(
+            _assistant_line(f"entry{i}", ts=f"2026-07-30T10:01:{i:02d}.000Z")
+        )
+    path.write_text("\n".join(lines), encoding="utf-8")
+    after = datetime(2026, 7, 30, 10, 0, 30, tzinfo=timezone.utc)
+    fake = _Clock()
+    orig_sleep = fake.sleep
+
+    def sleep_and_append(seconds: float) -> None:
+        orig_sleep(seconds)
+        if fake.now >= 2.0 and "entry50" not in path.read_text(encoding="utf-8"):
+            with path.open("a", encoding="utf-8") as f:
+                f.write(
+                    "\n" + _assistant_line("entry50", ts="2026-07-30T10:02:40.000Z")
+                )
+
+    reply = wait_for_reply(
+        path,
+        after,
+        timeout=60.0,
+        poll=1.0,
+        settle=5.0,
+        sleep=sleep_and_append,
+        clock=fake.clock,
+    )
+    assert reply is not None and "entry50" in reply
+    # the shifted window reset the quiet clock: settled only after the append
+    assert fake.now >= 7.0
 
 
 def test_wait_for_reply_timeout_returns_partial(tmp_path: Path):

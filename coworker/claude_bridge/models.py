@@ -19,12 +19,13 @@ class LiveSession:
     tail: str  # last few messages, summarised, for free-form matching
 
     def to_dict(self) -> dict:
-        """Model-facing shape: the tty is the handle; filesystem paths stay internal."""
+        """Model-facing shape: the tty is the handle; filesystem paths (transcript, cwd)
+        stay internal — the project basename plus branch and tail identify a session
+        without leaking the local directory layout."""
         return {
             "pid": self.pid,
             "tty": self.tty,
             "project": Path(self.cwd).name,
-            "cwd": self.cwd,
             "branch": self.branch,
             "transcript_confidence": self.transcript_confidence,
             "last_activity": (

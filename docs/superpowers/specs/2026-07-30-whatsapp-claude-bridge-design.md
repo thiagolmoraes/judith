@@ -95,8 +95,12 @@ never inject into the session that is answering WhatsApp.
 
 - `tail(path, n)` — last *n* parsed entries (role, text, timestamp). A malformed or
   truncated line (a write in progress) is skipped; parsing never raises.
-- `wait_for_reply(path, after, timeout)` — polls mtime (1 s, injectable sleep); a new
-  `assistant` entry with timestamp > `after` returns its text; timeout returns `None`.
+- `wait_for_reply(path, after, timeout, settle)` — polls (1 s, injectable sleep/clock)
+  for `assistant` entries with timestamp > `after`. A turn can emit several entries
+  (narration between tool calls), so the reply only counts as final after `settle`
+  seconds (default 5) with no new entry — judged on a snapshot of the entries, not
+  their count. On timeout, whatever arrived is returned anyway (partial beats
+  silence); `None` means nothing arrived at all.
 
 ### `terminal.py`
 
@@ -146,7 +150,7 @@ session already runs unattended.
 | Failure | Behaviour |
 |---|---|
 | No live `claude` process | `find` returns an empty list plus a hint; the agent says so on WhatsApp |
-| `ps`/`lsof` fails or hangs | 10 s timeout on the runner → `{"error": ...}`; a turn never stalls |
+| `ps`/`lsof` fails or hangs | 10 s timeout on the runner; discovery degrades to an empty list (a failed `lsof` just drops that one process) — a turn never stalls and never sees an exception |
 | cwd with no transcript yet (fresh session) | `LiveSession` with `transcript=None`, `tail=""` — still listed |
 | Several candidate JSONLs | mtime heuristic; `transcript_confidence: "guessed"` marks the ambiguity |
 | Tab closed between `find` and `send` | `find_target` → `None` → `{"error": "session_gone"}`; the agent re-runs `find` |
@@ -161,14 +165,16 @@ session already runs unattended.
 No test touches real `ps`, `lsof`, iTerm2, or `osascript` — everything is injected, so
 the suite runs on any CI including Linux.
 
-- `test_discovery.py` — fake runner with canned `ps`/`lsof` output: finds pids, maps the
-  munged cwd, picks the right JSONL among several, excludes OpenWorker's own tree,
-  yields `transcript=None` on an empty dir.
-- `test_transcript.py` — real JSONL fixtures under `tmp_path`: tail parses roles, skips
-  a malformed line; `wait_for_reply` sees a new entry and honours the timeout
-  (injectable poll, no real sleeping).
-- `test_terminal.py` — `ITerm2Driver` with a fake `osascript`: generates the right
-  script, escapes quotes/backslashes/emoji, `find_target` returns `None` on no match,
-  `send_text` returns `False` on failure.
-- `test_claude_session_tools.py` — tools wired with fakes: every error contract from the
-  table above (`session_gone`, `sent_no_reply`, empty list) plus serialisation.
+- `tests/test_claude_bridge_discovery.py` — fake runner with canned `ps`/`lsof` output:
+  finds pids, maps the munged cwd, picks the right JSONL among several, excludes
+  OpenWorker's own tree, yields `transcript=None` on an empty dir.
+- `tests/test_claude_bridge_transcript.py` — real JSONL fixtures under `tmp_path`: tail
+  parses roles, skips a malformed line; `wait_for_reply` sees a new entry, honours the
+  timeout and the settle window (injectable clock/sleep, no real sleeping).
+- `tests/test_claude_bridge_terminal.py` — `ITerm2Driver` with a fake `osascript`:
+  generates the right script, escapes quotes/backslashes, `find_target` returns `None`
+  on no match, `send_text` returns `False` on failure.
+- `tests/test_claude_session_tools.py` — tools wired with fakes: every error contract
+  from the table above (`session_gone`, `sent_no_reply`, `invalid_arguments`, empty
+  list), argument caps, serialisation, and the macOS-only registration through
+  `build_engine`.

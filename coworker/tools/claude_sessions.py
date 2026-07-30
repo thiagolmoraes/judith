@@ -6,13 +6,24 @@ git_tools); all logic lives in the domain package, all deps are injected.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Protocol
 
 from ..claude_bridge.discovery import SessionDiscovery
 from ..claude_bridge.models import LiveSession
 from ..claude_bridge.terminal import ITerm2Driver, TerminalDriver
 from ..claude_bridge.transcript import tail as transcript_tail
 from ..claude_bridge.transcript import wait_for_reply
+
+# Ceilings on model-supplied numbers: a huge `n` would dump a whole transcript into the
+# context; a huge `wait_seconds` would pin the turn on one blocked session.
+_MAX_ENTRIES = 100
+_MAX_WAIT_SECONDS = 600
+
+
+class SessionFinder(Protocol):
+    """What the tools need from discovery — the injection seam for fakes."""
+
+    def list(self) -> list[LiveSession]: ...
 
 _FIND_SCHEMA = {
     "type": "function",
@@ -77,7 +88,7 @@ _SEND_SCHEMA = {
 
 
 def claude_session_tools(
-    discovery: Any,
+    discovery: SessionFinder,
     driver: TerminalDriver,
     *,
     waiter: Callable[..., Optional[str]] = wait_for_reply,
@@ -102,12 +113,14 @@ def claude_session_tools(
         return result
 
     def read_claude_transcript(tty: str, n: int = 20) -> dict[str, Any]:
+        if not isinstance(tty, str) or not tty:
+            return {"error": "invalid_arguments"}
         session = _by_tty(tty)
         if session is None:
             return {"error": "session_gone"}
         if session.transcript is None:
             return {"error": "no_transcript"}
-        count = n if isinstance(n, int) and n > 0 else 20
+        count = min(n, _MAX_ENTRIES) if isinstance(n, int) and n > 0 else 20
         return {
             "entries": [
                 {
@@ -122,6 +135,13 @@ def claude_session_tools(
     def send_to_claude_session(
         tty: str, text: str, wait_seconds: int = 120
     ) -> dict[str, Any]:
+        if (
+            not isinstance(tty, str)
+            or not tty
+            or not isinstance(text, str)
+            or not text.strip()
+        ):
+            return {"error": "invalid_arguments"}
         session = _by_tty(tty)
         if session is None:
             return {"error": "session_gone"}
@@ -134,7 +154,9 @@ def claude_session_tools(
         if session.transcript is None:
             return {"status": "sent_no_reply", "last_entries": []}
         wait = (
-            wait_seconds if isinstance(wait_seconds, int) and wait_seconds > 0 else 120
+            min(wait_seconds, _MAX_WAIT_SECONDS)
+            if isinstance(wait_seconds, int) and wait_seconds > 0
+            else 120
         )
         reply = waiter(session.transcript, after, timeout=float(wait))
         if reply is not None:

@@ -157,5 +157,7 @@ def test_to_dict_serialises_for_the_model(tmp_path: Path):
     d = disc.list()[0].to_dict()
     assert d["project"] == "webhook"
     assert d["tty"] == "ttys000"
-    assert "transcript" not in d  # tty is the handle; paths stay out of the model's view
+    # tty is the handle; filesystem paths stay out of the model's view
+    assert "transcript" not in d
+    assert "cwd" not in d
     assert isinstance(d["last_activity"], str)
