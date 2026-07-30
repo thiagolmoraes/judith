@@ -171,3 +171,14 @@ def test_default_factory_builds_three_tools():
         "read_claude_transcript",
         "send_to_claude_session",
     }
+
+
+def test_agent_module_gates_bridge_on_macos():
+    # Registration wiring: agent.py must reference the factory and the darwin gate.
+    import inspect
+
+    import coworker.agent as agent_module
+
+    source = inspect.getsource(agent_module)
+    assert "claude_bridge_tools" in source
+    assert 'sys.platform == "darwin"' in source
