@@ -17,6 +17,8 @@ class LiveSession:
     transcript_confidence: str  # "matched" | "guessed" | "none"
     last_activity: datetime | None
     tail: str  # last few messages, summarised, for free-form matching
+    session_id: str | None = None  # exact, from the hook registry when available
+    status: str | None = None  # "idle" | "waiting_approval" | "running" | None
 
     def to_dict(self) -> dict:
         """Model-facing shape: the tty is the handle; filesystem paths (transcript, cwd)
@@ -32,4 +34,6 @@ class LiveSession:
                 self.last_activity.isoformat() if self.last_activity else None
             ),
             "tail": self.tail,
+            "session_id": self.session_id,
+            "status": self.status,
         }

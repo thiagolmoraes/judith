@@ -6,10 +6,12 @@ git_tools); all logic lives in the domain package, all deps are injected.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable, Optional, Protocol
 
 from ..claude_bridge.discovery import SessionDiscovery
 from ..claude_bridge.models import LiveSession
+from ..claude_bridge.registry import Watches, default_bridge_dir
 from ..claude_bridge.terminal import ITerm2Driver, TerminalDriver
 from ..claude_bridge.transcript import tail as transcript_tail
 from ..claude_bridge.transcript import wait_for_reply
@@ -87,12 +89,55 @@ _SEND_SCHEMA = {
 }
 
 
+_WATCH_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "watch_claude_session",
+        "description": (
+            "Watch a live Claude Code session (by `tty` from find_claude_sessions): "
+            "when its current work finishes, a one-shot notification is sent to "
+            "`notify_target`. Use the same 'platform:chat_id' target you would pass "
+            "to send_message — normally the chat this conversation came from."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "tty": {"type": "string", "description": "The session's tty."},
+                "notify_target": {
+                    "type": "string",
+                    "description": "Where to notify, as 'platform:chat_id'.",
+                },
+            },
+            "required": ["tty", "notify_target"],
+        },
+    },
+}
+
+_UNWATCH_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "unwatch_claude_session",
+        "description": (
+            "Cancel the pending finish-notification for a session (by `tty`)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "tty": {"type": "string", "description": "The session's tty."}
+            },
+            "required": ["tty"],
+        },
+    },
+}
+
+
 def claude_session_tools(
     discovery: SessionFinder,
     driver: TerminalDriver,
     *,
     waiter: Callable[..., Optional[str]] = wait_for_reply,
     now: Callable[[], datetime] | None = None,
+    watches: Optional[Watches] = None,
 ) -> list:
     clock = now or (lambda: datetime.now(timezone.utc))
 
@@ -104,7 +149,14 @@ def claude_session_tools(
 
     def find_claude_sessions() -> dict[str, Any]:
         sessions = discovery.list()
-        result: dict[str, Any] = {"sessions": [s.to_dict() for s in sessions]}
+        watched = set(watches.all()) if watches is not None else set()
+        serialised = []
+        for s in sessions:
+            d = s.to_dict()
+            if watches is not None:
+                d["watched"] = s.session_id in watched
+            serialised.append(d)
+        result: dict[str, Any] = {"sessions": serialised}
         if not sessions:
             result["hint"] = (
                 "No live Claude Code CLI session found in any terminal tab. "
@@ -167,12 +219,65 @@ def claude_session_tools(
             "last_entries": [e.text for e in transcript_tail(session.transcript, 5)],
         }
 
+    def watch_claude_session(tty: str, notify_target: str) -> dict[str, Any]:
+        if (
+            not isinstance(tty, str)
+            or not tty.strip()
+            or not isinstance(notify_target, str)
+            or ":" not in notify_target
+        ):
+            return {"error": "invalid_arguments"}
+        platform, _, chat_id = notify_target.partition(":")
+        if not platform or not chat_id:
+            return {"error": "invalid_arguments"}
+        from ..connectors.senders import DEFAULT_SENDERS
+
+        if platform not in DEFAULT_SENDERS:
+            return {
+                "error": "unknown_platform",
+                "hint": f"known platforms: {', '.join(sorted(DEFAULT_SENDERS))}",
+            }
+        session = _by_tty(tty)
+        if session is None:
+            return {"error": "session_gone"}
+        if session.session_id is None:
+            return {
+                "error": "no_registry",
+                "hint": (
+                    "This session has no hook registry entry — install the bridge "
+                    "hooks with: python -m coworker.claude_bridge.install"
+                ),
+            }
+        assert watches is not None
+        if not watches.add(session.session_id, platform, chat_id):
+            return {"error": "already_watched"}
+        return {"status": "watching", "session_id": session.session_id}
+
+    def unwatch_claude_session(tty: str) -> dict[str, Any]:
+        if not isinstance(tty, str) or not tty.strip():
+            return {"error": "invalid_arguments"}
+        session = _by_tty(tty)
+        if session is None:
+            return {"error": "session_gone"}
+        if session.session_id is None:
+            return {"status": "not_watched"}
+        assert watches is not None
+        removed = watches.remove(session.session_id)
+        return {"status": "unwatched" if removed else "not_watched"}
+
     find_claude_sessions.__coworker_schema__ = _FIND_SCHEMA
     read_claude_transcript.__coworker_schema__ = _READ_SCHEMA
     send_to_claude_session.__coworker_schema__ = _SEND_SCHEMA
-    return [find_claude_sessions, read_claude_transcript, send_to_claude_session]
+    tools = [find_claude_sessions, read_claude_transcript, send_to_claude_session]
+    if watches is not None:
+        watch_claude_session.__coworker_schema__ = _WATCH_SCHEMA
+        unwatch_claude_session.__coworker_schema__ = _UNWATCH_SCHEMA
+        tools += [watch_claude_session, unwatch_claude_session]
+    return tools
 
 
 def claude_bridge_tools() -> list:
-    """The production wiring: real discovery, real iTerm2 driver."""
-    return claude_session_tools(SessionDiscovery(), ITerm2Driver())
+    """The production wiring: real discovery, real iTerm2 driver, real watches."""
+    return claude_session_tools(
+        SessionDiscovery(), ITerm2Driver(), watches=Watches(default_bridge_dir())
+    )
