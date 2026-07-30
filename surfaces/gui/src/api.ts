@@ -464,10 +464,10 @@ export interface Connector {
   installations?: GithubInstallation[]; // GitHub only: App installations (managed relay)
 }
 
-// --- OpenWorker Cloud (optional sign-in; manual token paste always works) ---
+// --- Judith Cloud (optional sign-in; manual token paste always works) ---
 
 export interface CloudStatus {
-  /** Whether this install talks to OpenWorker Cloud at all (`cloud_enabled` in config).
+  /** Whether this install talks to Judith Cloud at all (`cloud_enabled` in config).
    * Off ⇒ never offer sign-in: the routes refuse, so a prompt would be a dead end. */
   enabled?: boolean;
   signed_in: boolean;
@@ -559,7 +559,7 @@ export async function connectManaged(
 }
 
 // -- bring-your-own OAuth app --------------------------------------------------
-// One-click connects normally run through OpenWorker's broker, which needs a cloud
+// One-click connects normally run through Judith's broker, which needs a cloud
 // sign-in. Registering your own OAuth app with the provider gives the same browser
 // consent flow with no sign-in, and the agent acts as your app.
 
@@ -1620,7 +1620,7 @@ export interface SlackMember {
 }
 
 // One channel from the workspace roster. Private channels appear only where the
-// bot is a member (Slack API constraint); is_member=false → "invite @OpenWorker" hint.
+// bot is a member (Slack API constraint); is_member=false → "invite @Judith" hint.
 export interface SlackChannelEntry {
   id: string;
   name: string;

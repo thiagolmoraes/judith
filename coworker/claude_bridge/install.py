@@ -112,7 +112,7 @@ def uninstall(settings_path: Path, bridge_dir: Path) -> list[str]:
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m coworker.claude_bridge.install",
-        description="Install the OpenWorker bridge hooks into Claude Code.",
+        description="Install the Judith bridge hooks into Claude Code.",
     )
     parser.add_argument("--uninstall", action="store_true")
     args = parser.parse_args(argv)

@@ -5,7 +5,7 @@ import type { Translate } from "../../humanize";
 
 // UX-027: the post-connect "how mentions reach you" card. A tabbed carousel of
 // animated split-scenes — Slack on the left (pinned to light-Slack colors, so it
-// reads as a screenshot of Slack), OpenWorker on the right (app tokens). Tabs
+// reads as a screenshot of Slack), Judith on the right (app tokens). Tabs
 // auto-advance through one full tour, then idle on a loop of the current scene;
 // clicking a tab takes over. The chevron collapses the carousel to the status
 // line — collapsed IS the seen-state (stored locally, survives restarts).
@@ -142,10 +142,10 @@ export function SlackHowItWorks({ workspaces }: { workspaces: SlackWorkspace[] }
 
 /* ---- shared miniature furniture ----
  *
- * Everything from here down draws a FICTIONAL Slack workspace and the OpenWorker window
+ * Everything from here down draws a FICTIONAL Slack workspace and the Judith window
  * beside it. It stays in English on purpose: the left pane imitates Slack's own interface,
  * and a Portuguese rendering of it would depict a product that doesn't exist. The Sticky
- * notes are the exception — they are OpenWorker's annotations ON the scene, not part of it,
+ * notes are the exception — they are Judith's annotations ON the scene, not part of it,
  * so they are translated. */
 
 // The scenes deliberately play in a FICTIONAL workspace ("Lumina Labs") — a real
@@ -271,7 +271,7 @@ function OwRail({ hot, hotSub, glow }: { hot?: string; hotSub?: string; glow?: b
   );
 }
 
-/** The annotations OpenWorker draws over the scene — translated, unlike the scene. */
+/** The annotations Judith draws over the scene — translated, unlike the scene. */
 function useStickyNotes() {
   const { t } = useI18n();
   return {

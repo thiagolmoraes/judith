@@ -1,4 +1,4 @@
-"""The cloud switch: with `cloud_enabled` off (the default), nothing reaches OpenWorker
+"""The cloud switch: with `cloud_enabled` off (the default), nothing reaches Judith
 Cloud and the GUI is told not to offer sign-in.
 
 The point of the flag is that a local-only install is local-only *provably*, not by the

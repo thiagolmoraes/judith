@@ -3,7 +3,7 @@
 #
 #   1. PyInstaller-bundle the server into a standalone onedir folder (no venv at runtime).
 #   2. Stage it at binaries/sidecar/ for Tauri's `resources` slot (+ sign its Mach-Os).
-#   3. `tauri build --bundles app` → OpenWorker.app (resources are copied in).
+#   3. `tauri build --bundles app` → Judith.app (resources are copied in).
 #   4. Wrap the .app in a compressed .dmg via hdiutil (reliable + headless; Tauri's own
 #      bundle_dmg.sh uses Finder AppleScript and fails in non-interactive sessions).
 #

@@ -23,7 +23,7 @@ from __future__ import annotations
 PT_BR: dict[str, str] = {
     # -- blurbs -----------------------------------------------------------------
     "Two-way messaging with a Telegram bot.": "Mensagens nos dois sentidos com um bot do Telegram.",
-    "Two-way messaging — one-click via OpenWorker Cloud, or a manual Slack app (Socket Mode).": "Mensagens nos dois sentidos — em um clique pelo OpenWorker Cloud, ou com um app do Slack manual (Socket Mode).",
+    "Two-way messaging — one-click via Judith Cloud, or a manual Slack app (Socket Mode).": "Mensagens nos dois sentidos — em um clique pelo Judith Cloud, ou com um app do Slack manual (Socket Mode).",
     "Read, search, and send mail from any IMAP account — Gmail, iCloud, Fastmail, or custom.": "Leia, pesquise e envie e-mails de qualquer conta IMAP — Gmail, iCloud, Fastmail ou outra.",
     "Search, summarize, draft, and send email.": "Pesquise, resuma, redija e envie e-mails.",
     "Read availability, summarize schedules, and create events.": "Consulte disponibilidade, resuma agendas e crie eventos.",
@@ -134,7 +134,7 @@ PT_BR: dict[str, str] = {
     "Google OAuth token with Calendar scopes.": "Token OAuth do Google com escopos do Calendar.",
     "No setup required. Browser tools are available to Cowork sessions.": "Não precisa configurar nada. As ferramentas de navegador ficam disponíveis nas sessões do Cowork.",
     "Fine-grained or classic GitHub token.": "Token do GitHub fine-grained ou clássico.",
-    "One click connects via OpenWorker Cloud (recommended).": "Em um clique, conecta pelo OpenWorker Cloud (recomendado).",
+    "One click connects via Judith Cloud (recommended).": "Em um clique, conecta pelo Judith Cloud (recomendado).",
     "Manual: paste a Microsoft Graph access token with Mail and Calendar scopes.": "Manual: cole um access token do Microsoft Graph com escopos de Mail e Calendar.",
     "Microsoft Graph access token.": "Access token do Microsoft Graph.",
     "One click connects via Atlassian sign-in in your browser (recommended).": "Em um clique, conecta pelo login da Atlassian no seu navegador (recomendado).",
@@ -192,7 +192,7 @@ PT_BR: dict[str, str] = {
     "Search, summarize, and send over your Gmail. Multiple accounts connect side by side, and privacy filters can hide chosen senders or labels from agents entirely.": "Pesquise, resuma e envie pelo seu Gmail. Várias contas podem ser conectadas ao mesmo tempo, e filtros de privacidade escondem completamente dos agentes os remetentes ou marcadores que você escolher.",
     "Check availability, summarize your week, and manage events. Multiple Google accounts connect side by side.": "Confira disponibilidade, resuma sua semana e gerencie eventos. Várias contas Google podem ser conectadas ao mesmo tempo.",
     "A built-in browser agents drive to read pages and act on websites — separate from your personal browser, with actions subject to approval.": "Um navegador embutido que os agentes usam para ler páginas e agir em sites — separado do seu navegador pessoal, com as ações sujeitas a aprovação.",
-    "Work with issues, pull requests, repository files, and CI status. One click installs the OpenWorker GitHub App on the repositories you pick; mention the agent on an issue or PR and it answers from your desktop.": "Trabalhe com issues, pull requests, arquivos do repositório e status de CI. Em um clique, instala o GitHub App do OpenWorker nos repositórios que você escolher; mencione o agente em uma issue ou PR e ele responde a partir do seu computador.",
+    "Work with issues, pull requests, repository files, and CI status. One click installs the Judith GitHub App on the repositories you pick; mention the agent on an issue or PR and it answers from your desktop.": "Trabalhe com issues, pull requests, arquivos do repositório e status de CI. Em um clique, instala o GitHub App do Judith nos repositórios que você escolher; mencione o agente em uma issue ou PR e ele responde a partir do seu computador.",
     "Search, summarize, and send Microsoft 365 mail, and run your calendar — create and move meetings, respond to invites. Multiple mailboxes connect side by side.": "Pesquise, resuma e envie e-mails do Microsoft 365, e cuide da sua agenda — crie e mova reuniões, responda convites. Várias caixas podem ser conectadas ao mesmo tempo.",
     "Search and read your CRM; optionally log notes and tasks and update records. Read-only vs read & write is chosen at consent time, and chosen properties can be hidden from agents entirely.": "Pesquise e leia seu CRM; opcionalmente registre notas e tarefas e atualize registros. Somente leitura ou leitura e escrita é escolhido na hora do consentimento, e as propriedades que você escolher ficam totalmente escondidas dos agentes.",
     "Search and read the pages and databases you share with the connection, and create new pages. You choose exactly which pages it can see.": "Pesquise e leia as páginas e bancos de dados que você compartilhar com a conexão, e crie novas páginas. Você escolhe exatamente quais páginas ela enxerga.",

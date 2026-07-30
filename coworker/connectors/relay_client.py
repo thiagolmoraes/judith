@@ -4,7 +4,7 @@ The desktop offers the user two ways to receive Slack:
 - **Socket Mode** (`SlackAdapter`): manual bot + app tokens, one workspace, a
   direct WebSocket to Slack. No cloud involved.
 - **Managed relay** (`SlackRelayAdapter`, here): "Add to Slack" OAuth, no tokens
-  typed, *many* workspaces, events pushed from OpenWorker Cloud over one
+  typed, *many* workspaces, events pushed from Judith Cloud over one
   authenticated WebSocket. Replies still go desktop → Slack Web API directly
   with the per-team bot token (the relay is inbound-only).
 
@@ -329,7 +329,7 @@ class SlackRelayAdapter(BasePlatformAdapter):
             return
         channel = mapped.source.chat_id  # bare channel id before qualification
         # Resolve friendly names with THIS workspace's bot token (cached per team),
-        # mirroring the Socket-Mode adapter — so cards read "@OpenWorker"/"Rohit"/"#ocw-test"
+        # mirroring the Socket-Mode adapter — so cards read "@Judith"/"Rohit"/"#ocw-test"
         # not raw U…/C… ids. Best-effort: ids fall through on failure.
         if not mapped.source.user_name:
             mapped.source.user_name = await self._display_name(

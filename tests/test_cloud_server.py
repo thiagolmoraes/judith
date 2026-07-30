@@ -1,4 +1,4 @@
-"""Sidecar loopback routes for OpenWorker Cloud: /oauth/callback,
+"""Sidecar loopback routes for Judith Cloud: /oauth/callback,
 /auth/callback, /v1/cloud/*, connect-managed gating."""
 
 from __future__ import annotations

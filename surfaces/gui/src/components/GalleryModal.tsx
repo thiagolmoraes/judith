@@ -150,7 +150,7 @@ export function GalleryModal({
         {(
           [
             ["all", t("gallery.all")],
-            ["openworker", t("gallery.fromOpenWorker")],
+            ["openworker", t("gallery.fromJudith")],
             ["team", t("gallery.fromTeam")],
           ] as [Source, string][]
         ).map(([key, label]) => (

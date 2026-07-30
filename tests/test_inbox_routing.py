@@ -83,7 +83,7 @@ def test_reply_without_token_is_ignored(tmp_path):
 
 
 def test_inbound_legacy_ocw_token_still_resolves(tmp_path):
-    """Replies to messages sent BEFORE the @OpenWorker rename carry [ocw:…] — must keep working."""
+    """Replies to messages sent BEFORE the @Judith rename carry [ocw:…] — must keep working."""
     store = InboxStore(tmp_path / "inbox.json")
     item = store.add_approval("s1", "Deploy?", inbox="ops")
     assert resolve_from_reply(f"deny [ocw:{item.id}]", store.resolve) is True

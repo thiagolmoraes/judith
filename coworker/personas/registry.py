@@ -123,7 +123,7 @@ class PersonaRegistry:
         # from the Personas tab.
         self._register_builder(
             "cowork",
-            "OpenWorker",
+            "Judith",
             "cowork",
             "Produce a deliverable — research, analysis, scripts",
             cowork_agent,

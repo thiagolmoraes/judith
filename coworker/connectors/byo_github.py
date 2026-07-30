@@ -5,7 +5,7 @@ OAuth providers in ``byo_oauth.py``. It signs a short-lived JWT with its own RSA
 then trades that JWT for an *installation* access token scoped to one installation. Those
 tokens last an hour and are never stored at rest.
 
-The managed path routes all three steps through OpenWorker's broker
+The managed path routes all three steps through Judith's broker
 (``cloud.github_installation_token``), which holds the ``ocw-agent`` App's private key. This
 module does the same thing with a key you own, so the agent acts as *your* App and no cloud
 sign-in is involved.

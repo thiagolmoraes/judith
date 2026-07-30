@@ -26,7 +26,7 @@ Scenario simulation drove the scope (predicted hit rates in parentheses):
 ## Decisions (locked during brainstorm)
 
 1. **Transport: watched files only.** The hook writes to `~/.claude/ow-bridge/`;
-   OpenWorker polls that directory. No POST to the sidecar — the sidecar's dynamic
+   Judith polls that directory. No POST to the sidecar — the sidecar's dynamic
    port + token would make the hook fragile, and a file registry keeps events durable
    when the app is closed.
 2. **Registry is the source of truth; discovery is the liveness test.** A registry
@@ -63,7 +63,7 @@ coworker/cli.py                     # (upgrade) `claude-bridge install-hooks`
 ```
 
 SOLID: `hook_script` is standalone by necessity (it runs in Claude Code's process
-context, not OpenWorker's). `watcher` depends on `registry`, `SessionDiscovery`, and a
+context, not Judith's). `watcher` depends on `registry`, `SessionDiscovery`, and a
 `Notifier` protocol — the WhatsApp implementation is injected, tests pass a fake.
 
 ## Components
@@ -165,7 +165,7 @@ file before the first write.
 | # | Failure | Behaviour |
 |---|---|---|
 | C1 | — (no POST anymore) | eliminated by the file-only transport |
-| C2 | OpenWorker closed when the turn ends | no notification (by design); registry persists; next pull is exact |
+| C2 | Judith closed when the turn ends | no notification (by design); registry persists; next pull is exact |
 | C3 | Notification payload without command detail | generic "waiting for approval" text; message field included when present |
 | C6 | session crashes, `SessionEnd` never fires | pid liveness prune; watched → "closed before finishing" notify |
 | C7 | chatty session would spam | only watched sessions notify, one-shot |
@@ -173,7 +173,7 @@ file before the first write.
 | C9 | hook slow/broken | exits 0 always; Claude Code's hook timeout contains it; watcher tolerates malformed files |
 | C10 | WhatsApp/Evolution down at notify time | send fails → logged and dropped; registry state still answers the next pull |
 | — | hooks not installed | everything degrades to phase-1 behaviour; watch tool returns `no_registry` with install instructions |
-| — | two OpenWorker instances | poll + one-shot `pop` keeps a watch from double-firing (last reader wins the pop) |
+| — | two Judith instances | poll + one-shot `pop` keeps a watch from double-firing (last reader wins the pop) |
 
 ## Testing
 

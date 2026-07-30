@@ -6,20 +6,20 @@
 ## Problem
 
 The owner runs long-lived Claude Code sessions in iTerm2 tabs on the same machine that
-runs OpenWorker. From WhatsApp they want to ask things like "did the webhook session
-finish?", have OpenWorker locate the right live session, optionally send it input, and
+runs Judith. From WhatsApp they want to ask things like "did the webhook session
+finish?", have Judith locate the right live session, optionally send it input, and
 get the answer back — all mediated by the existing WhatsApp connector:
 
 ```
-WhatsApp msg ──► OpenWorker (Assistant session) ──► Claude Code session
-Claude Code ──► OpenWorker ──────────────────────► WhatsApp reply
+WhatsApp msg ──► Judith (Assistant session) ──► Claude Code session
+Claude Code ──► Judith ──────────────────────► WhatsApp reply
 ```
 
 Sessions are addressed by free-form description ("the one working on the webhook"), not
 by fixed names: the agent lists live sessions with transcript tails and decides which
 one matches.
 
-## Approach (chosen: A — tool kit on the OpenWorker agent)
+## Approach (chosen: A — tool kit on the Judith agent)
 
 No daemon, no new state. A new domain package plus three thin tools that the
 WhatsApp-facing Assistant session gains. Inbound routing, session-per-contact, and the
@@ -88,7 +88,7 @@ class LiveSession:
 5. Builds each `LiveSession` with the transcript tail.
 
 The subprocess runner is injectable (`run=subprocess.run`) so tests feed canned
-`ps`/`lsof` output. Discovery excludes OpenWorker's own process tree so the agent can
+`ps`/`lsof` output. Discovery excludes Judith's own process tree so the agent can
 never inject into the session that is answering WhatsApp.
 
 ### `transcript.py`
@@ -135,7 +135,7 @@ macOS.
 
 ```
 WhatsApp "did the webhook session finish?"
-  → Evolution webhook → OpenWorker Assistant session (existing)
+  → Evolution webhook → Judith Assistant session (existing)
   → agent: find_claude_sessions() → reads tails → picks the match
   → read_claude_transcript(tty) → interprets state
   → answer → existing platform reply path (#24) → WhatsApp
@@ -158,7 +158,7 @@ session already runs unattended.
 | Malformed/truncated JSONL line | line skipped; parse never raises |
 | Quotes/emoji/multiline in injected text | AppleScript escaping is tested; multiline collapses to spaces |
 | Not macOS | tools are not registered at all |
-| **Loop**: target session is the one answering WhatsApp | discovery excludes OpenWorker's own process tree |
+| **Loop**: target session is the one answering WhatsApp | discovery excludes Judith's own process tree |
 
 ## Testing
 
@@ -167,7 +167,7 @@ the suite runs on any CI including Linux.
 
 - `tests/test_claude_bridge_discovery.py` — fake runner with canned `ps`/`lsof` output:
   finds pids, maps the munged cwd, picks the right JSONL among several, excludes
-  OpenWorker's own tree, yields `transcript=None` on an empty dir.
+  Judith's own tree, yields `transcript=None` on an empty dir.
 - `tests/test_claude_bridge_transcript.py` — real JSONL fixtures under `tmp_path`: tail
   parses roles, skips a malformed line; `wait_for_reply` sees a new entry, honours the
   timeout and the settle window (injectable clock/sleep, no real sleeping).

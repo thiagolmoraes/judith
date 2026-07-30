@@ -20,7 +20,7 @@ from typing import Callable, Optional
 
 DEFAULT_INBOX = "default"
 # Embeds the item id in a delivered message. Emitted as [ow:…] since the bot's rebrand
-# to OpenWorker (2026-07-22); the legacy [ocw:…] spelling stays parseable so replies to
+# to Judith (2026-07-22); the legacy [ocw:…] spelling stays parseable so replies to
 # messages sent before the rename still resolve.
 _ID_TOKEN = re.compile(r"\[o(?:c)?w:([0-9a-f]{6,})\]")
 

@@ -1,6 +1,6 @@
 """Bring-your-own OAuth — the one-click connect flow driven by *your* OAuth app.
 
-The managed path in ``cloud.py`` runs every step through OpenWorker's broker: it builds the
+The managed path in ``cloud.py`` runs every step through Judith's broker: it builds the
 consent URL (``/v1/oauth/<provider>/start``), exchanges the code, and rotates refresh tokens.
 That needs a cloud sign-in, and the client secret lives on their server. This module is the
 same flow with the broker removed: you register an OAuth app with the provider once, put its

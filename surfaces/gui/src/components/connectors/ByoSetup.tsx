@@ -10,7 +10,7 @@ import { PILL_ACCENT, PILL_LINE, TAG_QUIET } from "./ui";
 import { useI18n } from "../../i18n/useLocale";
 
 // The third connect mode: browser consent driven by an OAuth app the USER registered,
-// so one-click works with no OpenWorker Cloud sign-in and the agent acts as their app.
+// so one-click works with no Judith Cloud sign-in and the agent acts as their app.
 // Setup is a one-time paste of the app's credentials; after that it's the same
 // click-and-approve as the managed path. Registering the app is the cost — this pane
 // is deliberately explicit about that rather than hiding it behind a button that fails.
@@ -190,7 +190,7 @@ export function ByoSetup({
   return (
     <div className="px-5 py-4 space-y-3">
       <p className="text-[13px] text-muted">
-        Use your own {isGithub ? t("byo.githubApp") : t("byo.oauthApp")} instead of OpenWorker's. Same
+        Use your own {isGithub ? t("byo.githubApp") : t("byo.oauthApp")} instead of Judith's. Same
         click-and-approve, no cloud sign-in, and the agent acts as your app.
       </p>
 

@@ -131,7 +131,7 @@ Expected: FAIL with `ModuleNotFoundError`
 - [ ] **Step 3: Implement `hook_script.py`**
 
 ```python
-"""Claude Code hook → OpenWorker bridge registry.
+"""Claude Code hook → Judith bridge registry.
 
 Runs INSIDE Claude Code's hook mechanism (registered by
 `python -m coworker.claude_bridge.install`), so: stdlib only, no imports from the rest
@@ -1584,7 +1584,7 @@ def uninstall(settings_path: Path, bridge_dir: Path) -> list[str]:
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m coworker.claude_bridge.install",
-        description="Install the OpenWorker bridge hooks into Claude Code.",
+        description="Install the Judith bridge hooks into Claude Code.",
     )
     parser.add_argument("--uninstall", action="store_true")
     args = parser.parse_args(argv)

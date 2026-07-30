@@ -138,7 +138,7 @@ def test_page_has_no_mixed_language_sentences(client):
     broken rather than untranslated — worse than leaving it in English."""
     _set_locale(client.state_dir, "pt-BR")
     body = client.get("/oauth/callback?error=denied").text
-    for english in ("Close this tab", "Return to OpenWorker", "You can close"):
+    for english in ("Close this tab", "Return to Judith", "You can close"):
         assert english not in body, f"leftover English fragment: {english}"
 
 
@@ -405,7 +405,7 @@ def test_rest_errors_the_gui_shows_are_translated(client):
 
     body = client.get("/v1/cloud/gallery").json()
     assert body["ok"] is False
-    assert body["error"] == "a galeria exige login no OpenWorker Cloud"
+    assert body["error"] == "a galeria exige login no Judith Cloud"
 
 
 def test_git_clone_failure_is_short_and_translated(client, monkeypatch):

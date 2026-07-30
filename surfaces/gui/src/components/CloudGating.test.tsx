@@ -3,7 +3,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { cloudAvailable, type CloudStatus } from "../api";
 import { GalleryModal } from "./GalleryModal";
 
-// With OpenWorker Cloud switched off, no surface may offer to sign in: the route refuses,
+// With Judith Cloud switched off, no surface may offer to sign in: the route refuses,
 // so every prompt is a dead end. The gating lives in several components, and the first
 // pass missed four of them — the sidebar account menu and footer, the Gallery, the
 // automation quickstart, and the onboarding band — so this file pins the predicate,

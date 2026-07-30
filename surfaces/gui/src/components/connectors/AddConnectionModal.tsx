@@ -49,7 +49,7 @@ export function AddConnectionModal({
   // with manual fields alongside (jira, asana) it's a second mode; alone (monday)
   // it IS the connect flow.
   const mcpBacked = !!c.mcp;
-  // The managed one-click needs OpenWorker Cloud. With it switched off the pane would be
+  // The managed one-click needs Judith Cloud. With it switched off the pane would be
   // marketing copy above a button that can't work, so drop the tab entirely — except for
   // MCP-backed connectors, whose one-click is local OAuth and needs no cloud at all.
   const managedOneClick =
@@ -154,7 +154,7 @@ export function AddConnectionModal({
 
 // One-click pane for MCP-BACKED connectors (monday, asana, jira — §42): the sidecar
 // runs a fully LOCAL OAuth flow against the vendor's hosted MCP server (DCR — no
-// client secret, no broker, no OpenWorker sign-in required). Poll until the card
+// client secret, no broker, no Judith sign-in required). Poll until the card
 // flips to connected, then close.
 function McpOneClick({ c, onConnected }: { c: Connector; onConnected: () => void }) {
   const { t } = useI18n();
@@ -182,7 +182,7 @@ function McpOneClick({ c, onConnected }: { c: Connector; onConnected: () => void
     <div className="px-5 py-4 space-y-3">
       <p className="text-[13px] text-muted">
         Opens {c.title} in your browser — sign in and approve access there. No tokens
-        typed, and no OpenWorker account needed: the sign-in runs entirely on this
+        typed, and no Judith account needed: the sign-in runs entirely on this
         computer.
       </p>
       <button
@@ -290,7 +290,7 @@ function GithubOneClick({ c, cloud }: { c: Connector; cloud: CloudStatus | null 
   return (
     <div className="px-5 py-4 space-y-3">
       <p className="text-[13px] text-muted">
-        Opens GitHub in your browser — approve OpenWorker there. An existing @ocw-agent App
+        Opens GitHub in your browser — approve Judith there. An existing @ocw-agent App
         installation links right up; otherwise you'll pick an account and repos. No tokens
         typed; the agent acts as ocw-agent[bot].
       </p>

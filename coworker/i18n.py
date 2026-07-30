@@ -43,11 +43,11 @@ _MESSAGES: dict[str, dict[str, str]] = {
     },
     "error.galleryNeedsSignIn": {
         "en": "gallery requires cloud sign-in",
-        "pt-BR": "a galeria exige login no OpenWorker Cloud",
+        "pt-BR": "a galeria exige login no Judith Cloud",
     },
     "error.galleryUnreachable": {
         "en": "gallery requires cloud sign-in (or the cloud is unreachable)",
-        "pt-BR": "a galeria exige login no OpenWorker Cloud (ou a nuvem está inacessível)",
+        "pt-BR": "a galeria exige login no Judith Cloud (ou a nuvem está inacessível)",
     },
     "error.notADirectory": {
         "en": "not a directory: {path}",
@@ -87,8 +87,8 @@ _MESSAGES: dict[str, dict[str, str]] = {
     # -- loopback browser pages (server/app.py) ---------------------------------
     "page.signedIn.title": {"en": "Signed in", "pt-BR": "Login concluído"},
     "page.signedIn.detail": {
-        "en": "You're signed in to OpenWorker Cloud. You can close this tab and return to Judith.",
-        "pt-BR": "Login no OpenWorker Cloud concluído. Você pode fechar esta aba e voltar para o Judith.",
+        "en": "You're signed in to Judith Cloud. You can close this tab and return to Judith.",
+        "pt-BR": "Login no Judith Cloud concluído. Você pode fechar esta aba e voltar para o Judith.",
     },
     "page.signInFailed.title": {"en": "Sign-in failed", "pt-BR": "Falha no login"},
     "page.signInFailed.detail": {
@@ -175,8 +175,8 @@ _MESSAGES: dict[str, dict[str, str]] = {
     },
     "error.notSignedIn": {"en": "not signed in", "pt-BR": "sem login"},
     "error.cloudDisabled": {
-        "en": "OpenWorker Cloud is disabled",
-        "pt-BR": "o OpenWorker Cloud está desativado",
+        "en": "Judith Cloud is disabled",
+        "pt-BR": "o Judith Cloud está desativado",
     },
     "error.unknownProvider": {
         "en": "unknown provider: {name}",

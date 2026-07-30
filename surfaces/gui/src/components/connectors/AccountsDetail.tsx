@@ -60,7 +60,7 @@ export function AccountsDetail({ c, cloud, slack: _slack, onChanged }: DetailPro
           disabled={busy}
           title={
             c.managed && !cloud?.signed_in
-              ? "Sign in to OpenWorker Cloud for one-click — or add a token below"
+              ? "Sign in to Judith Cloud for one-click — or add a token below"
               : ""
           }
         >

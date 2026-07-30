@@ -1,4 +1,4 @@
-"""Claude Code hook → OpenWorker bridge registry.
+"""Claude Code hook → Judith bridge registry.
 
 Runs INSIDE Claude Code's hook mechanism (registered by
 `python -m coworker.claude_bridge.install`), so: stdlib only, no imports from the rest

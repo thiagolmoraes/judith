@@ -96,7 +96,7 @@ def _browser_page(
     return (
         "<!doctype html><html><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-        f"<title>{_html.escape(title)} — OpenWorker</title><style>"
+        f"<title>{_html.escape(title)} — Judith</title><style>"
         ":root{--paper:#f6f5f2;--panel:#fff;--line:#e4e2dc;--ink:#2c2c2a;--muted:#6f6e68;"
         "--faint:#a3a19a;--accent:#3670b2;--ok:#2e7d4f;--ok-soft:#e3f2e9;--bad:#b3423a;"
         "--bad-soft:#f8e7e5}"
@@ -128,7 +128,7 @@ def _browser_page(
         "padding:7px 10px;margin-top:12px;text-align:left;word-break:break-word}"
         ".foot{font-size:10.5px;color:var(--faint)}"
         "</style></head><body>"
-        '<div class="card"><div class="mark"><i></i>OpenWorker</div>'
+        '<div class="card"><div class="mark"><i></i>Judith</div>'
         f"{icon}<h1>{_html.escape(title)}</h1><p>{_html.escape(detail)}</p>{err}</div>"
         '<div class="foot">' + _html.escape(t("page.footer")) + "</div>"
         "</body></html>"
@@ -228,7 +228,7 @@ def create_app(manager: SessionManager) -> FastAPI:
         ):
             return await call_next(request)
         return JSONResponse(
-            {"error": "missing or invalid OpenWorker sidecar token"},
+            {"error": "missing or invalid Judith sidecar token"},
             status_code=401,
         )
 
@@ -1090,7 +1090,7 @@ def create_app(manager: SessionManager) -> FastAPI:
         action = str((body or {}).get("action", "")).strip()
         return await manager.resolve_unauthorized(name, item_id, action)
 
-    # -- OpenWorker Cloud: sign-in + managed one-click connect ---------------
+    # -- Judith Cloud: sign-in + managed one-click connect ---------------
     # All optional: the app is fully functional signed out (manual token paste
     # stays available for every connector, before and after sign-in).
 

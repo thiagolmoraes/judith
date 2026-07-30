@@ -23,7 +23,7 @@ auto_allow = ["write_file", "replace_in_file", "apply_patch", "apply_unified_dif
 host = "127.0.0.1"
 port = 8765
 
-# OpenWorker Cloud: sign-in, managed one-click connectors, the Slack/GitHub inbound relay,
+# Judith Cloud: sign-in, managed one-click connectors, the Slack/GitHub inbound relay,
 # and product telemetry. Off by default — nothing reaches the cloud and the app never asks
 # you to create an account.
 #

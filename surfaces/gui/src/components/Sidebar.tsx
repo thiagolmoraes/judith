@@ -1171,9 +1171,9 @@ export function Sidebar(props: Props) {
                 {!cloudAvailable(cloud) ? null : cloud?.signed_in ? (
                   <div
                     className="px-3 py-1.5 mb-1 text-[11px] text-faint truncate border-b border-line"
-                    title={`${accountEmail} · OpenWorker Cloud`}
+                    title={`${accountEmail} · Judith Cloud`}
                   >
-                    {accountEmail} · OpenWorker Cloud
+                    {accountEmail} · Judith Cloud
                   </div>
                 ) : (
                   <>

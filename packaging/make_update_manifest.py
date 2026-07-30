@@ -9,8 +9,8 @@ Run by the release CI job after all platform builds are staged in one directory:
 Looks for the updater artifacts by their STABLE names (the same names release.yml
 uploads):
 
-    OpenWorker-macos-arm64.app.tar.gz(.sig)   -> platforms["darwin-aarch64"]
-    OpenWorker-windows-setup.exe(.sig)        -> platforms["windows-x86_64"]
+    Judith-macos-arm64.app.tar.gz(.sig)   -> platforms["darwin-aarch64"]
+    Judith-windows-setup.exe(.sig)        -> platforms["windows-x86_64"]
 
 URLs point at the TAG-pinned GitHub download path (releases/download/<tag>/<asset>),
 never at `latest/` — a manifest must reference exactly the artifacts it shipped with,
@@ -33,8 +33,8 @@ import sys
 
 # stable asset name -> Tauri platform key
 ARTIFACTS = {
-    "OpenWorker-macos-arm64.app.tar.gz": "darwin-aarch64",
-    "OpenWorker-windows-setup.exe": "windows-x86_64",
+    "Judith-macos-arm64.app.tar.gz": "darwin-aarch64",
+    "Judith-windows-setup.exe": "windows-x86_64",
 }
 
 

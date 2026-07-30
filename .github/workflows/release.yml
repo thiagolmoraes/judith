@@ -10,7 +10,7 @@
 #   - manual run     → builds and uploads workflow artifacts only (no release).
 #
 # Each installer is uploaded twice: once with its versioned name (archive) and once with a
-# stable name (OpenWorker-macos-arm64.dmg, …) so the website can link to
+# stable name (Judith-macos-arm64.dmg, …) so the website can link to
 #   github.com/<repo>/releases/latest/download/<stable-name>
 # and never need updating.
 #
@@ -126,20 +126,20 @@ jobs:
           BUNDLE=surfaces/gui/src-tauri/target/release/bundle
           if [ "$RUNNER_OS" = "Windows" ]; then
             cp "$BUNDLE"/nsis/*.exe out/
-            cp "$BUNDLE"/nsis/*.exe out/OpenWorker-windows-setup.exe
+            cp "$BUNDLE"/nsis/*.exe out/Judith-windows-setup.exe
             cp "$BUNDLE"/msi/*.msi out/
-            cp "$BUNDLE"/msi/*.msi out/OpenWorker-windows.msi
+            cp "$BUNDLE"/msi/*.msi out/Judith-windows.msi
             # Updater signature for the NSIS installer (present only when the updater key
             # secret is configured). The .sig signs CONTENT, so the stable rename is safe.
             SIG=$(ls "$BUNDLE"/nsis/*.exe.sig 2>/dev/null | head -1 || true)
-            [ -n "$SIG" ] && cp "$SIG" out/OpenWorker-windows-setup.exe.sig
+            [ -n "$SIG" ] && cp "$SIG" out/Judith-windows-setup.exe.sig
           else
             cp "$BUNDLE"/dmg/*.dmg out/
-            cp "$BUNDLE"/dmg/*.dmg out/OpenWorker-${{ matrix.slug }}.dmg
+            cp "$BUNDLE"/dmg/*.dmg out/Judith-${{ matrix.slug }}.dmg
             # macOS updater artifact: the signed .app tarball the installed app swaps in.
-            if [ -f "$BUNDLE"/macos/OpenWorker.app.tar.gz ]; then
-              cp "$BUNDLE"/macos/OpenWorker.app.tar.gz out/OpenWorker-${{ matrix.slug }}.app.tar.gz
-              cp "$BUNDLE"/macos/OpenWorker.app.tar.gz.sig out/OpenWorker-${{ matrix.slug }}.app.tar.gz.sig
+            if [ -f "$BUNDLE"/macos/Judith.app.tar.gz ]; then
+              cp "$BUNDLE"/macos/Judith.app.tar.gz out/Judith-${{ matrix.slug }}.app.tar.gz
+              cp "$BUNDLE"/macos/Judith.app.tar.gz.sig out/Judith-${{ matrix.slug }}.app.tar.gz.sig
             fi
           fi
           ls -la out
@@ -181,7 +181,7 @@ jobs:
             python3 packaging/make_update_manifest.py \
               --version "${TAG#v}" --tag "$TAG" --repo "$GITHUB_REPOSITORY" \
               --dist dist --out dist/latest.json \
-              --notes "OpenWorker ${TAG#v}"
+              --notes "Judith ${TAG#v}"
           else
             echo "::warning::no updater signatures in dist/ — release ships WITHOUT auto-update manifest"
           fi

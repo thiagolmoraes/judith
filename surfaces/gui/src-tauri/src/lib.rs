@@ -1,4 +1,4 @@
-//! OpenWorker desktop shell.
+//! Judith desktop shell.
 //!
 //! Tauri is a thin native window over the existing React SPA. It:
 //!   1. picks a free localhost port and starts the Python `openworker-server` as a managed

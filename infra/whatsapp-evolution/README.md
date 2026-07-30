@@ -25,7 +25,7 @@ earlier ones in a `.env`. Delete the blank pair if you prefer a tidy file.)
 Then open `http://localhost:8090/manager`, paste the API key, create an instance named
 `openworker`, and pair it: **WhatsApp → Settings → Linked devices → Link a device**.
 
-In OpenWorker: Settings ▸ Connectors ▸ enable experimental connectors, then connect
+In Judith: Settings ▸ Connectors ▸ enable experimental connectors, then connect
 **WhatsApp (self-hosted)** with the server URL, the API key, and the instance name.
 
 ## Two things that are easy to get wrong
@@ -63,7 +63,7 @@ curl localhost:8090/webhook/find/openworker -H "apikey: $KEY"
 ```
 
 If the URL there is not the sidecar's current port, reconnect the connector in
-OpenWorker — that is what re-registers it.
+Judith — that is what re-registers it.
 
 ## Data
 

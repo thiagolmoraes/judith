@@ -39,13 +39,13 @@ class Config:
     port: int = 8765
     # Web search provider: "duckduckgo" (keyless default) | "tavily" | "brave" (need a key).
     web_search_provider: str = "duckduckgo"
-    # Master switch for everything that talks to OpenWorker Cloud: sign-in, managed
+    # Master switch for everything that talks to Judith Cloud: sign-in, managed
     # connectors, telemetry, the relay. Off ⇒ the GUI offers no sign-in and the cloud
     # routes refuse, so a local-only install never has an account dangled at it. The
     # non-cloud paths (manual tokens, bring-your-own OAuth apps, Slack Socket Mode) are
     # unaffected; managed-only GitHub inbound is the one thing that needs this on.
     cloud_enabled: bool = False
-    # OpenWorker Cloud (sign-in + managed connectors). Config, never constants:
+    # Judith Cloud (sign-in + managed connectors). Config, never constants:
     # dev/staging/BYO-VPC deployments point these at their own instances.
     cloud_base_url: str = "https://api.openworker.com"
     # Auth0 tenant + API audience are registered identifiers, not branding: the
