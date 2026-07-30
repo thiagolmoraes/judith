@@ -37,3 +37,12 @@ def test_sleep_until_reports_an_unparseable_timestamp(tmp_path):
     tools = {t.__name__: t for t in selfwake_tools(WakeStore(tmp_path / "w.json"), "s1")}
     result = tools["sleep_until"]("tomorrow morning")
     assert "error" in result and "ISO-8601" in result["error"]
+
+
+def test_sleep_until_accepts_a_z_suffixed_utc_timestamp(tmp_path):
+    """"2027-01-01T08:00:00Z" is the most common UTC spelling, and fromisoformat
+    rejects the Z on Python < 3.11 — a valid future wake bounced as unparseable."""
+    from coworker.selfwake import WakeStore, selfwake_tools
+
+    tools = {t.__name__: t for t in selfwake_tools(WakeStore(tmp_path / "w.json"), "s1")}
+    assert tools["sleep_until"]("2027-01-01T08:00:00Z")["ok"] is True

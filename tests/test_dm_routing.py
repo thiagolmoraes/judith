@@ -261,10 +261,26 @@ def test_stripping_leaves_an_ordinary_reply_alone():
 
 def test_a_reply_that_is_only_a_header_is_not_sent(tmp_path, monkeypatch):
     """Stripping can empty the text. Sending "" would deliver a blank WhatsApp
-    message, which is worse than sending nothing."""
-    from coworker.server.manager import _strip_reply_header
+    message, which is worse than sending nothing — the fallback must skip the send
+    entirely, not hand "" to the sender."""
+    sent: list[tuple[str, str]] = []
 
-    assert _strip_reply_header("[WhatsApp DM · x | reply→slack:C1]") == ""
+    def fake_tool(secrets, senders=None):
+        def send_message(target: str, text: str):
+            sent.append((target, text))
+            return {"ok": True, "message_id": "M", "target": target}
+
+        return send_message
+
+    import coworker.connectors.tools as tools_mod
+
+    monkeypatch.setattr(tools_mod, "make_send_message_tool", fake_tool)
+
+    mgr = SessionManager(workspace=tmp_path, provider=ScriptedProvider())
+    asyncio.run(
+        mgr._deliver_unsent_reply("s1", "slack:C1", "[WhatsApp DM · x | reply→slack:C1]")
+    )
+    assert sent == []  # nothing left after the strip → no send at all
 
 
 def test_a_self_wake_still_knows_where_to_reply(tmp_path, monkeypatch):
@@ -419,3 +435,11 @@ def test_the_three_paths_agree_on_the_destination(tmp_path):
         )
     )
     assert from_message == from_wake == from_task == target
+
+
+def test_a_mention_thread_session_resolves_its_reply_target(tmp_path):
+    """A Slack mention thread's session belongs to its thread the way a DM session
+    belongs to its contact — a self-wake in one must still find its way back."""
+    mgr = SessionManager(workspace=tmp_path, provider=ScriptedProvider())
+    mgr.mention_sessions.set("slack:C9:171.42", "sess-9", channel="slack:C9")
+    assert mgr._reply_target_for("sess-9", None) == "slack:C9:171.42"

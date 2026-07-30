@@ -106,7 +106,7 @@ _REPLY_HEADER_RE = re.compile(
 
 # Tools that mean "I will act later". Text from a turn that called one of these is a
 # plan, not an answer, so the safety net leaves it alone and waits for the woken turn.
-_SCHEDULING_TOOLS = frozenset({"sleep_for", "sleep_until", "wake_on"})
+_SCHEDULING_TOOLS = frozenset({"sleep_for", "sleep_until", "wake_on", "wake_on_event"})
 
 
 def _strip_reply_header(text: str) -> str:
@@ -259,6 +259,10 @@ class SessionManager:
         # things the mention router needs — dedupe, and a standing grant that
         # get_engine re-derives on every rebuild.
         self.dm_sessions = MentionSessionStore(base / "dm_contacts.json")
+        # One send_message closure for the unsent-reply fallback, built lazily: the
+        # factory's duplicate-send suppression window lives inside the closure, so a
+        # fresh closure per delivery would never suppress anything.
+        self._unsent_reply_send = None
         # Unauthorized inbound messages, parked instead of dropped (one-step allow-and-deliver).
         self.parked = ParkedStore(base / "parked.json")
         # People directory: "platform:user_id" → display name, noted from every inbound
@@ -3020,6 +3024,10 @@ class SessionManager:
             )
         for target in self.dm_sessions.targets_for(session_id):
             return target
+        # Same store, different key space: a Slack mention thread's session belongs to
+        # its thread the way a DM session belongs to its contact.
+        for target in self.mention_sessions.targets_for(session_id):
+            return target
         return ""
 
     def _origin_reply_target(self, task) -> str:
@@ -3049,15 +3057,18 @@ class SessionManager:
         which is the worst kind. The server knows the message came from a platform and
         knows the turn produced text without sending it, so it can close the gap.
         """
-        from ..connectors.senders import DEFAULT_SENDERS
-        from ..connectors.tools import make_send_message_tool
-
         text = _strip_reply_header(text)
         if not text:
             return
         try:
-            send = make_send_message_tool(self.secrets, senders=DEFAULT_SENDERS)
-            result = await asyncio.to_thread(send, target, text)
+            if self._unsent_reply_send is None:
+                from ..connectors.senders import DEFAULT_SENDERS
+                from ..connectors.tools import make_send_message_tool
+
+                self._unsent_reply_send = make_send_message_tool(
+                    self.secrets, senders=DEFAULT_SENDERS
+                )
+            result = await asyncio.to_thread(self._unsent_reply_send, target, text)
         except Exception as exc:
             logger.warning("could not deliver unsent reply for %s: %s", session_id, exc)
             self.unrouted.record(session_id, "-", text, reason=f"unsent reply: {exc}")

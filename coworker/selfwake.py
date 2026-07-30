@@ -183,7 +183,8 @@ def selfwake_tools(store: WakeStore, session_id: str) -> list:
         as a duplicate.
         """
         try:
-            when = datetime.fromisoformat(when_iso)
+            # fromisoformat rejects the common "Z" UTC suffix on Python < 3.11.
+            when = datetime.fromisoformat(when_iso.replace("Z", "+00:00"))
         except ValueError:
             return {
                 "error": f"{when_iso!r} is not an ISO-8601 timestamp "
