@@ -94,6 +94,25 @@ _SCOPES = {s.value for s in Scope}
 logger = logging.getLogger("coworker.manager")
 
 
+# Models echo the framing header back at the top of their reply — "[WhatsApp DM · Ana
+# | reply→whatsapp_evolution:5511…]" — because it is the first thing they saw. Harmless
+# in the app transcript, but this text goes to a phone, where it is unreadable noise
+# with a raw JID in it. Stripped at the edge: the model is not reliably talked out of
+# echoing, and the shape is unambiguous enough to remove safely.
+_REPLY_HEADER_RE = re.compile(
+    r"^\s*\[[^\]\n]*reply→[^\]\n]*\]\s*:?\s*", re.IGNORECASE
+)
+
+
+# Tools that mean "I will act later". Text from a turn that called one of these is a
+# plan, not an answer, so the safety net leaves it alone and waits for the woken turn.
+_SCHEDULING_TOOLS = frozenset({"sleep_for", "sleep_until", "wake_on", "wake_on_event"})
+
+
+def _strip_reply_header(text: str) -> str:
+    return _REPLY_HEADER_RE.sub("", text or "").strip()
+
+
 def _grants_of(engine) -> dict[str, Any]:
     """The engine's session-scoped "Always allow" approvals, in persistable shape."""
     tools = sorted(getattr(engine.permissions, "session_allow_tools", None) or ())
@@ -240,6 +259,10 @@ class SessionManager:
         # things the mention router needs — dedupe, and a standing grant that
         # get_engine re-derives on every rebuild.
         self.dm_sessions = MentionSessionStore(base / "dm_contacts.json")
+        # One send_message closure for the unsent-reply fallback, built lazily: the
+        # factory's duplicate-send suppression window lives inside the closure, so a
+        # fresh closure per delivery would never suppress anything.
+        self._unsent_reply_send = None
         # Unauthorized inbound messages, parked instead of dropped (one-step allow-and-deliver).
         self.parked = ParkedStore(base / "parked.json")
         # People directory: "platform:user_id" → display name, noted from every inbound
@@ -2923,6 +2946,15 @@ class SessionManager:
             logger.info("session %s busy — queued steering message", session_id)
             engine.queue_steering(message, source)
             return
+        # When the message came from a platform, the ONLY way back is send_message.
+        # Track what the turn actually did so an answer that never left can be rescued
+        # below — see _deliver_unsent_reply. Rebuilt from the sidecar rather than stored
+        # separately: connector + channel_id is exactly what format_target consumes, and
+        # a second copy of the same fact could drift from it.
+        reply_target = self._reply_target_for(session_id, source)
+        sent_any = False
+        deferred = False
+        last_text = ""
         try:
             async for event in engine.run(message, source=source):
                 # Stream every event to any socket viewing this session, so a background turn
@@ -2930,6 +2962,20 @@ class SessionManager:
                 await self.broadcast_session(
                     session_id, {"type": event.type.value, "data": event.data}
                 )
+                if reply_target and event.type.value == "assistant_message":
+                    data = event.data or {}
+                    calls = data.get("tool_calls") or []
+                    if "send_message" in calls:
+                        sent_any = True
+                    # A turn that scheduled a wake is not answering — it is describing
+                    # what it will do LATER. Delivering that text sends the user their
+                    # "message in 3 minutes" one minute after they asked, and then
+                    # again when the timer fires. The woken turn is the real reply.
+                    if any(c in _SCHEDULING_TOOLS for c in calls):
+                        deferred = True
+                    text = (data.get("text") or "").strip()
+                    if text:
+                        last_text = text
                 # A background turn has no user watching to read an inline error: a dead model or
                 # tool failure would otherwise vanish. Log it and park it in the dead-letter store.
                 if event.type.value == "error":
@@ -2938,6 +2984,8 @@ class SessionManager:
                         "background turn failed for %s: %s", session_id, reason
                     )
                     self.unrouted.record(session_id, "-", message, reason=reason)
+            if reply_target and not sent_any and not deferred and last_text:
+                await self._deliver_unsent_reply(session_id, reply_target, last_text)
             self.save(session_id, engine)
         except (
             Exception
@@ -2950,6 +2998,90 @@ class SessionManager:
         finally:
             self.mark_idle(session_id)
             await self.broadcast_session(session_id, {"type": "turn_done", "data": {}})
+
+    def _reply_target_for(
+        self, session_id: str, source: Optional[dict[str, Any]] = None
+    ) -> str:
+        """Where output from this session has to go, or "" for the app window.
+
+        One rule, asked in one place: work that ORIGINATES on a platform is answered on
+        that platform. It took three separate bugs to learn that, each a different path
+        rediscovering the destination for itself and one of them getting it wrong —
+        an inbound message, a self-wake, and a scheduled run.
+
+        Three ways to know:
+          - the message's own sidecar, when the turn is answering one;
+          - the durable contact map, for a session spawned to talk to one person
+            (a wake carries no sidecar — the session is resuming ITSELF);
+          - the session this one descends from, for an automation created from a chat.
+        """
+        from ..connectors.base import format_target
+
+        connector = (source or {}).get("connector")
+        if connector and connector != "gui":
+            return format_target(
+                str(connector), str((source or {}).get("channel_id") or ""), None
+            )
+        for target in self.dm_sessions.targets_for(session_id):
+            return target
+        # Same store, different key space: a Slack mention thread's session belongs to
+        # its thread the way a DM session belongs to its contact.
+        for target in self.mention_sessions.targets_for(session_id):
+            return target
+        return ""
+
+    def _origin_reply_target(self, task) -> str:
+        """The reply target a scheduled run inherits from the chat that created it.
+
+        A run executes under a FRESH session id, so it has no contact mapping of its
+        own. `origin_session_id` was recorded at creation and never read — asked from
+        WhatsApp for a daily good-morning, the automation would run on time and answer
+        into a session nobody is watching.
+        """
+        origin = getattr(task, "origin_session_id", "") or ""
+        return self._reply_target_for(origin) if origin else ""
+
+    async def _deliver_unsent_reply(
+        self, session_id: str, target: str, text: str
+    ) -> None:
+        """Send an answer the model composed but never sent.
+
+        A message from a platform can only be answered with send_message; plain
+        assistant text goes to the app window, which the sender is not looking at. Told
+        that, models mostly comply — but not when they answer from their own knowledge
+        without touching a tool first. Observed: every question that triggered a search
+        or a timer was delivered; "what tools do you have?" was answered on screen and
+        the person on WhatsApp got nothing, with no error anywhere.
+
+        No amount of prompt wording has fixed that reliably, and the failure is silent,
+        which is the worst kind. The server knows the message came from a platform and
+        knows the turn produced text without sending it, so it can close the gap.
+        """
+        text = _strip_reply_header(text)
+        if not text:
+            return
+        try:
+            if self._unsent_reply_send is None:
+                from ..connectors.senders import DEFAULT_SENDERS
+                from ..connectors.tools import make_send_message_tool
+
+                self._unsent_reply_send = make_send_message_tool(
+                    self.secrets, senders=DEFAULT_SENDERS
+                )
+            result = await asyncio.to_thread(self._unsent_reply_send, target, text)
+        except Exception as exc:
+            logger.warning("could not deliver unsent reply for %s: %s", session_id, exc)
+            self.unrouted.record(session_id, "-", text, reason=f"unsent reply: {exc}")
+            return
+        if result.get("error"):
+            logger.warning(
+                "unsent reply for %s refused: %s", session_id, result["error"]
+            )
+            self.unrouted.record(
+                session_id, "-", text, reason=f"unsent reply: {result['error']}"
+            )
+            return
+        logger.info("delivered an answer %s composed but never sent", session_id)
 
     # -- channel subscriptions (inbound messaging) ------------------------------
     async def _dispatch_inbound(self, event) -> None:
@@ -3240,10 +3372,29 @@ class SessionManager:
             "result. The schedule already exists — do not create or modify any scheduled tasks.\n\n"
             f"{task.instructions}"
         )
+        # An automation created from a platform chat answers on that platform. Without
+        # this the run happens on time and its result lands in a session nobody reads.
+        run_reply_target = self._origin_reply_target(task)
+        if run_reply_target:
+            opening += (
+                f"\n\nThis automation was created from a conversation on "
+                f"{run_reply_target.split(':', 1)[0]}. Deliver the result there by "
+                f'calling send_message with target "{run_reply_target}" — the person '
+                f"who asked for it is not looking at this app."
+            )
+        sent_from_run = False
         try:
             async for _event in engine.run(opening):
-                pass
+                if _event.type.value == "assistant_message":
+                    if "send_message" in ((_event.data or {}).get("tool_calls") or []):
+                        sent_from_run = True
             run.result_text = _last_assistant_text(engine.messages)
+            if run_reply_target and not sent_from_run and run.result_text:
+                # Same safety net the inbound path has: the model was told where to
+                # answer and sometimes answers on screen anyway. Silent either way.
+                await self._deliver_unsent_reply(
+                    run.session_id, run_reply_target, run.result_text
+                )
             run.artifacts = _recent_files(task.workspace, since=run.started_at)
             run.status = "ok"
             if task.notify_on_completion:

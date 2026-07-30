@@ -157,17 +157,52 @@ def selfwake_tools(store: WakeStore, session_id: str) -> list:
 
     def sleep_for(seconds: int, note: str = "") -> dict:
         """Suspend and wake this session after `seconds`. Use for polling/waiting without
-        burning context while idle."""
+        burning context while idle.
+
+        If you were asked to DO something later — send a message, run a check — do it
+        when you wake, not now. Acting before sleeping delivers it at the wrong time,
+        and the copy you send on waking may be suppressed as a duplicate, so the user
+        gets it early and never again.
+        """
         w = store.add_timer(
             session_id, _now() + timedelta(seconds=int(seconds)), note=note
         )
         return {"ok": True, "wake_id": w.id, "fire_at": w.fire_at}
 
     def sleep_until(when_iso: str, note: str = "") -> dict:
-        """Suspend and wake this session at an ISO-8601 timestamp."""
-        when = datetime.fromisoformat(when_iso)
+        """Suspend and wake this session at an ISO-8601 timestamp (must be in the FUTURE).
+
+        The current time is in your context — use it. A model asked for "8am tomorrow"
+        computed a date three months in the past, the timer fired instantly, and the
+        user got their good-morning message in the middle of the night. If you are
+        unsure of today's date, prefer sleep_for with a duration.
+
+        If you were asked to DO something at that time — send a message, run a check —
+        do it when you WAKE, not now. Acting before sleeping delivers it immediately,
+        which is not what was asked, and the copy you send on waking may be suppressed
+        as a duplicate.
+        """
+        try:
+            # fromisoformat rejects the common "Z" UTC suffix on Python < 3.11.
+            when = datetime.fromisoformat(when_iso.replace("Z", "+00:00"))
+        except ValueError:
+            return {
+                "error": f"{when_iso!r} is not an ISO-8601 timestamp "
+                "(expected e.g. 2026-07-30T08:00:00-03:00)"
+            }
         if when.tzinfo is None:
             when = when.replace(tzinfo=timezone.utc)
+        now = _now()
+        if when <= now:
+            # Refused rather than clamped: a wake in the past fires immediately, which
+            # looks to the user like the agent ignored the time they asked for. Telling
+            # the model the current time lets it correct itself in the next call.
+            return {
+                "error": (
+                    f"{when.isoformat()} is in the past. It is now {now.isoformat()}. "
+                    "Compute the target from the current time, or use sleep_for."
+                )
+            }
         w = store.add_timer(session_id, when, note=note)
         return {"ok": True, "wake_id": w.id, "fire_at": w.fire_at}
 
