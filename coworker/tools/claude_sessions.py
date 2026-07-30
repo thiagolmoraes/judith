@@ -113,14 +113,15 @@ def claude_session_tools(
         return result
 
     def read_claude_transcript(tty: str, n: int = 20) -> dict[str, Any]:
-        if not isinstance(tty, str) or not tty:
+        if not isinstance(tty, str) or not tty.strip():
             return {"error": "invalid_arguments"}
         session = _by_tty(tty)
         if session is None:
             return {"error": "session_gone"}
         if session.transcript is None:
             return {"error": "no_transcript"}
-        count = min(n, _MAX_ENTRIES) if isinstance(n, int) and n > 0 else 20
+        # type() not isinstance(): booleans pass isinstance(x, int)
+        count = min(n, _MAX_ENTRIES) if type(n) is int and n > 0 else 20
         return {
             "entries": [
                 {
@@ -137,7 +138,7 @@ def claude_session_tools(
     ) -> dict[str, Any]:
         if (
             not isinstance(tty, str)
-            or not tty
+            or not tty.strip()
             or not isinstance(text, str)
             or not text.strip()
         ):
@@ -155,7 +156,7 @@ def claude_session_tools(
             return {"status": "sent_no_reply", "last_entries": []}
         wait = (
             min(wait_seconds, _MAX_WAIT_SECONDS)
-            if isinstance(wait_seconds, int) and wait_seconds > 0
+            if type(wait_seconds) is int and wait_seconds > 0
             else 120
         )
         reply = waiter(session.transcript, after, timeout=float(wait))

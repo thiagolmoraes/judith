@@ -119,12 +119,31 @@ def test_read_rejects_bad_arguments_and_caps_n(tmp_path: Path):
     path = _write_transcript(tmp_path, ["a"])
     t = _tools(FakeDiscovery([_session(transcript=path)]), FakeDriver())
     assert t["read_claude_transcript"](tty="") == {"error": "invalid_arguments"}
+    assert t["read_claude_transcript"](tty="   ") == {"error": "invalid_arguments"}
     assert t["read_claude_transcript"](tty=123) == {"error": "invalid_arguments"}
-    # a huge n must not dump a whole transcript: capped, not honoured
-    big = _write_transcript(tmp_path, [f"m{i}" for i in range(9)])
-    t = _tools(FakeDiscovery([_session(transcript=big)]), FakeDriver())
+    # booleans pass isinstance(x, int) — n=True must fall back to the default, not 1
+    many = tmp_path / "many.jsonl"
+    many.write_text(
+        "\n".join(
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "timestamp": f"2026-07-30T12:{i // 60:02d}:{i % 60:02d}.000Z",
+                    "message": {
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": f"m{i}"}],
+                    },
+                }
+            )
+            for i in range(150)
+        ),
+        encoding="utf-8",
+    )
+    t = _tools(FakeDiscovery([_session(transcript=many)]), FakeDriver())
+    assert len(t["read_claude_transcript"](tty="ttys000", n=True)["entries"]) == 20
+    # a huge n must not dump a whole transcript: capped at 100, file has 150
     result = t["read_claude_transcript"](tty="ttys000", n=10_000)
-    assert len(result["entries"]) == 9  # all there — the cap (100) exceeds the file
+    assert len(result["entries"]) == 100
 
 
 def test_send_replies(tmp_path: Path):
@@ -199,6 +218,9 @@ def test_send_caps_wait_seconds(tmp_path: Path):
     )
     t["send_to_claude_session"](tty="ttys000", text="x", wait_seconds=999_999)
     assert waits == [600.0]  # capped — a turn can't be pinned indefinitely
+    # wait_seconds=True passes isinstance(x, int): must mean the default, not 1 second
+    t["send_to_claude_session"](tty="ttys000", text="x", wait_seconds=True)
+    assert waits == [600.0, 120.0]
 
 
 def test_send_without_transcript_reports_sent_no_reply():
