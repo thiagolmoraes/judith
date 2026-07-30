@@ -231,13 +231,88 @@ def test_send_without_transcript_reports_sent_no_reply():
     assert result == {"status": "sent_no_reply", "last_entries": []}
 
 
-def test_default_factory_builds_three_tools():
+def test_default_factory_builds_all_bridge_tools():
     names = {t.__name__ for t in claude_bridge_tools()}
     assert names == {
         "find_claude_sessions",
         "read_claude_transcript",
         "send_to_claude_session",
+        "watch_claude_session",
+        "unwatch_claude_session",
     }
+
+
+def _session_with_id(tty: str = "ttys000", session_id: str | None = "sess-1"):
+    s = _session(tty=tty)
+    s.session_id = session_id
+    s.status = "idle" if session_id else None
+    return s
+
+
+def _watched_tools(tmp_path, sessions):
+    from coworker.claude_bridge.registry import Watches
+
+    watches = Watches(tmp_path)
+    tools = claude_session_tools(FakeDiscovery(sessions), FakeDriver(), watches=watches)
+    return {t.__name__: t for t in tools}, watches
+
+
+def test_watch_tools_absent_without_watches():
+    names = {t.__name__ for t in claude_session_tools(FakeDiscovery([]), FakeDriver())}
+    assert "watch_claude_session" not in names
+
+
+def test_watch_records_notify_target(tmp_path):
+    t, watches = _watched_tools(tmp_path, [_session_with_id()])
+    result = t["watch_claude_session"](
+        tty="ttys000", notify_target="whatsapp_evolution:5511@s.whatsapp.net"
+    )
+    assert result == {"status": "watching", "session_id": "sess-1"}
+    watch = watches.get("sess-1")
+    assert watch["platform"] == "whatsapp_evolution"
+    assert watch["chat_id"] == "5511@s.whatsapp.net"
+
+
+def test_watch_errors(tmp_path):
+    t, _ = _watched_tools(tmp_path, [_session_with_id()])
+    assert t["watch_claude_session"](
+        tty="ttys9", notify_target="whatsapp_evolution:x"
+    ) == {"error": "session_gone"}
+    assert t["watch_claude_session"](tty="ttys000", notify_target="no-colon") == {
+        "error": "invalid_arguments"
+    }
+    assert t["watch_claude_session"](tty="ttys000", notify_target="") == {
+        "error": "invalid_arguments"
+    }
+    t["watch_claude_session"](tty="ttys000", notify_target="whatsapp_evolution:x")
+    assert t["watch_claude_session"](
+        tty="ttys000", notify_target="whatsapp_evolution:x"
+    ) == {"error": "already_watched"}
+
+
+def test_watch_without_registry_session_id(tmp_path):
+    t, _ = _watched_tools(tmp_path, [_session_with_id(session_id=None)])
+    result = t["watch_claude_session"](
+        tty="ttys000", notify_target="whatsapp_evolution:x"
+    )
+    assert result["error"] == "no_registry"
+    assert "coworker.claude_bridge.install" in result["hint"]
+
+
+def test_unwatch_is_idempotent(tmp_path):
+    t, _ = _watched_tools(tmp_path, [_session_with_id()])
+    t["watch_claude_session"](tty="ttys000", notify_target="whatsapp_evolution:x")
+    assert t["unwatch_claude_session"](tty="ttys000") == {"status": "unwatched"}
+    assert t["unwatch_claude_session"](tty="ttys000") == {"status": "not_watched"}
+
+
+def test_find_reports_watched_and_status(tmp_path):
+    t, watches = _watched_tools(tmp_path, [_session_with_id()])
+    watches.add("sess-1", "whatsapp_evolution", "x")
+    (entry,) = t["find_claude_sessions"]()["sessions"]
+    assert entry["watched"] is True
+    assert entry["status"] == "idle"
+    assert entry["session_id"] == "sess-1"
 
 
 def _assistant_tool_names(tmp_path, monkeypatch, platform: str) -> set[str]:
