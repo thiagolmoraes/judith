@@ -5,13 +5,15 @@ git_tools); all logic lives in the domain package, all deps are injected.
 
 from __future__ import annotations
 
+import hashlib
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional, Protocol
 
 from ..claude_bridge.discovery import SessionDiscovery
 from ..claude_bridge.models import LiveSession
-from ..claude_bridge.registry import Watches, default_bridge_dir
+from ..claude_bridge.registry import Watches, default_bridge_dir, read_sessions
 from ..claude_bridge.terminal import ITerm2Driver, TerminalDriver
 from ..claude_bridge.transcript import tail as transcript_tail
 from ..claude_bridge.transcript import wait_for_reply
@@ -131,6 +133,58 @@ _UNWATCH_SCHEMA = {
 }
 
 
+def _no_registry_error() -> dict[str, Any]:
+    return {
+        "error": "no_registry",
+        "hint": (
+            "This session has no hook registry entry — install the bridge "
+            "hooks with: python -m coworker.claude_bridge.install"
+        ),
+    }
+
+
+def _prompt_token(session_id: str, message: str) -> str:
+    """Binds a confirmation to the exact prompt text: if another permission request
+    replaces the echoed one, the token no longer matches and the wrong command can't
+    be approved. Stateless — recomputed on every call, nothing stored."""
+    return hashlib.sha256(f"{session_id}\n{message}".encode()).hexdigest()[:12]
+
+
+_RESPOND_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "respond_to_claude_prompt",
+        "description": (
+            "Approve or deny the permission prompt a Claude Code session is waiting "
+            "on (by `tty`). PROTOCOL: call once WITHOUT confirm_token — you get the "
+            "exact prompt text and a token; show the prompt to the user verbatim and "
+            "wait for their explicit confirmation; only then call again WITH the "
+            "token. Never pass the token without the user's explicit confirmation, "
+            "and never fabricate one. decision='approve' presses 1, 'deny' presses 3."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "tty": {"type": "string", "description": "The session's tty."},
+                "decision": {
+                    "type": "string",
+                    "enum": ["approve", "deny"],
+                    "description": "What to do with the waiting prompt.",
+                },
+                "confirm_token": {
+                    "type": "string",
+                    "description": (
+                        "Token from the confirmation_required response — only after "
+                        "the user explicitly confirmed."
+                    ),
+                },
+            },
+            "required": ["tty", "decision"],
+        },
+    },
+}
+
+
 def claude_session_tools(
     discovery: SessionFinder,
     driver: TerminalDriver,
@@ -138,8 +192,11 @@ def claude_session_tools(
     waiter: Callable[..., Optional[str]] = wait_for_reply,
     now: Callable[[], datetime] | None = None,
     watches: Optional[Watches] = None,
+    bridge_dir: Optional[Path] = None,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
 ) -> list:
-    clock = now or (lambda: datetime.now(timezone.utc))
+    wall_clock = now or (lambda: datetime.now(timezone.utc))
 
     def _by_tty(tty: str) -> LiveSession | None:
         for session in discovery.list():
@@ -201,7 +258,7 @@ def claude_session_tools(
         target = driver.find_target(session.tty)
         if target is None:
             return {"error": "session_gone"}
-        after = clock()
+        after = wall_clock()
         if not driver.send_text(target, text):
             return {"error": "send_failed"}
         if session.transcript is None:
@@ -241,13 +298,7 @@ def claude_session_tools(
         if session is None:
             return {"error": "session_gone"}
         if session.session_id is None:
-            return {
-                "error": "no_registry",
-                "hint": (
-                    "This session has no hook registry entry — install the bridge "
-                    "hooks with: python -m coworker.claude_bridge.install"
-                ),
-            }
+            return _no_registry_error()
         assert watches is not None
         if not watches.add(session.session_id, platform, chat_id):
             return {"error": "already_watched"}
@@ -268,16 +319,88 @@ def claude_session_tools(
     find_claude_sessions.__coworker_schema__ = _FIND_SCHEMA
     read_claude_transcript.__coworker_schema__ = _READ_SCHEMA
     send_to_claude_session.__coworker_schema__ = _SEND_SCHEMA
+    def respond_to_claude_prompt(
+        tty: str, decision: str, confirm_token: Optional[str] = None
+    ) -> dict[str, Any]:
+        if (
+            not isinstance(tty, str)
+            or not tty.strip()
+            or decision not in ("approve", "deny")
+        ):
+            return {"error": "invalid_arguments"}
+        session = _by_tty(tty)
+        if session is None:
+            return {"error": "session_gone"}
+        if session.session_id is None:
+            return _no_registry_error()
+        if session.status != "waiting_approval":
+            return {"error": "not_waiting", "current_status": session.status}
+        assert bridge_dir is not None
+        states = {s.session_id: s for s in read_sessions(bridge_dir)}
+        state = states.get(session.session_id)
+        message = (state.message if state else None) or ""
+        prompt = message or "a permission request"
+        expected = _prompt_token(session.session_id, message)
+        if confirm_token is None:
+            return {
+                "status": "confirmation_required",
+                "prompt": prompt,
+                "confirm_token": expected,
+            }
+        if confirm_token != expected:
+            return {
+                "error": "prompt_changed",
+                "prompt": prompt,
+                "confirm_token": expected,
+            }
+        target = driver.find_target(session.tty)
+        if target is None:
+            return {"error": "session_gone"}
+        before = None
+        if session.transcript is not None:
+            try:
+                before = session.transcript.stat().st_mtime
+            except OSError:
+                before = None
+        key = "1" if decision == "approve" else "3"
+        if not driver.send_keys(target, key):
+            return {"error": "send_failed"}
+        # Approval and denial both make the turn continue, so the transcript moving
+        # is the observable effect of the keystroke landing — an atypical prompt
+        # layout (e.g. a plan menu without option 3) shows up as sent_unverified.
+        verified = False
+        if before is not None:
+            deadline = clock() + 10.0
+            while clock() < deadline:
+                sleep(1.0)
+                try:
+                    if session.transcript.stat().st_mtime > before:
+                        verified = True
+                        break
+                except OSError:
+                    break
+        if not verified:
+            return {"status": "sent_unverified", "decision": decision, "prompt": prompt}
+        return {
+            "status": "approved" if decision == "approve" else "denied",
+            "verified": True,
+            "prompt": prompt,
+        }
+
     tools = [find_claude_sessions, read_claude_transcript, send_to_claude_session]
     if watches is not None:
         watch_claude_session.__coworker_schema__ = _WATCH_SCHEMA
         unwatch_claude_session.__coworker_schema__ = _UNWATCH_SCHEMA
         tools += [watch_claude_session, unwatch_claude_session]
+    if bridge_dir is not None:
+        respond_to_claude_prompt.__coworker_schema__ = _RESPOND_SCHEMA
+        tools.append(respond_to_claude_prompt)
     return tools
 
 
 def claude_bridge_tools() -> list:
     """The production wiring: real discovery, real iTerm2 driver, real watches."""
+    bridge = default_bridge_dir()
     return claude_session_tools(
-        SessionDiscovery(), ITerm2Driver(), watches=Watches(default_bridge_dir())
+        SessionDiscovery(), ITerm2Driver(), watches=Watches(bridge), bridge_dir=bridge
     )

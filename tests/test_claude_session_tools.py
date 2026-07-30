@@ -38,12 +38,17 @@ class FakeDriver:
         self.target = target
         self.send_ok = send_ok
         self.sent: list[tuple[str, str]] = []
+        self.keys: list[tuple[str, str]] = []
 
     def find_target(self, tty: str) -> str | None:
         return self.target
 
     def send_text(self, target: str, text: str) -> bool:
         self.sent.append((target, text))
+        return self.send_ok
+
+    def send_keys(self, target: str, keys: str) -> bool:
+        self.keys.append((target, keys))
         return self.send_ok
 
 
@@ -239,6 +244,7 @@ def test_default_factory_builds_all_bridge_tools():
         "send_to_claude_session",
         "watch_claude_session",
         "unwatch_claude_session",
+        "respond_to_claude_prompt",
     }
 
 
@@ -320,6 +326,188 @@ def test_find_reports_watched_and_status(tmp_path):
     assert entry["watched"] is True
     assert entry["status"] == "idle"
     assert entry["session_id"] == "sess-1"
+
+
+def _write_bridge_state(
+    bridge: Path,
+    session_id: str,
+    *,
+    status: str = "waiting_approval",
+    message: str | None = "permission to run: git push",
+    transcript_path: str | None = None,
+) -> None:
+    sessions = bridge / "sessions"
+    sessions.mkdir(parents=True, exist_ok=True)
+    (sessions / f"{session_id}.json").write_text(
+        json.dumps(
+            {
+                "session_id": session_id,
+                "transcript_path": transcript_path,
+                "cwd": "/Users/x/dev/webhook",
+                "pid": 910,
+                "status": status,
+                "message": message,
+                "updated_at": "2026-07-30T15:00:00+00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def _waiting_session(tmp_path, message="permission to run: git push",
+                     session_id="sess-1", status="waiting_approval"):
+    s = _session_with_id(session_id=session_id)
+    s.status = status
+    t = _write_transcript(tmp_path, ["before"])
+    s.transcript = t
+    _write_bridge_state(
+        tmp_path, session_id, status=status, message=message, transcript_path=str(t)
+    )
+    return s
+
+
+def _respond_tools(tmp_path, sessions, driver=None, clock=None, sleep=None):
+    tools = claude_session_tools(
+        FakeDiscovery(sessions),
+        driver or FakeDriver(),
+        bridge_dir=tmp_path,
+        clock=clock or iter(range(1000)).__next__,
+        sleep=sleep or (lambda s: None),
+    )
+    return {t.__name__: t for t in tools}
+
+
+def test_respond_absent_without_bridge_dir():
+    names = {t.__name__ for t in claude_session_tools(FakeDiscovery([]), FakeDriver())}
+    assert "respond_to_claude_prompt" not in names
+
+
+def test_respond_first_call_echoes_prompt_and_token(tmp_path):
+    s = _waiting_session(tmp_path)
+    t = _respond_tools(tmp_path, [s])
+    result = t["respond_to_claude_prompt"](tty="ttys000", decision="approve")
+    assert result["status"] == "confirmation_required"
+    assert result["prompt"] == "permission to run: git push"
+    assert len(result["confirm_token"]) == 12
+
+
+def test_respond_approve_with_token_presses_1_and_verifies(tmp_path):
+    import os as _os
+
+    s = _waiting_session(tmp_path)
+    driver = FakeDriver()
+
+    def sleep(_):
+        # the approved command ran: the transcript moves
+        _os.utime(s.transcript, (9_999_999_999, 9_999_999_999))
+
+    t = _respond_tools(tmp_path, [s], driver=driver, sleep=sleep)
+    token = t["respond_to_claude_prompt"](tty="ttys000", decision="approve")[
+        "confirm_token"
+    ]
+    result = t["respond_to_claude_prompt"](
+        tty="ttys000", decision="approve", confirm_token=token
+    )
+    assert result["status"] == "approved"
+    assert result["verified"] is True
+    assert driver.keys == [("w0t0p0:ABC", "1")]
+
+
+def test_respond_deny_presses_3_and_verifies(tmp_path):
+    import os as _os
+
+    s = _waiting_session(tmp_path)
+    driver = FakeDriver()
+
+    def sleep(_):
+        # the denial reached Claude: the turn continues, the transcript moves
+        _os.utime(s.transcript, (9_999_999_999, 9_999_999_999))
+
+    t = _respond_tools(tmp_path, [s], driver=driver, sleep=sleep)
+    token = t["respond_to_claude_prompt"](tty="ttys000", decision="deny")[
+        "confirm_token"
+    ]
+    result = t["respond_to_claude_prompt"](
+        tty="ttys000", decision="deny", confirm_token=token
+    )
+    assert result["status"] == "denied"
+    assert result["verified"] is True
+    assert driver.keys == [("w0t0p0:ABC", "3")]
+
+
+def test_respond_stale_token_is_prompt_changed(tmp_path):
+    s = _waiting_session(tmp_path)
+    t = _respond_tools(tmp_path, [s])
+    result = t["respond_to_claude_prompt"](
+        tty="ttys000", decision="approve", confirm_token="deadbeef0000"
+    )
+    assert result["error"] == "prompt_changed"
+    assert len(result["confirm_token"]) == 12
+
+
+def test_respond_not_waiting_reports_current_status(tmp_path):
+    s = _waiting_session(tmp_path, status="idle")
+    t = _respond_tools(tmp_path, [s])
+    result = t["respond_to_claude_prompt"](tty="ttys000", decision="approve")
+    assert result == {"error": "not_waiting", "current_status": "idle"}
+
+
+def test_respond_no_registry(tmp_path):
+    s = _session_with_id(session_id=None)
+    t = _respond_tools(tmp_path, [s])
+    result = t["respond_to_claude_prompt"](tty="ttys000", decision="approve")
+    assert result["error"] == "no_registry"
+
+
+def test_respond_unverified_when_transcript_frozen(tmp_path):
+    s = _waiting_session(tmp_path)
+    t = _respond_tools(tmp_path, [s])
+    token = t["respond_to_claude_prompt"](tty="ttys000", decision="approve")[
+        "confirm_token"
+    ]
+    result = t["respond_to_claude_prompt"](
+        tty="ttys000", decision="approve", confirm_token=token
+    )
+    assert result["status"] == "sent_unverified"
+
+
+def test_respond_empty_message_echoes_fallback(tmp_path):
+    s = _waiting_session(tmp_path, message=None)
+    t = _respond_tools(tmp_path, [s])
+    result = t["respond_to_claude_prompt"](tty="ttys000", decision="approve")
+    assert result["status"] == "confirmation_required"
+    assert result["prompt"] == "a permission request"
+
+
+def test_respond_invalid_arguments(tmp_path):
+    s = _waiting_session(tmp_path)
+    t = _respond_tools(tmp_path, [s])
+    assert t["respond_to_claude_prompt"](tty="", decision="approve") == {
+        "error": "invalid_arguments"
+    }
+    assert t["respond_to_claude_prompt"](tty="ttys000", decision="shrug") == {
+        "error": "invalid_arguments"
+    }
+
+
+def test_respond_session_gone_and_send_failed(tmp_path):
+    s = _waiting_session(tmp_path)
+    t = _respond_tools(tmp_path, [s], driver=FakeDriver(target=None))
+    token_result = t["respond_to_claude_prompt"](tty="ttys000", decision="approve")
+    result = t["respond_to_claude_prompt"](
+        tty="ttys000",
+        decision="approve",
+        confirm_token=token_result["confirm_token"],
+    )
+    assert result == {"error": "session_gone"}
+
+    t2 = _respond_tools(tmp_path, [s], driver=FakeDriver(send_ok=False))
+    token = t2["respond_to_claude_prompt"](tty="ttys000", decision="approve")[
+        "confirm_token"
+    ]
+    assert t2["respond_to_claude_prompt"](
+        tty="ttys000", decision="approve", confirm_token=token
+    ) == {"error": "send_failed"}
 
 
 def _assistant_tool_names(tmp_path, monkeypatch, platform: str) -> set[str]:
