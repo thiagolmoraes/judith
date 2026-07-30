@@ -41,6 +41,15 @@ def _corrupt(settings_path: Path) -> bool:
         return True
 
 
+def _default_python() -> str:
+    """A stable interpreter for the hook command. The hook script is stdlib-only, so
+    it doesn't need the project venv — and registering the venv's python ties the hook
+    to a movable path (renaming the repo folder broke every Stop hook with
+    "No such file or directory"). macOS always ships /usr/bin/python3."""
+    system = Path("/usr/bin/python3")
+    return str(system) if system.exists() else sys.executable
+
+
 def _is_ours(entry: dict) -> bool:
     return any(
         _MARKER in (hook.get("command") or "")
@@ -68,7 +77,7 @@ def install(
         if not backup.exists():
             shutil.copyfile(settings_path, backup)
 
-    interpreter = python or sys.executable
+    interpreter = python or _default_python()
     command = f'"{interpreter}" "{hook_path}"'
     hooks = data.setdefault("hooks", {})
     registered: list[str] = []

@@ -100,6 +100,23 @@ def test_uninstall_when_never_installed(tmp_path: Path):
     assert uninstall(settings, tmp_path / "ow-bridge") == []
 
 
+def test_install_defaults_to_a_stable_interpreter(tmp_path: Path):
+    """Registering the venv's python ties the hook to a movable path — renaming the
+    repo folder broke every Stop hook. The default must be the resolved stable
+    interpreter (/usr/bin/python3 when present), never a path inside the project."""
+    from coworker.claude_bridge.install import _default_python
+
+    settings = tmp_path / "settings.json"
+    install(settings, tmp_path / "ow-bridge")
+    (entry,) = _settings(settings)["hooks"]["Stop"]
+    command = entry["hooks"][0]["command"]
+    assert f'"{_default_python()}"' in command
+    import sys
+
+    if Path("/usr/bin/python3").exists():
+        assert sys.executable not in command or sys.executable == "/usr/bin/python3"
+
+
 def test_install_refuses_corrupt_settings(tmp_path: Path):
     # Overwriting a malformed settings.json would silently destroy the user's config.
     import pytest
