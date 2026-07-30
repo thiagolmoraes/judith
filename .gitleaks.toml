@@ -31,6 +31,9 @@ regexes = [
   '''bedrock_api_key="?test''',
 ]
 paths = [
+  # This config itself: the allowlisted fake literals below would otherwise be
+  # re-detected by the default rules when the file is scanned.
+  '''^\.gitleaks\.toml$''',
   '''node_modules/''',
   '''\.venv/''',
   '''surfaces/gui/src-tauri/target/''',
