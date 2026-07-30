@@ -88,7 +88,11 @@ def test_list_finds_interactive_claude_sessions(tmp_path: Path):
     _make_project(projects, cwd, "aaa.jsonl", "fixing the webhook", NOW.timestamp() - 60)
     runner = FakeRunner(PS, cwds={910: cwd}, etimes={910: "02:00"})
     disc = SessionDiscovery(
-        run=runner, projects_dir=projects, own_pid=99999, now=lambda: NOW
+        run=runner,
+        projects_dir=projects,
+        own_pid=99999,
+        now=lambda: NOW,
+        bridge_dir=tmp_path / "nobridge",
     )
     sessions = disc.list()
     assert len(sessions) == 1
@@ -105,7 +109,11 @@ def test_list_excludes_own_process_tree(tmp_path: Path):
     # claude pid 910 is a child of own_pid 870 → the bridge must not see itself
     runner = FakeRunner(PS, cwds={910: "/w"}, etimes={910: "02:00"})
     disc = SessionDiscovery(
-        run=runner, projects_dir=tmp_path, own_pid=870, now=lambda: NOW
+        run=runner,
+        projects_dir=tmp_path,
+        own_pid=870,
+        now=lambda: NOW,
+        bridge_dir=tmp_path / "nobridge",
     )
     assert disc.list() == []
 
@@ -113,7 +121,11 @@ def test_list_excludes_own_process_tree(tmp_path: Path):
 def test_list_session_without_transcript_still_listed(tmp_path: Path):
     runner = FakeRunner(PS, cwds={910: "/Users/x/dev/fresh"}, etimes={910: "02:00"})
     disc = SessionDiscovery(
-        run=runner, projects_dir=tmp_path, own_pid=99999, now=lambda: NOW
+        run=runner,
+        projects_dir=tmp_path,
+        own_pid=99999,
+        now=lambda: NOW,
+        bridge_dir=tmp_path / "nobridge",
     )
     sessions = disc.list()
     assert len(sessions) == 1
@@ -129,7 +141,11 @@ def test_list_marks_ambiguous_transcript_as_guessed(tmp_path: Path):
     _make_project(projects, cwd, "new.jsonl", "newer", NOW.timestamp() - 10)
     runner = FakeRunner(PS, cwds={910: cwd}, etimes={910: "02:00"})
     disc = SessionDiscovery(
-        run=runner, projects_dir=projects, own_pid=99999, now=lambda: NOW
+        run=runner,
+        projects_dir=projects,
+        own_pid=99999,
+        now=lambda: NOW,
+        bridge_dir=tmp_path / "nobridge",
     )
     s = disc.list()[0]
     assert s.transcript is not None and s.transcript.name == "new.jsonl"
@@ -141,7 +157,11 @@ def test_list_survives_ps_failure(tmp_path: Path):
         raise subprocess.TimeoutExpired(cmd, 10)
 
     disc = SessionDiscovery(
-        run=broken, projects_dir=tmp_path, own_pid=99999, now=lambda: NOW
+        run=broken,
+        projects_dir=tmp_path,
+        own_pid=99999,
+        now=lambda: NOW,
+        bridge_dir=tmp_path / "nobridge",
     )
     assert disc.list() == []
 
@@ -152,7 +172,11 @@ def test_to_dict_serialises_for_the_model(tmp_path: Path):
     _make_project(projects, cwd, "aaa.jsonl", "hi", NOW.timestamp() - 60)
     runner = FakeRunner(PS, cwds={910: cwd}, etimes={910: "02:00"})
     disc = SessionDiscovery(
-        run=runner, projects_dir=projects, own_pid=99999, now=lambda: NOW
+        run=runner,
+        projects_dir=projects,
+        own_pid=99999,
+        now=lambda: NOW,
+        bridge_dir=tmp_path / "nobridge",
     )
     d = disc.list()[0].to_dict()
     assert d["project"] == "webhook"
@@ -161,3 +185,100 @@ def test_to_dict_serialises_for_the_model(tmp_path: Path):
     assert "transcript" not in d
     assert "cwd" not in d
     assert isinstance(d["last_activity"], str)
+
+
+def _write_registry(
+    bridge: Path,
+    session_id: str,
+    pid: int,
+    transcript: Path,
+    cwd: str,
+    status: str = "idle",
+    updated_at: str = "2026-07-30T11:59:30+00:00",
+) -> None:
+    sessions = bridge / "sessions"
+    sessions.mkdir(parents=True, exist_ok=True)
+    (sessions / f"{session_id}.json").write_text(
+        json.dumps(
+            {
+                "session_id": session_id,
+                "transcript_path": str(transcript),
+                "cwd": cwd,
+                "pid": pid,
+                "status": status,
+                "message": None,
+                "updated_at": updated_at,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_registry_match_beats_mtime_heuristic(tmp_path: Path):
+    projects = tmp_path / "projects"
+    bridge = tmp_path / "bridge"
+    cwd = "/Users/x/dev/webhook"
+    # Two candidates: the mtime heuristic alone would guess the newer one...
+    right = _make_project(
+        projects, cwd, "right.jsonl", "the real one", NOW.timestamp() - 30
+    )
+    _make_project(projects, cwd, "decoy.jsonl", "newer decoy", NOW.timestamp() - 5)
+    # ...but the registry says pid 910 is session "right".
+    _write_registry(bridge, "right", 910, right, cwd)
+    runner = FakeRunner(PS, cwds={910: cwd}, etimes={910: "02:00"})
+    disc = SessionDiscovery(
+        run=runner,
+        projects_dir=projects,
+        own_pid=99999,
+        now=lambda: NOW,
+        bridge_dir=bridge,
+    )
+    (s,) = disc.list()
+    assert s.session_id == "right"
+    assert s.transcript is not None and s.transcript.name == "right.jsonl"
+    assert s.transcript_confidence == "matched"
+    assert s.status == "idle"
+    d = s.to_dict()
+    assert d["session_id"] == "right"
+    assert d["status"] == "idle"
+
+
+def test_registry_idle_but_newer_transcript_means_running(tmp_path: Path):
+    projects = tmp_path / "projects"
+    bridge = tmp_path / "bridge"
+    cwd = "/Users/x/dev/webhook"
+    t = _make_project(projects, cwd, "aaa.jsonl", "working...", NOW.timestamp() - 60)
+    # registry Stop happened at 11:58; transcript moved at 11:59 → a new turn started
+    _write_registry(
+        bridge, "aaa", 910, t, cwd, status="idle",
+        updated_at="2026-07-30T11:58:00+00:00",
+    )
+    os.utime(t, (NOW.timestamp() - 60, NOW.timestamp() - 60))
+    runner = FakeRunner(PS, cwds={910: cwd}, etimes={910: "02:00"})
+    disc = SessionDiscovery(
+        run=runner,
+        projects_dir=projects,
+        own_pid=99999,
+        now=lambda: NOW,
+        bridge_dir=bridge,
+    )
+    (s,) = disc.list()
+    assert s.status == "running"
+
+
+def test_no_registry_entry_falls_back_to_heuristic(tmp_path: Path):
+    projects = tmp_path / "projects"
+    cwd = "/Users/x/dev/webhook"
+    _make_project(projects, cwd, "aaa.jsonl", "hi", NOW.timestamp() - 60)
+    runner = FakeRunner(PS, cwds={910: cwd}, etimes={910: "02:00"})
+    disc = SessionDiscovery(
+        run=runner,
+        projects_dir=projects,
+        own_pid=99999,
+        now=lambda: NOW,
+        bridge_dir=tmp_path / "empty-bridge",
+    )
+    (s,) = disc.list()
+    assert s.session_id is None
+    assert s.status is None
+    assert s.transcript is not None  # heuristic still worked

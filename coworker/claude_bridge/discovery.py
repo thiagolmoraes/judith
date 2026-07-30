@@ -18,10 +18,13 @@ from pathlib import Path
 from typing import Callable
 
 from .models import LiveSession
+from .registry import read_sessions
 from .transcript import last_branch, tail
 
 # Slack applied to "modified after process start": mtimes and etime are second-granular.
 _START_SLACK = timedelta(seconds=60)
+# Registry says idle but the transcript moved later than this → a new turn is running.
+_RUNNING_SLACK = timedelta(seconds=5)
 _TAIL_MESSAGES = 3
 _TAIL_CHARS = 200
 
@@ -70,15 +73,22 @@ class SessionDiscovery:
         projects_dir: Path | None = None,
         own_pid: int | None = None,
         now: Callable[[], datetime] | None = None,
+        bridge_dir: Path | None = None,
     ) -> None:
         self._run = run
         self._projects = projects_dir or Path.home() / ".claude" / "projects"
         self._own_pid = os.getpid() if own_pid is None else own_pid
         self._now = now or (lambda: datetime.now(timezone.utc))
+        self._bridge = bridge_dir or Path.home() / ".claude" / "ow-bridge"
 
     def list(self) -> list[LiveSession]:
         procs = self._processes()
         own = self._own_tree(procs)
+        # Hook registry entries (phase 2), keyed by pid: an exact session_id and
+        # transcript beat the mtime heuristic whenever a hook has fired.
+        registry = {
+            s.pid: s for s in read_sessions(self._bridge) if s.pid is not None
+        }
         sessions: list[LiveSession] = []
         for pid, ppid, tty, command in procs:
             if not _is_claude(command) or tty in ("??", "-", "") or pid in own:
@@ -86,7 +96,11 @@ class SessionDiscovery:
             cwd = self._cwd(pid)
             if not cwd:
                 continue
-            transcript, confidence = self._pick_transcript(cwd, self._started(pid))
+            reg = registry.get(pid)
+            if reg is not None and reg.transcript_path is not None:
+                transcript, confidence = reg.transcript_path, "matched"
+            else:
+                transcript, confidence = self._pick_transcript(cwd, self._started(pid))
             branch = last_branch(transcript) if transcript else None
             entries = tail(transcript, _TAIL_MESSAGES) if transcript else []
             summary = "\n".join(f"{e.role}: {e.text[:_TAIL_CHARS]}" for e in entries)
@@ -98,6 +112,17 @@ class SessionDiscovery:
                     )
                 except OSError:
                     pass
+            status = None
+            if reg is not None:
+                status = reg.status
+                if (
+                    status == "idle"
+                    and reg.updated_at is not None
+                    and last_activity is not None
+                    and last_activity - reg.updated_at > _RUNNING_SLACK
+                ):
+                    # The transcript moved after the last Stop: a new turn is running.
+                    status = "running"
             sessions.append(
                 LiveSession(
                     pid=pid,
@@ -108,6 +133,8 @@ class SessionDiscovery:
                     transcript_confidence=confidence,
                     last_activity=last_activity,
                     tail=summary,
+                    session_id=reg.session_id if reg is not None else None,
+                    status=status,
                 )
             )
         return sessions
