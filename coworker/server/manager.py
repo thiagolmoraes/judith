@@ -14,6 +14,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -202,6 +203,17 @@ class SessionManager:
         self.scheduler = Scheduler(
             self.task_store, self._run_scheduled_task, extra_tick=self.resume_due_wakes
         )
+        # Claude Code bridge watcher (macOS): notifies watched terminal sessions'
+        # owners on WhatsApp when a session finishes. File-registry driven; the
+        # actual sends reuse the stateless connector senders.
+        self.bridge_watcher = None
+        if sys.platform == "darwin":
+            from ..claude_bridge.watcher import BridgeWatcher, ConnectorNotifier
+
+            self.bridge_watcher = BridgeWatcher(
+                Path.home() / ".claude" / "ow-bridge",
+                ConnectorNotifier(self.secrets),
+            )
         # Personas: registry + lifecycle state under this manager's data dir. Installed as the
         # process singleton so agents.get_agent resolves persona ids (incl. third-party) here.
         self.personas = PersonaRegistry(state_path=base / "personas.json")
@@ -2351,6 +2363,8 @@ class SessionManager:
         durable sessions: a channel message to its subscribers, a DM to the designated DM session
         (else parked). Returns the platforms whose listeners came up."""
         self.scheduler.start()  # tick scheduler for automations (independent of connectors)
+        if self.bridge_watcher is not None:
+            self.bridge_watcher.start()
         return await self._build_and_start_gateway()
 
     async def refresh_gateway(self) -> list[str]:
