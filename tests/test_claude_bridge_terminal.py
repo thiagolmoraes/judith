@@ -60,6 +60,30 @@ def test_send_text_multiline_becomes_single_line():
     assert 'write text "line one line two"' in fake.scripts[0]
 
 
+def test_send_keys_no_trailing_enter():
+    fake = FakeOsascript(stdout="ok\n")
+    driver = ITerm2Driver(run=fake)
+    assert driver.send_keys("w0t0p0:ABC", "1") is True
+    script = fake.scripts[0]
+    assert 'write text "1" newline NO' in script
+    assert '"w0t0p0:ABC"' in script
+
+
+def test_send_keys_escapes():
+    fake = FakeOsascript(stdout="ok\n")
+    ITerm2Driver(run=fake).send_keys("id", '3"x')
+    assert 'write text "3\\"x" newline NO' in fake.scripts[0]
+
+
+def test_send_keys_false_on_missing_session_or_crash():
+    assert ITerm2Driver(run=FakeOsascript(stdout="")).send_keys("id", "1") is False
+
+    def broken(cmd, **kwargs):
+        raise subprocess.TimeoutExpired(cmd, 10)
+
+    assert ITerm2Driver(run=broken).send_keys("id", "1") is False
+
+
 def test_send_text_false_on_missing_session_or_failure():
     assert ITerm2Driver(run=FakeOsascript(stdout="")).send_text("id", "x") is False
     assert (
