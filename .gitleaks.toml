@@ -1,0 +1,40 @@
+# Secret/PII scanning — default gitleaks rules plus owner-specific patterns.
+# Wired as a pre-commit hook via .githooks/ (git config core.hooksPath .githooks).
+# A real leak here already cost a history rewrite (2026-07-30); never bypass with
+# --no-verify — replace the data with the fake-fixture shape instead.
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "owner-phone-br"
+description = "Personal Brazilian phone number (DDD 24 prefix)"
+regex = '''5524\d{9}'''
+
+[[rules]]
+id = "owner-personal-email"
+description = "Personal email address"
+regex = '''thiagoluismoraes@gmail\.com'''
+
+[[rules]]
+id = "owner-home-path"
+description = "Absolute home path — use repo-relative paths in committed files"
+regex = '''/Users/thiagomangia'''
+
+[allowlist]
+description = "Fake fixture data used across the test suite, plus untracked vendored trees"
+regexes = [
+  '''5511999999999''',
+  '''Test Contact''',
+  # Fake test credentials that trip the generic-api-key rule:
+  '''amp_key_abc123''',
+  '''bedrock_api_key="?test''',
+]
+paths = [
+  '''node_modules/''',
+  '''\.venv/''',
+  '''surfaces/gui/src-tauri/target/''',
+  '''surfaces/gui/dist/''',
+  '''packaging/(build|dist)/''',
+  '''\.git/''',
+]

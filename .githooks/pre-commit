@@ -1,0 +1,9 @@
+#!/bin/sh
+# Blocks staged changes containing secrets or the owner's personal data.
+# Setup (once per clone): git config core.hooksPath .githooks
+# If this blocks you: fix the data (fake fixtures), never --no-verify.
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "pre-commit: gitleaks not installed (brew install gitleaks) — refusing to commit unscanned" >&2
+  exit 1
+fi
+exec gitleaks protect --staged --redact -v
