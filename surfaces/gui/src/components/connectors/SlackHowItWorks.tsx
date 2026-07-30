@@ -198,7 +198,7 @@ function SlackRail({ active }: { active: string }) {
       <div className="hiw-slnav"><span className="hiw-pres" />Priya N</div>
       <div className="hiw-slnav"><span className="hiw-pres" />Emma W</div>
       <div className="hiw-sect">Agents &amp; apps</div>
-      <div className="hiw-slnav"><span className="hiw-appav">OW</span>OpenWorker</div>
+      <div className="hiw-slnav"><span className="hiw-appav">JU</span>Judith</div>
     </div>
   );
 }
@@ -242,7 +242,7 @@ function OwWin({ children }: { children: React.ReactNode }) {
   return (
     <div className="hiw-win hiw-ow">
       <div className="hiw-owtop">
-        <span className="hiw-dots"><i /><i /><i /></span> OpenWorker
+        <span className="hiw-dots"><i /><i /><i /></span> Judith
       </div>
       <div className="hiw-owbody">{children}</div>
     </div>
@@ -252,7 +252,7 @@ function OwWin({ children }: { children: React.ReactNode }) {
 function OwRail({ hot, hotSub, glow }: { hot?: string; hotSub?: string; glow?: boolean }) {
   return (
     <div className="hiw-owrail">
-      <div className="hiw-brand">OpenWorker</div>
+      <div className="hiw-brand">Judith</div>
       <div className="hiw-newbtn">＋ New session</div>
       <div className="hiw-ownav">⌕ Search</div>
       <div className="hiw-ownav">◷ Automations</div>
@@ -326,12 +326,12 @@ function SceneMention({ meFirst, meInitial }: { meFirst: string; meInitial: stri
               av={meInitial} avBg="#3b82c4" name={meFirst} ts="6:33 PM" delay=".8s"
               extra={
                 <span className="hiw-replybar hiw-k" style={d("4.6s")}>
-                  <span className="hiw-sav2">OW</span> 1 reply
+                  <span className="hiw-sav2">JU</span> 1 reply
                   <span className="hiw-later">Today at 6:34 PM</span>
                 </span>
               }
             >
-              <span className="hiw-men">@OpenWorker</span> summarize this thread
+              <span className="hiw-men">@Judith</span> summarize this thread
             </Msg>
           </div>
           <SlackComposer placeholder="Message #launch-room" />
@@ -339,10 +339,10 @@ function SceneMention({ meFirst, meInitial }: { meFirst: string; meInitial: stri
             <div className="hiw-th">Thread <span className="hiw-sub"># launch-room</span><span className="hiw-x">✕</span></div>
             <div className="hiw-tmsgs">
               <Msg av={meInitial} avBg="#3b82c4" name={meFirst} ts="6:33 PM">
-                <span className="hiw-men">@OpenWorker</span> summarize this thread
+                <span className="hiw-men">@Judith</span> summarize this thread
               </Msg>
               <div className="hiw-cnt">1 reply</div>
-              <Msg av="OW" avBg="#4a154b" name="OpenWorker" app ts="6:34 PM">
+              <Msg av="JU" avBg="#4a154b" name="Judith" app ts="6:34 PM">
                 Launch traction: signups up 3.4× since the post…
               </Msg>
             </div>
@@ -357,12 +357,12 @@ function SceneMention({ meFirst, meInitial }: { meFirst: string; meInitial: stri
             Summarize #launch-room <span className="hiw-via">via Slack</span>
           </div>
           <div className="hiw-owchat">
-            <div className="hiw-bub user hiw-k" style={d("2.8s")}>@OpenWorker summarize this thread</div>
+            <div className="hiw-bub user hiw-k" style={d("2.8s")}>@Judith summarize this thread</div>
             <div className="hiw-bub agent hiw-k" style={d("3.6s")}>
               Reading the thread… signups up 3.4×, top referrer is the press page. <i>(replying in the Slack thread)</i>
             </div>
           </div>
-          <div className="hiw-owcomposer">Message OpenWorker…</div>
+          <div className="hiw-owcomposer">Message Judith…</div>
         </div>
       </OwWin>
     </>
@@ -389,12 +389,12 @@ function SceneThread({ meFirst, meInitial }: { meFirst: string; meInitial: strin
               av={meInitial} avBg="#3b82c4" name={meFirst} ts="6:33 PM"
               extra={
                 <span className="hiw-replybar">
-                  <span className="hiw-sav2">OW</span> 2 replies
+                  <span className="hiw-sav2">JU</span> 2 replies
                   <span className="hiw-later">Today at 6:36 PM</span>
                 </span>
               }
             >
-              <span className="hiw-men">@OpenWorker</span> summarize this thread
+              <span className="hiw-men">@Judith</span> summarize this thread
             </Msg>
           </div>
           <SlackComposer placeholder="Message #launch-room" />
@@ -403,16 +403,16 @@ function SceneThread({ meFirst, meInitial }: { meFirst: string; meInitial: strin
             <div className="hiw-th">Thread <span className="hiw-sub"># launch-room</span><span className="hiw-x">✕</span></div>
             <div className="hiw-tmsgs">
               <Msg av={meInitial} avBg="#3b82c4" name={meFirst} ts="6:33 PM">
-                <span className="hiw-men">@OpenWorker</span> summarize this thread
+                <span className="hiw-men">@Judith</span> summarize this thread
               </Msg>
               <div className="hiw-cnt">2 replies</div>
-              <Msg av="OW" avBg="#4a154b" name="OpenWorker" app ts="6:34 PM">
+              <Msg av="JU" avBg="#4a154b" name="Judith" app ts="6:34 PM">
                 Launch traction: signups up 3.4×…
               </Msg>
               <Msg av="P" avBg="#7c6cd0" name="Priya N" ts="6:36 PM" delay=".8s">
-                <span className="hiw-men">@OpenWorker</span> break it down by country?
+                <span className="hiw-men">@Judith</span> break it down by country?
               </Msg>
-              <Msg av="OW" avBg="#4a154b" name="OpenWorker" app ts="6:36 PM" delay="4.8s">
+              <Msg av="JU" avBg="#4a154b" name="Judith" app ts="6:36 PM" delay="4.8s">
                 Top: US 41% · India 22% · Germany 9%…
               </Msg>
             </div>
@@ -422,7 +422,7 @@ function SceneThread({ meFirst, meInitial }: { meFirst: string; meInitial: strin
       </SlackWin>
       <OwWin>
         <div className="hiw-owrail">
-          <div className="hiw-brand">OpenWorker</div>
+          <div className="hiw-brand">Judith</div>
           <div className="hiw-newbtn">＋ New session</div>
           <div className="hiw-ownav">⌕ Search</div>
           <div className="hiw-ownav">◷ Automations</div>
@@ -443,7 +443,7 @@ function SceneThread({ meFirst, meInitial }: { meFirst: string; meInitial: strin
               Top countries: US 41%, India 22%, Germany 9% — context kept from the whole thread.
             </div>
           </div>
-          <div className="hiw-owcomposer">Message OpenWorker…</div>
+          <div className="hiw-owcomposer">Message Judith…</div>
         </div>
       </OwWin>
     </>
@@ -467,12 +467,12 @@ function SceneTeammates() {
               av="P" avBg="#7c6cd0" name="Priya N" ts="6:41 PM" delay=".7s"
               extra={
                 <span className="hiw-replybar hiw-k" style={d("5.6s")}>
-                  <span className="hiw-sav2">OW</span> 1 reply
+                  <span className="hiw-sav2">JU</span> 1 reply
                   <span className="hiw-later">after you allow</span>
                 </span>
               }
             >
-              <span className="hiw-men">@OpenWorker</span> pull the signup numbers?
+              <span className="hiw-men">@Judith</span> pull the signup numbers?
             </Msg>
           </div>
           <SlackComposer placeholder="Message #launch-room" />

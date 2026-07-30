@@ -21,3 +21,4 @@ surfaces/gui/src-tauri/binaries/
 *.pem
 *.key
 secrets.json
+.DS_Store

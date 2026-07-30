@@ -58,7 +58,7 @@ const FICTIONAL: Record<string, string[]> = {
     "after you allow",
     "signups are spiking since the post 📈",
     "summarize this thread",
-    "@OpenWorker summarize this thread",
+    "@Judith summarize this thread",
     "break it down by country?",
     "pull the signup numbers?",
     "Launch traction: signups up 3.4× since the post…",
@@ -75,12 +75,12 @@ const FICTIONAL: Record<string, string[]> = {
     "via Slack",
     "via Slack · now",
     "via Slack — same session",
-    "Message OpenWorker…",
+    "Message Judith…",
     "is waiting",
     "Allow & deliver",
     "Each teammate's first mention waits for your OK — then they're on the People list and it flows.",
     "You",
-    "OW",
+    "JU",
     "APP",
   ],
 };
@@ -123,7 +123,7 @@ function code(text: string): string {
 // which is the point — the cost of a false positive is one line here, the cost of a false
 // negative is untranslated copy shipping unnoticed.
 const ALLOWED = new Set([
-  "OpenWorker", // the wordmark
+  "Judith", // the wordmark
   "BETA",
   "Coworker", // product surface names, also persona ids
   "Chat",
@@ -144,7 +144,7 @@ const ALLOWED = new Set([
   "Windows",
   "macOS 12+ · Apple Silicon M1+",
   "Windows 10 22H2/11 · x64",
-  "~/OpenWorker", // a filesystem path shown as a placeholder
+  "~/Judith", // a filesystem path shown as a placeholder
 ]);
 
 // Shapes that can't be user-facing copy no matter what they say.

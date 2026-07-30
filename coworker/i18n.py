@@ -87,13 +87,13 @@ _MESSAGES: dict[str, dict[str, str]] = {
     # -- loopback browser pages (server/app.py) ---------------------------------
     "page.signedIn.title": {"en": "Signed in", "pt-BR": "Login concluído"},
     "page.signedIn.detail": {
-        "en": "You're signed in to OpenWorker Cloud. You can close this tab and return to OpenWorker.",
-        "pt-BR": "Login no OpenWorker Cloud concluído. Você pode fechar esta aba e voltar para o OpenWorker.",
+        "en": "You're signed in to OpenWorker Cloud. You can close this tab and return to Judith.",
+        "pt-BR": "Login no OpenWorker Cloud concluído. Você pode fechar esta aba e voltar para o Judith.",
     },
     "page.signInFailed.title": {"en": "Sign-in failed", "pt-BR": "Falha no login"},
     "page.signInFailed.detail": {
-        "en": "Close this tab and try signing in again from OpenWorker.",
-        "pt-BR": "Feche esta aba e tente entrar de novo pelo OpenWorker.",
+        "en": "Close this tab and try signing in again from Judith.",
+        "pt-BR": "Feche esta aba e tente entrar de novo pelo Judith.",
     },
     "page.connected.title": {"en": "Connected", "pt-BR": "Conectado"},
     "page.connectorConnected.title": {
@@ -101,8 +101,8 @@ _MESSAGES: dict[str, dict[str, str]] = {
         "pt-BR": "{connector} conectado",
     },
     "page.connected.detail": {
-        "en": "You can close this tab and return to OpenWorker.",
-        "pt-BR": "Você pode fechar esta aba e voltar para o OpenWorker.",
+        "en": "You can close this tab and return to Judith.",
+        "pt-BR": "Você pode fechar esta aba e voltar para o Judith.",
     },
     "page.connectFailed.title": {
         "en": "Connection failed",
@@ -111,38 +111,38 @@ _MESSAGES: dict[str, dict[str, str]] = {
     "page.connectFailed.detail": {
         "en": (
             "Something went wrong finishing this connection. "
-            "Close this tab and try again from OpenWorker."
+            "Close this tab and try again from Judith."
         ),
         "pt-BR": (
             "Algo deu errado ao concluir esta conexão. "
-            "Feche esta aba e tente de novo pelo OpenWorker."
+            "Feche esta aba e tente de novo pelo Judith."
         ),
     },
     "page.serviceError.detail": {
-        "en": "The service reported an error. Return to OpenWorker and try again.",
-        "pt-BR": "O serviço retornou um erro. Volte ao OpenWorker e tente de novo.",
+        "en": "The service reported an error. Return to Judith and try again.",
+        "pt-BR": "O serviço retornou um erro. Volte ao Judith e tente de novo.",
     },
     "page.timedOut.detail": {
-        "en": "The sign-in may have timed out. Return to OpenWorker and start it again.",
-        "pt-BR": "O login pode ter expirado. Volte ao OpenWorker e comece de novo.",
+        "en": "The sign-in may have timed out. Return to Judith and start it again.",
+        "pt-BR": "O login pode ter expirado. Volte ao Judith e comece de novo.",
     },
     "page.signInComplete.detail": {
-        "en": "Sign-in complete. You can close this tab and return to OpenWorker.",
-        "pt-BR": "Login concluído. Você pode fechar esta aba e voltar para o OpenWorker.",
+        "en": "Sign-in complete. You can close this tab and return to Judith.",
+        "pt-BR": "Login concluído. Você pode fechar esta aba e voltar para o Judith.",
     },
     # Platform-neutral: this flow runs on Windows too, and the page has no way to know
     # which — claiming "your Mac" is simply wrong half the time.
     "page.footer": {
-        "en": "Served locally by OpenWorker on this device",
-        "pt-BR": "Servido localmente pelo OpenWorker neste dispositivo",
+        "en": "Served locally by Judith on this device",
+        "pt-BR": "Servido localmente pelo Judith neste dispositivo",
     },
     "page.nothingWaiting.title": {
         "en": "Nothing waiting for this sign-in",
         "pt-BR": "Nenhum login aguardando",
     },
     "page.nothingWaiting.detail": {
-        "en": "You can close this tab and return to OpenWorker.",
-        "pt-BR": "Você pode fechar esta aba e voltar para o OpenWorker.",
+        "en": "You can close this tab and return to Judith.",
+        "pt-BR": "Você pode fechar esta aba e voltar para o Judith.",
     },
     # -- OS-level prompts -------------------------------------------------------
     # Rendered by the platform's own folder picker (osascript on macOS, a WinForms

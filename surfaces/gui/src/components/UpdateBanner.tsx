@@ -92,7 +92,7 @@ export function UpdateBanner() {
     >
       <div className="text-[13px] font-semibold">{t("update.available")}</div>
       <div className="text-[12px] text-muted mt-0.5">
-        OpenWorker v{update.version} is ready to install.
+        Judith v{update.version} is ready to install.
       </div>
       {phase === "error" && (
         <div className="text-[11.5px] text-warnInk mt-1.5">

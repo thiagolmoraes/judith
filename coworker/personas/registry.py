@@ -160,7 +160,7 @@ class PersonaRegistry:
         # file, so asking it to summarise mail yields summary.md instead of an answer.
         self._register_builder(
             "assistant",
-            "Assistant",
+            "Judith",
             "plug",
             "Your connected accounts — answers in the chat",
             assistant_agent,

@@ -1028,7 +1028,7 @@ export function Sidebar(props: Props) {
             <Icon name="sidebar" size={16} />
           </button>
         )}
-        <div className="brand-wordmark text-[15px]">OpenWorker<span className="beta-tag">BETA</span></div>
+        <div className="brand-wordmark text-[15px]">Judith<span className="beta-tag">BETA</span></div>
       </div>
 
       {/* New session: split button — primary starts the last-used persona; ▾ picks a specific one. */}

@@ -46,8 +46,8 @@ ASSISTANT_INSTRUCTIONS = (
 
 def assistant_agent() -> Agent:
     return Agent(
-        name="assistant",
-        title="Assistant",
+        name="assistant",  # stable id — session records and the API key off this
+        title="Judith",
         system_prompt=ASSISTANT_INSTRUCTIONS,
         # No workspace: the point of this persona is that no file can be produced.
         needs_workspace=False,
