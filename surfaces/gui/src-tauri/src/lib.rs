@@ -731,7 +731,7 @@ pub fn run() {
             // it for light/dark automatically — not the full-color app icon.
             let tray_icon = tauri::image::Image::new(include_bytes!("../icons/tray.rgba"), 44, 44);
             TrayIconBuilder::new()
-                .tooltip("OpenWorker")
+                .tooltip("Judith")
                 .icon(tray_icon)
                 .icon_as_template(true)
                 .menu(&menu)
