@@ -29,6 +29,18 @@ def _load(settings_path: Path) -> dict:
         return {}
 
 
+def _corrupt(settings_path: Path) -> bool:
+    """An existing settings file that doesn't parse. Install must refuse to proceed —
+    writing would replace whatever the user had with just our hooks."""
+    if not settings_path.exists():
+        return False
+    try:
+        json.loads(settings_path.read_text(encoding="utf-8"))
+        return False
+    except (OSError, json.JSONDecodeError):
+        return True
+
+
 def _is_ours(entry: dict) -> bool:
     return any(
         _MARKER in (hook.get("command") or "")
@@ -40,6 +52,11 @@ def _is_ours(entry: dict) -> bool:
 def install(
     settings_path: Path, bridge_dir: Path, *, python: Optional[str] = None
 ) -> list[str]:
+    if _corrupt(settings_path):
+        raise ValueError(
+            f"{settings_path} exists but is not valid JSON — fix it first; "
+            "refusing to overwrite it."
+        )
     bridge_dir.mkdir(parents=True, exist_ok=True)
     source = Path(__file__).with_name("hook_script.py")
     hook_path = bridge_dir / "hook.py"
@@ -99,13 +116,19 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
     parser.add_argument("--uninstall", action="store_true")
     args = parser.parse_args(argv)
+    from .registry import default_bridge_dir
+
     settings = Path.home() / ".claude" / "settings.json"
-    bridge = Path.home() / ".claude" / "ow-bridge"
+    bridge = default_bridge_dir()
     if args.uninstall:
         removed = uninstall(settings, bridge)
         print(f"removed hooks: {', '.join(removed) or 'none'}")
     else:
-        registered = install(settings, bridge)
+        try:
+            registered = install(settings, bridge)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
         print(f"registered hooks: {', '.join(registered)}")
         print("restart open Claude Code sessions to pick them up")
     return 0

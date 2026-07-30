@@ -107,6 +107,22 @@ def test_waiting_approval_notifies_without_consuming(tmp_path: Path):
     assert len(notifier.sent) == 1  # same state → no repeat
 
 
+def test_two_different_approvals_both_notify(tmp_path: Path):
+    # Dedup keys on (status, message): a second, different permission request must
+    # not be swallowed just because the status is the same.
+    _write_state(tmp_path, "aaa", status="waiting_approval", message="run: git push")
+    _watch(tmp_path)
+    notifier = FakeNotifier()
+    watcher = BridgeWatcher(tmp_path, notifier, alive=lambda pid: True)
+    watcher.poll_once()
+    _write_state(
+        tmp_path, "aaa", status="waiting_approval", message="run: docker compose up"
+    )
+    watcher.poll_once()
+    assert len(notifier.sent) == 2
+    assert "docker compose up" in notifier.sent[1][2]
+
+
 def test_ghost_watched_session_notifies_closed_and_consumes(tmp_path: Path):
     _write_state(tmp_path, "aaa", status="idle", pid=999)
     _watch(tmp_path)

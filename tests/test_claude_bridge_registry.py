@@ -102,6 +102,18 @@ def test_watches_get_does_not_consume_and_remove_is_idempotent(tmp_path: Path):
     assert w.remove("aaa") is False
 
 
+def test_read_sessions_rejects_traversal_shaped_id(tmp_path: Path):
+    # A state file whose recorded id contains path separators would make prune()
+    # unlink outside sessions/ — such entries are dropped at parse time.
+    _write_state(tmp_path, "safe")
+    f = tmp_path / "sessions" / "evil.json"
+    f.write_text(
+        json.dumps({"session_id": "../../evil", "status": "idle", "pid": 1}),
+        encoding="utf-8",
+    )
+    assert [s.session_id for s in read_sessions(tmp_path)] == ["safe"]
+
+
 def test_watches_tolerates_corrupt_file(tmp_path: Path):
     (tmp_path / "watches.json").write_text("{ nope", encoding="utf-8")
     w = Watches(tmp_path)

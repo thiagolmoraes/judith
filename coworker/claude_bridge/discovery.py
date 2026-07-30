@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Callable
 
 from .models import LiveSession
-from .registry import read_sessions
+from .registry import default_bridge_dir, read_sessions
 from .transcript import last_branch, tail
 
 # Slack applied to "modified after process start": mtimes and etime are second-granular.
@@ -79,7 +79,7 @@ class SessionDiscovery:
         self._projects = projects_dir or Path.home() / ".claude" / "projects"
         self._own_pid = os.getpid() if own_pid is None else own_pid
         self._now = now or (lambda: datetime.now(timezone.utc))
-        self._bridge = bridge_dir or Path.home() / ".claude" / "ow-bridge"
+        self._bridge = bridge_dir or default_bridge_dir()
 
     def list(self) -> list[LiveSession]:
         procs = self._processes()

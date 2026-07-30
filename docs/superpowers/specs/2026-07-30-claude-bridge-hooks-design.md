@@ -40,7 +40,7 @@ Scenario simulation drove the scope (predicted hit rates in parentheses):
 
 ## Architecture
 
-```
+```text
 Claude Code ──Stop/Notification hooks──►  ~/.claude/ow-bridge/sessions/<id>.json
                                                    ▲                │
         `coworker claude-bridge install-hooks` ────┘                │  poll (~2 s)
@@ -51,7 +51,7 @@ WhatsApp ◄── Evolution adapter (existing) ◄── watcher ◄── regi
 
 New modules live in the phase-1 domain package; dependencies still point inward:
 
-```
+```text
 coworker/claude_bridge/
   hook_script.py   # standalone — runs inside Claude Code's hook, stdlib only,
                    # zero imports from coworker

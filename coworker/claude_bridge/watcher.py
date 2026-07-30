@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Callable, Optional, Protocol
 
 from .registry import SessionState, Watches, prune, read_sessions
-from .transcript import tail
+from .transcript import last_branch, tail
 
 logger = logging.getLogger("coworker.claude_bridge")
 
@@ -43,7 +43,9 @@ def _pid_alive(pid: int) -> bool:
 
 
 def _project(state: SessionState) -> str:
-    return Path(state.cwd).name if state.cwd else state.session_id[:8]
+    name = Path(state.cwd).name if state.cwd else state.session_id[:8]
+    branch = last_branch(state.transcript_path) if state.transcript_path else None
+    return f"{name} ({branch})" if branch else name
 
 
 def _snippet(state: SessionState) -> str:
@@ -69,8 +71,9 @@ class BridgeWatcher:
         self._alive = alive or _pid_alive
         self._poll_seconds = poll_seconds
         self._watches = Watches(bridge_dir)
-        # session_id → last status we notified for (dedup within this process).
-        self._notified: dict[str, str] = {}
+        # session_id → last (status, message) we notified for. The message is part of
+        # the key: two different approval requests in a row must both come through.
+        self._notified: dict[str, tuple[str, Optional[str]]] = {}
         self._task: Optional[asyncio.Task] = None
 
     # -- one poll: the entire behaviour, synchronous and testable ------------------
@@ -96,7 +99,7 @@ class BridgeWatcher:
             if watch is None:
                 self._notified.pop(state.session_id, None)
                 continue
-            if self._notified.get(state.session_id) == state.status:
+            if self._notified.get(state.session_id) == (state.status, state.message):
                 continue
             if state.status == "idle":
                 snippet = _snippet(state)
@@ -105,7 +108,7 @@ class BridgeWatcher:
                     text = f"{text}\n\n{snippet}"
                 if self._notifier.send(watch["platform"], watch["chat_id"], text):
                     self._watches.pop(state.session_id)
-                    self._notified[state.session_id] = state.status
+                    self._notified[state.session_id] = (state.status, state.message)
             elif state.status == "waiting_approval":
                 detail = state.message or "a permission request"
                 text = (
@@ -114,7 +117,7 @@ class BridgeWatcher:
                 )
                 if self._notifier.send(watch["platform"], watch["chat_id"], text):
                     # Watch NOT consumed — the session hasn't finished.
-                    self._notified[state.session_id] = state.status
+                    self._notified[state.session_id] = (state.status, state.message)
 
     # -- lifecycle (mirrors automation.Scheduler) -----------------------------------
 
@@ -133,7 +136,9 @@ class BridgeWatcher:
 
     async def _loop(self) -> None:
         while True:
-            self.poll_once()
+            # poll_once does file I/O and a synchronous HTTP send (up to the sender's
+            # 30 s timeout) — keep it off the server's event loop.
+            await asyncio.to_thread(self.poll_once)
             await asyncio.sleep(self._poll_seconds)
 
 

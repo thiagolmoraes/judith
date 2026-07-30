@@ -69,6 +69,14 @@ def test_garbage_and_missing_fields_exit_zero(tmp_path: Path):
     assert not (tmp_path / "sessions").exists()  # no session_id → nothing written
 
 
+def test_hostile_session_id_writes_nothing(tmp_path: Path):
+    # The session id becomes a filename — a traversal-shaped id must be rejected.
+    payload = _payload("Stop", session_id="../../evil")
+    assert run(payload, tmp_path, ppid=910, now=lambda: NOW) == 0
+    assert not (tmp_path / "sessions").exists()
+    assert not (tmp_path.parent / "evil.json").exists()
+
+
 def test_unwritable_dir_exits_zero(tmp_path: Path):
     blocked = tmp_path / "blocked"
     blocked.write_text("i am a file, not a dir", encoding="utf-8")

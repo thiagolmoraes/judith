@@ -290,6 +290,13 @@ def test_watch_errors(tmp_path):
     ) == {"error": "already_watched"}
 
 
+def test_watch_rejects_unknown_platform(tmp_path):
+    t, _ = _watched_tools(tmp_path, [_session_with_id()])
+    result = t["watch_claude_session"](tty="ttys000", notify_target="carrier-pigeon:x")
+    assert result["error"] == "unknown_platform"
+    assert "whatsapp_evolution" in result["hint"]
+
+
 def test_watch_without_registry_session_id(tmp_path):
     t, _ = _watched_tools(tmp_path, [_session_with_id(session_id=None)])
     result = t["watch_claude_session"](

@@ -253,7 +253,6 @@ def test_registry_idle_but_newer_transcript_means_running(tmp_path: Path):
         bridge, "aaa", 910, t, cwd, status="idle",
         updated_at="2026-07-30T11:58:00+00:00",
     )
-    os.utime(t, (NOW.timestamp() - 60, NOW.timestamp() - 60))
     runner = FakeRunner(PS, cwds={910: cwd}, etimes={910: "02:00"})
     disc = SessionDiscovery(
         run=runner,

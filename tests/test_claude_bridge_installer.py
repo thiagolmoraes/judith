@@ -98,3 +98,14 @@ def test_uninstall_removes_only_ours(tmp_path: Path):
 def test_uninstall_when_never_installed(tmp_path: Path):
     settings = tmp_path / "settings.json"
     assert uninstall(settings, tmp_path / "ow-bridge") == []
+
+
+def test_install_refuses_corrupt_settings(tmp_path: Path):
+    # Overwriting a malformed settings.json would silently destroy the user's config.
+    import pytest
+
+    settings = tmp_path / "settings.json"
+    settings.write_text("{ definitely not json", encoding="utf-8")
+    with pytest.raises(ValueError):
+        install(settings, tmp_path / "ow-bridge", python="py")
+    assert settings.read_text(encoding="utf-8") == "{ definitely not json"

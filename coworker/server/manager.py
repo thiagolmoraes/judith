@@ -17,7 +17,10 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
+
+if TYPE_CHECKING:
+    from ..claude_bridge.watcher import BridgeWatcher
 
 from ..agent import build_engine
 from ..agents import get_agent
@@ -206,13 +209,13 @@ class SessionManager:
         # Claude Code bridge watcher (macOS): notifies watched terminal sessions'
         # owners on WhatsApp when a session finishes. File-registry driven; the
         # actual sends reuse the stateless connector senders.
-        self.bridge_watcher = None
+        self.bridge_watcher: Optional["BridgeWatcher"] = None
         if sys.platform == "darwin":
+            from ..claude_bridge.registry import default_bridge_dir
             from ..claude_bridge.watcher import BridgeWatcher, ConnectorNotifier
 
             self.bridge_watcher = BridgeWatcher(
-                Path.home() / ".claude" / "ow-bridge",
-                ConnectorNotifier(self.secrets),
+                default_bridge_dir(), ConnectorNotifier(self.secrets)
             )
         # Personas: registry + lifecycle state under this manager's data dir. Installed as the
         # process singleton so agents.get_agent resolves persona ids (incl. third-party) here.

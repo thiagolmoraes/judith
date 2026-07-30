@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import tempfile
 from datetime import datetime, timezone
@@ -25,6 +26,10 @@ _STATUS = {
     "Notification": "waiting_approval",
     "SessionEnd": "ended",
 }
+
+# The session id becomes a filename — accept only the uuid-ish shape Claude Code uses,
+# so a malformed or hostile payload can't write outside sessions/.
+_SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 def run(
@@ -42,7 +47,11 @@ def run(
             return 0
         status = _STATUS.get(payload.get("hook_event_name") or "")
         session_id = payload.get("session_id")
-        if status is None or not isinstance(session_id, str) or not session_id:
+        if (
+            status is None
+            or not isinstance(session_id, str)
+            or not _SESSION_ID_RE.match(session_id)
+        ):
             return 0
         clock = now or (lambda: datetime.now(timezone.utc))
         state = {

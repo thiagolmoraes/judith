@@ -11,7 +11,7 @@ from typing import Any, Callable, Optional, Protocol
 
 from ..claude_bridge.discovery import SessionDiscovery
 from ..claude_bridge.models import LiveSession
-from ..claude_bridge.registry import Watches
+from ..claude_bridge.registry import Watches, default_bridge_dir
 from ..claude_bridge.terminal import ITerm2Driver, TerminalDriver
 from ..claude_bridge.transcript import tail as transcript_tail
 from ..claude_bridge.transcript import wait_for_reply
@@ -230,6 +230,13 @@ def claude_session_tools(
         platform, _, chat_id = notify_target.partition(":")
         if not platform or not chat_id:
             return {"error": "invalid_arguments"}
+        from ..connectors.senders import DEFAULT_SENDERS
+
+        if platform not in DEFAULT_SENDERS:
+            return {
+                "error": "unknown_platform",
+                "hint": f"known platforms: {', '.join(sorted(DEFAULT_SENDERS))}",
+            }
         session = _by_tty(tty)
         if session is None:
             return {"error": "session_gone"}
@@ -271,7 +278,6 @@ def claude_session_tools(
 
 def claude_bridge_tools() -> list:
     """The production wiring: real discovery, real iTerm2 driver, real watches."""
-    bridge = Path.home() / ".claude" / "ow-bridge"
     return claude_session_tools(
-        SessionDiscovery(), ITerm2Driver(), watches=Watches(bridge)
+        SessionDiscovery(), ITerm2Driver(), watches=Watches(default_bridge_dir())
     )

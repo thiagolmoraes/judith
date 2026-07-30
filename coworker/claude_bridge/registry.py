@@ -10,11 +10,23 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
+
+# Session ids come from hook payloads and become filenames — restrict to the uuid-ish
+# shape Claude Code actually uses so a hostile id can't traverse out of sessions/.
+_SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def default_bridge_dir() -> Path:
+    """The one place the bridge directory is defined (hook_script keeps its own literal
+    copy by necessity — it must not import coworker)."""
+    return Path.home() / ".claude" / "ow-bridge"
 
 
 @dataclass
@@ -33,7 +45,11 @@ def _parse_state(raw: object) -> SessionState | None:
         return None
     session_id = raw.get("session_id")
     status = raw.get("status")
-    if not isinstance(session_id, str) or not session_id or not isinstance(status, str):
+    if (
+        not isinstance(session_id, str)
+        or not _SESSION_ID_RE.match(session_id or "")
+        or not isinstance(status, str)
+    ):
         return None
     pid = raw.get("pid")
     transcript = raw.get("transcript_path")
@@ -108,7 +124,11 @@ def _atomic_write_json(path: Path, data: object) -> None:
 class Watches:
     """One-shot notification requests, keyed by session_id. Stored in a single
     watches.json (tiny, owner-scale) — re-read on each call so concurrent instances
-    see each other's consumption."""
+    see each other's consumption. A process-wide lock serialises the read-modify-write
+    within this process (tools run in engine threads while the watcher polls); across
+    processes the contract stays "last reader wins the pop" (spec)."""
+
+    _lock = threading.Lock()
 
     def __init__(self, bridge_dir: Path) -> None:
         self._path = bridge_dir / "watches.json"
@@ -134,29 +154,32 @@ class Watches:
         *,
         now: Optional[Callable[[], datetime]] = None,
     ) -> bool:
-        data = self._load()
-        if session_id in data:
-            return False
-        clock = now or (lambda: datetime.now(timezone.utc))
-        data[session_id] = {
-            "platform": platform,
-            "chat_id": chat_id,
-            "created_at": clock().isoformat(),
-        }
-        _atomic_write_json(self._path, data)
-        return True
+        with self._lock:
+            data = self._load()
+            if session_id in data:
+                return False
+            clock = now or (lambda: datetime.now(timezone.utc))
+            data[session_id] = {
+                "platform": platform,
+                "chat_id": chat_id,
+                "created_at": clock().isoformat(),
+            }
+            _atomic_write_json(self._path, data)
+            return True
 
     def remove(self, session_id: str) -> bool:
-        data = self._load()
-        if session_id not in data:
-            return False
-        del data[session_id]
-        _atomic_write_json(self._path, data)
-        return True
+        with self._lock:
+            data = self._load()
+            if session_id not in data:
+                return False
+            del data[session_id]
+            _atomic_write_json(self._path, data)
+            return True
 
     def pop(self, session_id: str) -> dict | None:
-        data = self._load()
-        watch = data.pop(session_id, None)
-        if watch is not None:
-            _atomic_write_json(self._path, data)
-        return watch
+        with self._lock:
+            data = self._load()
+            watch = data.pop(session_id, None)
+            if watch is not None:
+                _atomic_write_json(self._path, data)
+            return watch
