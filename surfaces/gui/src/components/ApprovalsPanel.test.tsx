@@ -66,6 +66,30 @@ describe("Access rail — Approvals panel", () => {
     expect(await screen.findByText("Nothing pre-approved yet.")).toBeTruthy();
   });
 
+  it("a failed load shows an error with retry, never the empty state", async () => {
+    // "Nothing pre-approved" on a failed GET would claim grants are gone while they
+    // still exist server-side — the error state must be distinct.
+    let fail = true;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/v1/approvals")) {
+          if (fail) throw new Error("network down");
+          return { ok: true, json: async () => SNAPSHOT } as Response;
+        }
+        return { ok: true, json: async () => ({}) } as Response;
+      }),
+    );
+    render(<ApprovalsPanel />);
+    expect(await screen.findByText(/Couldn't load approvals\./)).toBeTruthy();
+    expect(screen.queryByText("Nothing pre-approved yet.")).toBeNull();
+
+    fail = false;
+    fireEvent.click(screen.getByText("Retry"));
+    expect(await screen.findByText("send_file")).toBeTruthy();
+  });
+
   it("revokes a command grant with kind=command and refetches the list", async () => {
     const calls = stubFetch();
     render(<ApprovalsPanel />);

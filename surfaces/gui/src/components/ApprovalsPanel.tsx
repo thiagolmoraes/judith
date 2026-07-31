@@ -15,11 +15,18 @@ import { useI18n } from "../i18n/useLocale";
 export function ApprovalsPanel() {
   const { t } = useI18n();
   const [snap, setSnap] = useState<ApprovalsSnapshot | null>(null);
+  // A failed load must NEVER read as "nothing pre-approved" — that would tell the
+  // user grants are gone while they still gate nothing. Keep the last good
+  // snapshot on failure and surface the error separately.
+  const [failed, setFailed] = useState(false);
 
   const refresh = () =>
     getApprovals()
-      .then(setSnap)
-      .catch(() => setSnap({ allow_tools: [], allow_commands: [], allow_targets: {} }));
+      .then((s) => {
+        setSnap(s);
+        setFailed(false);
+      })
+      .catch(() => setFailed(true));
 
   useEffect(() => {
     refresh();
@@ -47,6 +54,16 @@ export function ApprovalsPanel() {
     !!snap && !snap.allow_tools.length && !snap.allow_commands.length && !targetRows.length;
 
   if (snap === null) {
+    if (failed) {
+      return (
+        <div className="text-[12px] text-muted">
+          {t("settings.approvals.loadError")}{" "}
+          <button className="text-accent hover:underline" onClick={() => void refresh()}>
+            {t("common.retry")}
+          </button>
+        </div>
+      );
+    }
     return <div className="text-[12px] text-muted">{t("common.loading")}</div>;
   }
   if (empty) {
@@ -54,6 +71,9 @@ export function ApprovalsPanel() {
   }
   return (
     <>
+      {failed && (
+        <div className="text-[11.5px] text-muted">{t("settings.approvals.loadError")}</div>
+      )}
       <ApprovalGroup
         label={t("settings.approvals.tools")}
         rows={snap.allow_tools.map((tool) => ({

@@ -81,6 +81,7 @@ export const en: Catalog = {
   "settings.approvals.commands": "Commands",
   "settings.approvals.targets": "Send targets",
   "settings.approvals.empty": "Nothing pre-approved yet.",
+  "settings.approvals.loadError": "Couldn't load approvals.",
   "settings.approvals.remove": "Remove",
   "settings.setupUpdates": "Setup & updates",
   "settings.runSetupAgain.help": "Replays the first-run setup: model, first automation, tips.",
