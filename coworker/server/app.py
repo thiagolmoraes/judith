@@ -795,6 +795,30 @@ def create_app(manager: SessionManager) -> FastAPI:
     async def mcp_reload() -> dict[str, Any]:
         return await manager.reload_mcp()
 
+    # -- persistent approvals (Settings ▸ Approvals) ----------------------------
+    from ..approval_store import ApprovalStore
+    from ..secrets import state_dir
+
+    approvals_store = ApprovalStore(state_dir() / "approvals.json")
+
+    @app.get("/v1/approvals")
+    def approvals_list() -> dict[str, Any]:
+        return approvals_store.snapshot()
+
+    @app.post("/v1/approvals/revoke")
+    def approvals_revoke(body: dict) -> dict[str, Any]:
+        kind = str(body.get("kind", "")) if isinstance(body, dict) else ""
+        value = str(body.get("value", "")) if isinstance(body, dict) else ""
+        if kind == "tool" and value:
+            approvals_store.revoke_tool(value)
+        elif kind == "command" and value:
+            approvals_store.revoke_command(value)
+        elif kind == "target" and value and body.get("tool"):
+            approvals_store.revoke_target(str(body["tool"]), value)
+        else:
+            return {"ok": False, "error": "unknown kind"}
+        return {"ok": True, **approvals_store.snapshot()}
+
     # -- connectors (Slack / Telegram / …) --------------------------------------
     @app.get("/v1/connectors")
     def connectors_list() -> dict[str, Any]:
