@@ -288,9 +288,14 @@ def send_whatsapp(
     """One-shot outbound send. Sync, like the other senders — the engine runs it in a thread."""
     import httpx
 
+    from .wa_format import to_whatsapp
+
     number = jid_to_number(chat_id)
     if not number:
         return SendResult(False, error="empty WhatsApp recipient")
+    # The model writes markdown; WhatsApp renders its own syntax. Convert at the one
+    # point every outbound text passes through.
+    text = to_whatsapp(text)
     try:
         resp = httpx.post(
             f"{(base_url or '').rstrip('/')}/message/sendText/{instance}",
