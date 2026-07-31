@@ -84,6 +84,7 @@ export const ptBR: Catalog = {
   "settings.approvals.commands": "Comandos",
   "settings.approvals.targets": "Destinos de envio",
   "settings.approvals.empty": "Nada pré-aprovado ainda.",
+  "settings.approvals.loadError": "Não foi possível carregar as aprovações.",
   "settings.approvals.remove": "Remover",
   "settings.setupUpdates": "Configuração e atualizações",
   "settings.runSetupAgain.help": "Repete a configuração inicial: modelo, primeira automação, dicas.",
