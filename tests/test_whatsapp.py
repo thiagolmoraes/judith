@@ -154,6 +154,26 @@ def test_send_addresses_people_by_number_and_groups_by_jid(monkeypatch):
     assert seen[1]["json"]["number"] == "120363@g.us"
 
 
+def test_send_converts_markdown_to_whatsapp_styling(monkeypatch):
+    """Model output is GitHub markdown; Evolution delivers text verbatim, so the
+    conversion has to happen here — the one choke point every send passes through."""
+    seen: list[dict] = []
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        seen.append({"json": json})
+        return _Resp(201, {"key": {"id": "WAMID9"}})
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+
+    send_whatsapp(
+        "http://x:8090", "KEY", "openworker",
+        "5511999999999@s.whatsapp.net", "### Resumo\n**pronto**",
+    )
+    assert seen[0]["json"]["text"] == "*Resumo*\n*pronto*"
+
+
 def test_send_surfaces_the_server_error(monkeypatch):
     import httpx
 
