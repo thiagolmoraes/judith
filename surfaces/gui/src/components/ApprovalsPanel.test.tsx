@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { SettingsView } from "./SettingsView";
+import { ApprovalsPanel } from "./ApprovalsPanel";
 
-// Settings ▸ General ▸ Approvals: the permanent grants "Always allow (permanent)" mints,
+// Right rail ▸ Access ▸ Approvals: the permanent grants "Always allow (permanent)" mints,
 // listed by scope (tools / commands / send targets) with a Remove per row. Backed by
-// GET /v1/approvals and POST /v1/approvals/revoke; Remove refetches so the card
+// GET /v1/approvals and POST /v1/approvals/revoke; Remove refetches so the panel
 // reflects the store, not an optimistic guess.
 
 const SNAPSHOT = {
@@ -49,27 +49,26 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("Settings — Approvals card", () => {
+describe("Access rail — Approvals panel", () => {
   it("lists the three grant groups from GET /v1/approvals", async () => {
     stubFetch();
-    render(<SettingsView />);
-    const card = await screen.findByTestId("approvals-card");
-    await within(card).findByText("send_file");
-    expect(within(card).getByText("git status")).toBeTruthy();
+    render(<ApprovalsPanel />);
+    await screen.findByText("send_file");
+    expect(screen.getByText("git status")).toBeTruthy();
     // A per-target grant renders as one row naming both halves of the rule.
-    expect(within(card).getByText("send_message → slack:T1/C1")).toBeTruthy();
-    expect(within(card).getAllByText("Remove")).toHaveLength(3);
+    expect(screen.getByText("send_message → slack:T1/C1")).toBeTruthy();
+    expect(screen.getAllByText("Remove")).toHaveLength(3);
   });
 
   it("shows the empty state when nothing is pre-approved", async () => {
     stubFetch({ allow_tools: [], allow_commands: [], allow_targets: {} });
-    render(<SettingsView />);
+    render(<ApprovalsPanel />);
     expect(await screen.findByText("Nothing pre-approved yet.")).toBeTruthy();
   });
 
   it("revokes a command grant with kind=command and refetches the list", async () => {
     const calls = stubFetch();
-    render(<SettingsView />);
+    render(<ApprovalsPanel />);
     const row = (await screen.findByText("git status")).closest("div")!;
     fireEvent.click(within(row).getByText("Remove"));
 
@@ -83,7 +82,7 @@ describe("Settings — Approvals card", () => {
 
   it("revokes a target grant carrying the owning tool", async () => {
     const calls = stubFetch();
-    render(<SettingsView />);
+    render(<ApprovalsPanel />);
     const row = (await screen.findByText("send_message → slack:T1/C1")).closest("div")!;
     fireEvent.click(within(row).getByText("Remove"));
 

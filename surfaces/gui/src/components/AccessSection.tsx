@@ -32,6 +32,7 @@ import { indexConnectors, labelFor, visualFor, type ConnectorMap } from "../conn
 import { baseName } from "../paths";
 import { useRoots } from "../useRoots";
 import { AddFolderForm } from "./AddFolderForm";
+import { ApprovalsPanel } from "./ApprovalsPanel";
 import { Icon } from "./Icon";
 import { ConnectSetup } from "./ManageTabs";
 import { RootRow } from "./RootRow";
@@ -461,6 +462,13 @@ export function AccessSection({
                   </button>
                 )}
                 {rootsError && <div className="roots-err">{rootsError}</div>}
+              </div>
+
+              {/* Persistent pre-approvals — access control like Sources/Folders, so it
+                  lives here in the rail (owner ask 2026-07-31), not in Settings. */}
+              <div data-testid="drawer-approvals">
+                <div className={`${SEC_H} mb-1.5`}>{t("settings.approvals.title")}</div>
+                <ApprovalsPanel />
               </div>
 
               <button
