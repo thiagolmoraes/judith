@@ -29,6 +29,11 @@ from .config import ConnectorSettings, is_authorized, load_settings
 logger = logging.getLogger("coworker.connectors")
 
 _RECENT_CAP = 20  # most-recent distinct senders kept for chat-ID auto-capture
+# Message ids remembered for de-duplication. Large enough to cover a queue draining
+# after a stall (the burst that motivated this), small enough to stay a rounding error
+# in memory. Process-local: a restart re-arms, which is harmless — the platforms only
+# retry within a short window.
+_SEEN_CAP = 512
 
 
 class Gateway:
@@ -58,6 +63,8 @@ class Gateway:
         self._adapters: dict[str, BasePlatformAdapter] = {}
         # In-memory recent senders for chat-ID auto-capture (identity only, never persisted).
         self._recent: "OrderedDict[tuple[str, str, str], dict]" = OrderedDict()
+        # (platform, team, message_id) of everything already delivered — see _already_handled.
+        self._seen_message_ids: "OrderedDict[tuple[str, str, str], bool]" = OrderedDict()
 
     def set_handler(self, handler: MessageHandler) -> None:
         self._handler = handler
@@ -125,6 +132,8 @@ class Gateway:
         await to_thread(_post)
 
     async def _on_inbound(self, event: MessageEvent) -> None:
+        if self._already_handled(event):
+            return
         self._record_recent(event)  # capture identity even from unauthorized senders
         settings = self.settings.get(event.source.platform)
         if settings is None or not is_authorized(settings, event.source):
@@ -146,6 +155,28 @@ class Gateway:
                 logger.exception("inbox reply resolver failed")
         if self._handler is not None:
             await self._handler(event)
+
+    def _already_handled(self, event: MessageEvent) -> bool:
+        """True when this exact message was delivered before.
+
+        A message id identifies a message once; a second delivery is the transport
+        repeating itself — a webhook retry, or a queue draining after a stall. Both
+        happened here: a stuck automation held inbound WhatsApp messages, and the burst
+        that followed carried the same "delete it, I already did" seven times, which is
+        how a delete landed on the wrong reminder. Someone genuinely repeating themselves
+        sends a NEW id and still gets through.
+        """
+        mid = (event.message_id or "").strip()
+        if not mid:  # some adapters omit it — never collapse distinct messages
+            return False
+        key = (event.source.platform, event.source.team_id or "", mid)
+        if key in self._seen_message_ids:
+            logger.info("dropping duplicate inbound %s", key)
+            return True
+        self._seen_message_ids[key] = True
+        while len(self._seen_message_ids) > _SEEN_CAP:
+            self._seen_message_ids.popitem(last=False)
+        return False
 
     def _record_recent(self, event: MessageEvent) -> None:
         s = event.source

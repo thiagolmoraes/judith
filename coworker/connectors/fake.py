@@ -18,6 +18,7 @@ class FakeAdapter(BasePlatformAdapter):
         super().__init__()
         self.connected = False
         self.outbox: list[dict] = []  # {chat_id, text, thread_id}
+        self._sent = 0  # per-message id counter, like a real platform's
 
     async def connect(self) -> bool:
         self.connected = True
@@ -52,6 +53,12 @@ class FakeAdapter(BasePlatformAdapter):
             chat_type=chat_type,
             thread_id=thread_id,
         )
+        # A per-MESSAGE id, like every real platform issues — `m{user_id}` gave every
+        # message from one sender the same id, which is indistinguishable from the
+        # transport re-delivering one message (the gateway de-dupes exactly that).
+        self._sent += 1
         await self.handle_message(
-            MessageEvent(text=text, source=source, message_id=f"m{user_id}")
+            MessageEvent(
+                text=text, source=source, message_id=f"m{user_id}-{self._sent}"
+            )
         )
