@@ -115,10 +115,20 @@ _ID_SCHEMA = {
     "type": "function",
     "function": {
         "name": "delete_scheduled_task",
-        "description": "Delete a scheduled task and its run history.",
+        "description": (
+            "Delete ONE scheduled task and its run history. Irreversible. Pass the exact "
+            "id of the task the user meant — call list_scheduled_tasks first when their "
+            "request is a pronoun ('delete it', 'já fiz') and ASK which one they mean if "
+            "more than one could fit. Never infer the target from recency."
+        ),
         "parameters": {
             "type": "object",
-            "properties": {"id": {"type": "string"}},
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "description": "Exact task id, e.g. task-98e09ad63f.",
+                }
+            },
             "required": ["id"],
         },
     },
@@ -222,8 +232,38 @@ def scheduling_tools(
         store.save(task)
         return {"ok": True, "task": task.public()}
 
-    def delete_scheduled_task(id):
-        return {"ok": store.delete(id), "id": id}
+    def delete_scheduled_task(id=None):
+        """Delete one scheduled task, named explicitly.
+
+        Deleting is irreversible and the request that reaches here is often a pronoun
+        ("pode deletar, já fiz"). Resolving that by guessing destroyed the wrong reminder
+        once already, so an empty id comes back as a QUESTION carrying the candidates
+        rather than a destructive best guess — and a successful delete reports the title
+        and schedule it destroyed, so the mistake is visible in the very next reply
+        instead of days later.
+        """
+        task_id = (id or "").strip()
+        if not task_id:
+            return {
+                "ok": False,
+                "needs_disambiguation": True,
+                "error": (
+                    "name the task to delete by id — ask the user which one they mean, "
+                    "quoting these titles; do not guess"
+                ),
+                "candidates": [
+                    {"id": t.id, "title": t.title, "schedule": t.schedule.human()}
+                    for t in store.list()
+                ],
+            }
+        task = store.get(task_id)
+        if task is None:
+            return {"ok": False, "id": task_id, "error": f"no such task: {task_id}"}
+        title, schedule = task.title, task.schedule.human()
+        if not store.delete(task_id):
+            return {"ok": False, "id": task_id, "error": f"could not delete {task_id}"}
+        # The caller must be able to tell the user WHAT is gone, in words they recognize.
+        return {"ok": True, "id": task_id, "title": title, "schedule": schedule}
 
     return [
         _gated(create_scheduled_task, _CREATE_SCHEMA, approval=True),

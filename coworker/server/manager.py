@@ -4116,22 +4116,46 @@ def _last_assistant_text(messages: list[dict[str, Any]]) -> Optional[str]:
     return None
 
 
+# How deep below the workspace an artifact scan will look. Deliverables live near the
+# top; the depth cap is what keeps a big checkout from turning this into a disk crawl.
+_ARTIFACT_MAX_DEPTH = 6
+
+
 def _recent_files(workspace: str, *, since: float, limit: int = 20) -> list[str]:
-    """Files in the task workspace modified during the run — the run's artifacts."""
+    """Files in the task workspace modified during the run — the run's artifacts.
+
+    A task whose persona has no workspace resolves to "/" (or ""), and walking THAT is
+    how a two-second reminder became a two-hour run scraping the user's home directory:
+    the run stayed `running` until the walk finished, inbound messages queued behind it,
+    and the burst that followed got applied to the wrong reminder. A workspace that is
+    not a real, bounded directory yields no artifacts at all.
+    """
     out: list[str] = []
-    root = Path(workspace)
-    if not root.is_dir():
+    if not workspace or workspace.strip() in {"/", "~"}:
         return out
-    for path in root.rglob("*"):
-        if any(part.startswith(".") for part in path.relative_to(root).parts):
-            continue
+    root = Path(workspace).expanduser()
+    if not root.is_dir() or root == Path(root.anchor) or root == Path.home():
+        return out
+    stack = [(root, 0)]
+    while stack and len(out) < limit:
+        current, depth = stack.pop()
         try:
-            if path.is_file() and path.stat().st_mtime >= since - 1:
-                out.append(str(path.relative_to(root)))
+            entries = list(current.iterdir())
         except OSError:
             continue
-        if len(out) >= limit:
-            break
+        for path in entries:
+            if path.name.startswith("."):  # .git, caches, dotfiles: never deliverables
+                continue
+            try:
+                if path.is_dir():
+                    if depth + 1 <= _ARTIFACT_MAX_DEPTH:
+                        stack.append((path, depth + 1))
+                elif path.is_file() and path.stat().st_mtime >= since - 1:
+                    out.append(str(path.relative_to(root)))
+                    if len(out) >= limit:
+                        break
+            except OSError:
+                continue
     return out
 
 
