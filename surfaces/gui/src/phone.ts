@@ -32,7 +32,10 @@ export function normalizePhone(raw: string): string | null {
     digits = digits.slice(1);
   }
   // No country code (local BR): prepend it, so the key matches the webhook's.
-  if (!explicitCc && BR_LOCAL_LENGTHS.includes(digits.length) && !digits.startsWith(BR_CC)) {
+  // LENGTH decides, never the leading digits: area code 55 (Santa Maria/RS) makes
+  // "55 99123-4567" start with the country code it is still missing, and skipping it
+  // there would store a key no webhook ever produces.
+  if (!explicitCc && BR_LOCAL_LENGTHS.includes(digits.length)) {
     digits = BR_CC + digits;
   }
   if (digits.length < MIN_DIGITS || digits.length > MAX_DIGITS) return null;

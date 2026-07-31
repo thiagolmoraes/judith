@@ -185,7 +185,7 @@ class EvolutionContactDirectory:
     def search(self, query: str, limit: int = 20) -> list["Contact"]:
         from .contacts import Contact, matches
 
-        if not self.available():
+        if not self.available() or limit <= 0:
             return []
         try:
             resp = self._http_post(

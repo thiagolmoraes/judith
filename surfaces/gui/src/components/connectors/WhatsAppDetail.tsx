@@ -27,6 +27,7 @@ function AddSomeoneBlock({ c, onChanged }: { c: DetailProps["c"]; onChanged: () 
   const [query, setQuery] = useState("");
   const [rows, setRows] = useState<ContactRow[]>([]);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [addError, setAddError] = useState<string | null>(null);
   // Rows the owner just added: the allow-list refresh is a poll away, and a button that
   // stays "Add" after a successful add reads as a failure.
   const [justAdded, setJustAdded] = useState<string[]>([]);
@@ -38,6 +39,16 @@ function AddSomeoneBlock({ c, onChanged }: { c: DetailProps["c"]; onChanged: () 
   // render it causes — an infinite loop that hangs rather than fails.
   const tr = useRef(t);
   tr.current = t;
+
+  // Cleared on unmount: clearTimeout only cancels a search that hasn't fired yet — one
+  // already in flight would still resolve and set state on a gone component.
+  const live = useRef(true);
+  useEffect(() => {
+    live.current = true;
+    return () => {
+      live.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     const q = query.trim();
@@ -52,7 +63,7 @@ function AddSomeoneBlock({ c, onChanged }: { c: DetailProps["c"]; onChanged: () 
     const timer = setTimeout(async () => {
       try {
         const res = await searchContacts(c.name, q);
-        if (mine !== seq.current) return;
+        if (mine !== seq.current || !live.current) return;
         if (res.ok) {
           setRows(res.contacts ?? []);
           setSearchError(null);
@@ -63,7 +74,7 @@ function AddSomeoneBlock({ c, onChanged }: { c: DetailProps["c"]; onChanged: () 
           setSearchError(res.error || tr.current("wa.searchUnavailable"));
         }
       } catch {
-        if (mine !== seq.current) return;
+        if (mine !== seq.current || !live.current) return;
         setRows([]);
         setSearchError(tr.current("wa.searchUnavailable"));
       }
@@ -77,18 +88,44 @@ function AddSomeoneBlock({ c, onChanged }: { c: DetailProps["c"]; onChanged: () 
     const number = normalizePhone(typed);
     if (!number) {
       setInvalid(true);
+      setAddError(null);
       return;
     }
     setInvalid(false);
-    await allowUser(c.name, number);
+    // A failed authorization must not clear the field and look like success: the person
+    // would still be blocked while the owner believes they let them in.
+    if (!(await allowSucceeded(() => allowUser(c.name, number)))) return;
     setTyped("");
     onChanged();
   };
 
   const addContact = async (row: ContactRow) => {
-    await allowUser(c.name, row.number, undefined, row.name ?? undefined);
+    if (
+      !(await allowSucceeded(() =>
+        allowUser(c.name, row.number, undefined, row.name ?? undefined),
+      ))
+    ) {
+      return; // leave the row's Add button in place — nothing was authorized
+    }
     setJustAdded((prev) => [...prev, row.number]);
     onChanged();
+  };
+
+  /** Runs an allow call, surfacing failure instead of assuming success. `allowUser`
+   * resolves with `{ok: false, error}` for a rejected request rather than throwing. */
+  const allowSucceeded = async (call: () => Promise<{ ok?: boolean; error?: string }>) => {
+    try {
+      const res = await call();
+      if (res?.ok === false) {
+        setAddError(res.error || t("wa.addFailed"));
+        return false;
+      }
+      setAddError(null);
+      return true;
+    } catch {
+      setAddError(t("wa.addFailed"));
+      return false;
+    }
   };
 
   return (
@@ -116,6 +153,11 @@ function AddSomeoneBlock({ c, onChanged }: { c: DetailProps["c"]; onChanged: () 
       {invalid && (
         <div className="text-[12px] text-danger mt-1.5" data-testid="wa-invalid">
           {t("wa.invalidNumber")}
+        </div>
+      )}
+      {addError && (
+        <div className="text-[12px] text-danger mt-1.5" data-testid="wa-add-error">
+          {addError}
         </div>
       )}
 

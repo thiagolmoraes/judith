@@ -44,11 +44,10 @@ def normalize_phone(raw: str) -> str | None:
     if digits.startswith("0") and len(digits) - 1 in _BR_LOCAL_LENGTHS:
         digits = digits[1:]
     # No country code (local BR): prepend it, so the key matches the webhook's.
-    if (
-        not explicit_cc
-        and len(digits) in _BR_LOCAL_LENGTHS
-        and not digits.startswith(_BR_CC)
-    ):
+    # LENGTH decides, never the leading digits: area code 55 (Santa Maria/RS) makes
+    # "55 99123-4567" start with the country code it is still missing, and skipping it
+    # there would store a key no webhook ever produces.
+    if not explicit_cc and len(digits) in _BR_LOCAL_LENGTHS:
         digits = _BR_CC + digits
     if not (_MIN_DIGITS <= len(digits) <= _MAX_DIGITS):
         return None

@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from ..claude_bridge.watcher import BridgeWatcher
+    from ..connectors.contacts import ContactDirectory
 
 from ..agent import build_engine
 from ..agents import get_agent
@@ -2470,7 +2471,7 @@ class SessionManager:
                 self.gateway.register(adapter)
         return await self.gateway.start()
 
-    def contact_directory(self, platform: str):
+    def contact_directory(self, platform: str) -> Optional["ContactDirectory"]:
         """The `ContactDirectory` for `platform`, or None when it has no such capability
         (or isn't configured). Only WhatsApp/Evolution offers one today; the route and
         the GUI depend on the contract, so adding a second backend lands here alone.

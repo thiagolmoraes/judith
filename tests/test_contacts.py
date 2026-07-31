@@ -70,6 +70,13 @@ def test_search_honors_the_limit():
     assert len(_directory(many).search("", limit=5)) == 5
 
 
+def test_search_with_a_non_positive_limit_returns_nothing():
+    # `search` is the public contract: a direct caller asking for 0 must get 0, not the
+    # first matching row (the route clamps, but the contract cannot rely on that).
+    assert _directory(CONTACTS).search("", limit=0) == []
+    assert _directory(CONTACTS).search("", limit=-3) == []
+
+
 def test_search_reads_alternative_payload_shapes():
     # Evolution versions differ: a bare list, or wrapped under a key; name in
     # `pushName`, `name`, or absent entirely.

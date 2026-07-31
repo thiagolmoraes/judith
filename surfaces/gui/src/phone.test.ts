@@ -13,7 +13,11 @@ describe("normalizePhone", () => {
     ["(11) 99999-9999", "5511999999999"], // local BR: country code implied
     ["011999999999", "5511999999999"], // trunk prefix dropped
     ["+1 415 555 0199", "14155550199"], // non-BR passes through
-    ["5511999999999@s.whatsapp.net", "5511999999999"], // pasted JID
+    ["5511999999999@s.whatsapp.net", "5511999999999"],
+    // Area code 55 (Santa Maria/RS) starts with the country code it still lacks.
+    ["55991234567", "5555991234567"],
+    ["(55) 99123-4567", "5555991234567"],
+    ["+55 55 99123-4567", "5555991234567"], // pasted JID
   ])("accepts what people actually type: %s", (raw, expected) => {
     expect(normalizePhone(raw)).toBe(expected);
   });

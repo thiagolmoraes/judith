@@ -93,6 +93,37 @@ describe("WhatsAppDetail", () => {
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
   });
 
+  it("keeps the number and shows an error when the server rejects the allow", async () => {
+    // allowUser resolves with {ok:false} instead of throwing, so an unchecked call would
+    // clear the field and look like success while the person stayed blocked.
+    const calls: Call[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        calls.push({
+          url,
+          method: (init?.method || "GET").toUpperCase(),
+          body: init?.body ? JSON.parse(String(init.body)) : undefined,
+        });
+        if (url.includes("/allow")) {
+          return { ok: true, json: async () => ({ ok: false, error: "nope" }) } as Response;
+        }
+        return { ok: true, json: async () => ({ ok: true, contacts: [] }) } as Response;
+      }),
+    );
+    const onChanged = vi.fn();
+    renderPage(onChanged);
+
+    const input = screen.getByTestId("wa-number-input") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "(11) 99999-9999" } });
+    fireEvent.click(screen.getByTestId("wa-add-btn"));
+
+    await waitFor(() => expect(screen.getByTestId("wa-add-error")).toBeTruthy());
+    expect(input.value).toBe("(11) 99999-9999"); // not cleared: nothing was authorized
+    expect(onChanged).not.toHaveBeenCalled();
+  });
+
   it("posts nothing and shows the reason when the typed number is invalid", async () => {
     const calls = stubFetch({ ok: true, contacts: [] });
     renderPage();

@@ -703,6 +703,7 @@ export const ptBR: Catalog = {
   "wa.numberPlaceholder": "Número de telefone",
   "wa.add": "Adicionar",
   "wa.invalidNumber": "Isso não parece um número de telefone.",
+  "wa.addFailed": "Não foi possível autorizar esse contato.",
   "wa.searchPlaceholder": "Buscar nos meus contatos",
   "wa.searchContacts": "Buscar nos meus contatos",
   "wa.added": "Adicionado",

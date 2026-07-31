@@ -16,6 +16,11 @@ from coworker.connectors.phone import format_phone, normalize_phone
         ("011999999999", "5511999999999"),  # trunk prefix dropped
         ("+1 415 555 0199", "14155550199"),  # non-BR passes through
         ("5511999999999@s.whatsapp.net", "5511999999999"),  # pasted JID
+        # Area code 55 (Santa Maria/RS) starts with the country code it still lacks:
+        # length decides, not the leading digits, or the key never matches a webhook's.
+        ("55991234567", "5555991234567"),
+        ("(55) 99123-4567", "5555991234567"),
+        ("+55 55 99123-4567", "5555991234567"),  # already complete: untouched
     ],
 )
 def test_normalize_accepts_what_people_actually_type(raw, expected):

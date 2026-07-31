@@ -689,6 +689,7 @@ export const en: Catalog = {
   "wa.numberPlaceholder": "Phone number",
   "wa.add": "Add",
   "wa.invalidNumber": "That doesn't look like a phone number.",
+  "wa.addFailed": "Couldn't authorize that contact.",
   "wa.searchPlaceholder": "Search my contacts",
   "wa.searchContacts": "Search my contacts",
   "wa.added": "Added",
