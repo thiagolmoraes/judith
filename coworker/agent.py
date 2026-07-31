@@ -275,6 +275,8 @@ def build_engine(
     # User-local risk overrides (mainly to relax MCP's conservative default). Empty store →
     # no-op; never written by persona loading (the no-self-grant rule).
     risk_overrides = RiskOverrideStore(state_dir() / "risk_overrides.json").resolver()
+    from .approval_store import ApprovalStore
+
     permissions = PermissionEngine(
         workspace_root=ws or (root_list[0].path if root_list else Path.cwd()),
         mode=mode,
@@ -285,6 +287,9 @@ def build_engine(
         auto_allow_tools=set(config.auto_allow),
         roots=root_list or None,
         risk_overrides=risk_overrides,
+        # Permanent pre-approvals — user-local, written only from approval surfaces
+        # (never by persona loading; same rule as risk_overrides).
+        persistent=ApprovalStore(state_dir() / "approvals.json"),
     )
     # The plan-mode exit door. Always registered (surfaces can flip a live session into
     # plan mode via set_mode, and the registry is fixed at build); the engine rejects the

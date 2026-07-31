@@ -31,7 +31,15 @@ import type { MessageSource } from "./api";
 
 // "always_task" persists to the owning automation's task record (standing scoped
 // approval, UX-DECISIONS §25) — offered only on automation-run approval cards, in-app.
-export type ApprovalDecision = "once" | "deny" | "always_tool" | "always_command" | "always_task";
+// "always_persistent" survives restarts: the server routes the scope (tool vs command vs
+// target) and stores it in the approvals store — revocable in Settings ▸ Approvals.
+export type ApprovalDecision =
+  | "once"
+  | "deny"
+  | "always_tool"
+  | "always_command"
+  | "always_task"
+  | "always_persistent";
 
 export interface TodoItem {
   content: string;

@@ -46,6 +46,9 @@ def buttons_for(item) -> list[Button]:
     if item.kind == KIND_APPROVAL:
         return [
             Button("Approve", encode(item.id, "allow")),
+            # Permanent grant — scope (command/target/tool) is routed server-side by
+            # PermissionEngine.grant_persistent, so one button is safe everywhere.
+            Button("Always", encode(item.id, "always_persistent")),
             Button("Deny", encode(item.id, "deny")),
         ]
     if item.kind == KIND_QUESTION and getattr(item, "options", None):

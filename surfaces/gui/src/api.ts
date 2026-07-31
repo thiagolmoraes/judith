@@ -114,6 +114,40 @@ export async function setWorkspaceTrusted(
   return res.json();
 }
 
+// -- persistent approvals (Settings ▸ Approvals) ------------------------------
+// The standing grants "Always allow (permanent)" mints: tool-wide, exact shell
+// command, or per-target (tool → target). The server routes an approval's scope;
+// the GUI only lists and revokes.
+export interface ApprovalsSnapshot {
+  allow_tools: string[];
+  allow_commands: string[];
+  allow_targets: Record<string, string[]>;
+}
+
+export async function getApprovals(): Promise<ApprovalsSnapshot> {
+  const res = await fetch(`${httpBase()}/v1/approvals`);
+  const d = await res.json();
+  return {
+    allow_tools: d.allow_tools ?? [],
+    allow_commands: d.allow_commands ?? [],
+    allow_targets: d.allow_targets ?? {},
+  };
+}
+
+/** Revoke one persistent grant. `tool` is required only for kind="target". */
+export async function revokeApproval(
+  kind: "tool" | "command" | "target",
+  value: string,
+  tool?: string,
+): Promise<{ ok: boolean; error?: string } & Partial<ApprovalsSnapshot>> {
+  const res = await fetch(`${httpBase()}/v1/approvals/revoke`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind, value, ...(tool ? { tool } : {}) }),
+  });
+  return res.json();
+}
+
 export async function getSessions(workspace?: string): Promise<SessionInfo[]> {
   const q = workspace ? `?workspace=${encodeURIComponent(workspace)}` : "";
   const res = await fetch(`${httpBase()}/v1/sessions${q}`);
