@@ -82,6 +82,47 @@ describe("ApprovalCard — standing scoped approvals (§25)", () => {
   });
 });
 
+describe("ApprovalCard — permanent grants (persistent approvals)", () => {
+  it("offers Always allow (permanent) on every approval and resolves always_persistent", () => {
+    // A plain-session messaging approval: the permanent button sits beside Allow once.
+    const onApprove = vi.fn();
+    render(<ApprovalCard item={sendApproval()} onApprove={onApprove} />);
+    const btn = screen.getByText("Always allow (permanent)");
+    // The title spells out the weight: forever, and where to undo it.
+    expect(btn.getAttribute("title")).toContain("Settings");
+    fireEvent.click(btn);
+    expect(onApprove).toHaveBeenCalledWith("always_persistent");
+    cleanup();
+
+    // run_shell keeps its command-scoped session button AND gains the permanent one —
+    // the server routes the persistent grant to the exact command, not the whole tool.
+    const onShell = vi.fn();
+    render(
+      <ApprovalCard
+        item={sendApproval({ name: "run_shell", args: { command: "ls" }, category: undefined })}
+        onApprove={onShell}
+      />,
+    );
+    expect(screen.getByText("Always allow this command")).toBeTruthy();
+    fireEvent.click(screen.getByText("Always allow (permanent)"));
+    expect(onShell).toHaveBeenCalledWith("always_persistent");
+    cleanup();
+
+    // Connector approvals never had a session-scoped always button; the permanent one
+    // still shows (scope is routed server-side).
+    const onConnector = vi.fn();
+    render(
+      <ApprovalCard
+        item={sendApproval({ name: "hubspot_update_deal", args: { id: "42" }, category: "connector" })}
+        onApprove={onConnector}
+      />,
+    );
+    expect(screen.queryByText("Always allow")).toBeNull();
+    fireEvent.click(screen.getByText("Always allow (permanent)"));
+    expect(onConnector).toHaveBeenCalledWith("always_persistent");
+  });
+});
+
 describe("ApprovalCard — §35 shapes", () => {
   it("routine file writes render as a compact row: humanized title, inline preview, Allow → once", () => {
     const onApprove = vi.fn();

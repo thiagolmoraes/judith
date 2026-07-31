@@ -424,6 +424,9 @@ body {
 .approval .btn.approval-primary:hover { background: var(--accent-soft); }
 .approval .btn.quiet-deny { border: 0; background: none; color: var(--faint); }
 .approval .btn.quiet-deny:hover { color: var(--danger); }
+/* Permanent grant: dashed + muted so it reads apart from the session-scoped buttons. */
+.approval .btn.approval-persistent { border-style: dashed; color: var(--muted); }
+.approval .btn.approval-persistent:hover { color: var(--ink); }
 .approval-rest {
   margin-top: 7px; font-family: var(--mono); font-size: 11.5px; color: var(--faint);
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;

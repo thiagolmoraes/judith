@@ -174,6 +174,17 @@ function Buttons({
           {t("approval.alwaysAllowCommand")}
         </button>
       )}
+      {/* The PERMANENT grant is offered on every approval — connector or not, run_shell
+          included — because the server routes its scope (command vs target vs tool).
+          It wears a distinct dress (dashed, quieter) so the "forever" weight never
+          blurs into the session-scoped buttons above. Revocable in Settings ▸ Approvals. */}
+      <button
+        className="btn approval-persistent"
+        title={t("approval.alwaysPersistentTitle")}
+        onClick={() => onApprove("always_persistent")}
+      >
+        {t("approval.alwaysPersistent")}
+      </button>
       <span className="spacer" />
       <button className="btn quiet-deny" onClick={() => onApprove("deny")}>
         {t("approval.deny")}
