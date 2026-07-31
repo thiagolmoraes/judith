@@ -21,6 +21,17 @@ from typing import Any, Optional
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+
+
+class ApprovalRevoke(BaseModel):
+    """POST /v1/approvals/revoke — one persistent grant to remove. Module-level on
+    purpose: with postponed annotations a function-local model can't be resolved by
+    FastAPI and the parameter silently degrades to a query param."""
+
+    kind: str
+    value: str = ""
+    tool: Optional[str] = None
 
 # Origins allowed to talk to the local sidecar. It binds to 127.0.0.1, but a page in the
 # user's own browser can still reach loopback — so without an origin gate, any website they
@@ -806,15 +817,13 @@ def create_app(manager: SessionManager) -> FastAPI:
         return approvals_store.snapshot()
 
     @app.post("/v1/approvals/revoke")
-    def approvals_revoke(body: dict) -> dict[str, Any]:
-        kind = str(body.get("kind", "")) if isinstance(body, dict) else ""
-        value = str(body.get("value", "")) if isinstance(body, dict) else ""
-        if kind == "tool" and value:
-            approvals_store.revoke_tool(value)
-        elif kind == "command" and value:
-            approvals_store.revoke_command(value)
-        elif kind == "target" and value and body.get("tool"):
-            approvals_store.revoke_target(str(body["tool"]), value)
+    def approvals_revoke(body: ApprovalRevoke) -> dict[str, Any]:
+        if body.kind == "tool" and body.value:
+            approvals_store.revoke_tool(body.value)
+        elif body.kind == "command" and body.value:
+            approvals_store.revoke_command(body.value)
+        elif body.kind == "target" and body.value and body.tool:
+            approvals_store.revoke_target(body.tool, body.value)
         else:
             return {"ok": False, "error": "unknown kind"}
         return {"ok": True, **approvals_store.snapshot()}

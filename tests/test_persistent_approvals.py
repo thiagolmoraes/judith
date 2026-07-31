@@ -99,6 +99,16 @@ def test_grant_persistent_routes_by_scope(tmp_path):
     assert engine.persistent.allow_tools() == {"delete_scheduled_task"}
 
 
+def test_grant_persistent_refuses_connector_without_pinnable_target(tmp_path):
+    # github_create_issue-shaped: connector category, external risk, NO declared target
+    # argument. evaluate() would never honor a blanket entry for it (connector
+    # exclusion), so minting one would be dead weight masquerading as a grant.
+    engine = _engine(tmp_path)
+    assert engine.grant_persistent("github_create_issue", {}, CONNECTOR_META) == ""
+    assert engine.persistent.allow_tools() == set()
+    assert engine.persistent.allow_targets() == {}
+
+
 def test_grants_survive_a_fresh_engine(tmp_path):
     _engine(tmp_path).grant_persistent(
         "delete_scheduled_task", {"id": "x"}, AUTOMATION_META

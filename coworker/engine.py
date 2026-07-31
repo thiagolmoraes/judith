@@ -602,8 +602,12 @@ class TurnEngine:
                         str(tool_call.arguments.get("command", ""))
                     )
                 elif outcome is ApprovalOutcome.ALWAYS_PERSISTENT:
-                    granted = self.permissions.grant_persistent(
-                        tool_call.name, tool_call.arguments, metadata
+                    # Store write is sync file I/O — keep it off the event loop.
+                    granted = await asyncio.to_thread(
+                        self.permissions.grant_persistent,
+                        tool_call.name,
+                        tool_call.arguments,
+                        metadata,
                     )
                     if granted:
                         self._audit(
@@ -611,6 +615,16 @@ class TurnEngine:
                             stage="persistent_rule_minted",
                             status="granted",
                             reason=f"always allow (permanent): {granted}",
+                        )
+                    else:
+                        # The grant was refused (no store, or no pinnable target for a
+                        # connector/send tool): the approval still stands for THIS call,
+                        # but the audit must not claim anything was persisted.
+                        self._audit(
+                            tool_call,
+                            stage="persistent_rule_refused",
+                            status="approved_once",
+                            reason="permanent grant not stored — approved this call only",
                         )
                 allowed, reason = True, "approved by user"
                 self._audit(

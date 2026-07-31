@@ -587,6 +587,7 @@ function ApprovalGroup({
             <code className="min-w-0 flex-1 text-[12.5px] text-ink break-all">{row.text}</code>
             <button
               className="text-[12px] text-red-600 px-2 py-1"
+              aria-label={`${t("settings.approvals.remove")}: ${row.text}`}
               onClick={row.remove}
             >
               {t("settings.approvals.remove")}
@@ -612,8 +613,14 @@ function ApprovalsCard() {
   }, []);
 
   const revoke = async (kind: "tool" | "command" | "target", value: string, tool?: string) => {
-    await revokeApproval(kind, value, tool);
-    refresh();
+    // Refresh even when the call fails: the list re-syncs with the server's truth,
+    // so a failed removal visibly stays in the list instead of silently lingering
+    // out of view.
+    try {
+      await revokeApproval(kind, value, tool);
+    } finally {
+      refresh();
+    }
   };
 
   const targetRows = Object.entries(snap?.allow_targets ?? {}).flatMap(([tool, targets]) =>

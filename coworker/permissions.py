@@ -24,6 +24,7 @@ _SHELL_OPERATORS = (";", "&", "|", ">", "<", "`", "$(", "(", "\n", "\r")
 def _has_shell_operators(command: str) -> bool:
     return any(op in command for op in _SHELL_OPERATORS)
 
+from .approval_store import ApprovalStore
 from .risk import (  # re-exported for back-compat (manager.py imports WRITE_TOOLS)
     SHELL_TOOL,
     WRITE_TOOLS,
@@ -94,7 +95,7 @@ class PermissionEngine:
     task_rules: dict[str, set[str]] = field(default_factory=dict)
     # Persistent pre-approvals (~/.config/coworker/approvals.json): grants that outlive
     # the session. Consulted like the session allowlists; None → feature off.
-    persistent: Optional[Any] = None
+    persistent: Optional["ApprovalStore"] = None
     # User-local risk override resolver (Phase 2). None → use the base classification.
     risk_overrides: Optional[RiskOverrides] = None
     # Shared, possibly-mutable list of roots (RootDir-like / dicts). When omitted, the single
@@ -242,7 +243,12 @@ class PermissionEngine:
                 return ""
             self.persistent.grant_command(command)
             return f"command: {command}"
-        if self._blanket_ineligible(tool_name, metadata):
+        # Connector tools never get blanket grants (mirroring evaluate's session-list
+        # exclusion — a blanket entry would be dead weight there anyway), so for them —
+        # and for any external tool with a declared target argument — the only valid
+        # permanent grant is a target pin. No pinnable target → refuse.
+        is_connector = getattr(metadata, "category", "") == "connector"
+        if is_connector or self._blanket_ineligible(tool_name, metadata):
             target = standing_rule_candidate(
                 tool_name, arguments, metadata, self.risk_overrides
             )

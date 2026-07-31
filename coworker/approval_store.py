@@ -17,9 +17,23 @@ persona/package.** Only the approval surfaces and the Settings screen write here
 
 from __future__ import annotations
 
+import copy
 import json
 import os
+import threading
 from pathlib import Path
+
+# One lock per store file, shared across instances in this process — the server and
+# the engines it hosts each build their own ApprovalStore over the same path, and an
+# unsynchronized read-mutate-write pair could drop one writer's grant.
+_LOCKS: dict[str, threading.Lock] = {}
+_LOCKS_GUARD = threading.Lock()
+
+
+def _lock_for(path: Path) -> threading.Lock:
+    key = str(path)
+    with _LOCKS_GUARD:
+        return _LOCKS.setdefault(key, threading.Lock())
 
 
 class ApprovalStore:
@@ -27,6 +41,7 @@ class ApprovalStore:
         self.path = Path(path)
         self._cache: dict = {}
         self._mtime: float | None = None
+        self._lock = _lock_for(self.path)
 
     # -- reads -------------------------------------------------------------------
     def allow_tools(self) -> set[str]:
@@ -105,20 +120,26 @@ class ApprovalStore:
         return self._cache
 
     def _mutate(self, apply) -> None:
-        data = dict(self._load())
-        data.setdefault("allow_tools", [])
-        data.setdefault("allow_commands", [])
-        data.setdefault("allow_targets", {})
-        apply(data)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
-        os.replace(tmp, self.path)
-        self._cache = data
-        try:
-            self._mtime = self.path.stat().st_mtime
-        except OSError:
-            self._mtime = None
+        # Deep copy: `apply` mutates nested lists, and sharing them with `_cache`
+        # would leak an unpersisted grant into reads if the write below fails.
+        # The lock serializes the whole read-mutate-write cycle across the
+        # process's instances over this file.
+        with self._lock:
+            self._mtime = None  # drop the cache: re-read the file inside the lock
+            data = copy.deepcopy(self._load())
+            data.setdefault("allow_tools", [])
+            data.setdefault("allow_commands", [])
+            data.setdefault("allow_targets", {})
+            apply(data)
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self.path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            os.replace(tmp, self.path)
+            self._cache = data
+            try:
+                self._mtime = self.path.stat().st_mtime
+            except OSError:
+                self._mtime = None
 
 
 def _add(data: dict, key: str, value: str) -> None:

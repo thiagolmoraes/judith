@@ -53,7 +53,8 @@ def test_revoke_each_kind(tmp_path, monkeypatch):
     r = client.post(
         "/v1/approvals/revoke", json={"kind": "tool", "value": "delete_scheduled_task"}
     )
-    assert r.json()["ok"] and r.json()["allow_tools"] == []
+    assert r.json()["ok"] is True
+    assert r.json()["allow_tools"] == []
 
     client.post("/v1/approvals/revoke", json={"kind": "command", "value": "git status"})
     r = client.post(
@@ -65,8 +66,9 @@ def test_revoke_each_kind(tmp_path, monkeypatch):
         },
     )
     body = r.json()
-    assert body["ok"]
-    assert body["allow_commands"] == [] and body["allow_targets"] == {}
+    assert body["ok"] is True
+    assert body["allow_commands"] == []
+    assert body["allow_targets"] == {}
 
 
 def test_revoke_rejects_unknown_kind(tmp_path, monkeypatch):
