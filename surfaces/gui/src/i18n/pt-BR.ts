@@ -696,6 +696,19 @@ export const ptBR: Catalog = {
   "conn.disconnect": "Desconectar",
   "conn.loading": "Carregando…",
   "conn.unsubscribeSession": "Cancelar a inscrição desta sessão",
+
+  // -- whatsapp ▸ adicionar alguém ---------------------------------------------------
+  "wa.connected": "Conectado",
+  "wa.addSomeone": "Adicionar alguém",
+  "wa.numberPlaceholder": "Número de telefone",
+  "wa.add": "Adicionar",
+  "wa.invalidNumber": "Isso não parece um número de telefone.",
+  "wa.searchPlaceholder": "Buscar nos meus contatos",
+  "wa.searchContacts": "Buscar nos meus contatos",
+  "wa.added": "Adicionado",
+  "wa.unknownContact": "Contato sem nome",
+  "wa.searchUnavailable": "Busca de contatos indisponível.",
+
   "slack.addWorkspace": "Adicionar um workspace",
   "slack.approvals": "Aprovações",
   "slack.needOwner": "Escolha pelo menos um responsável antes de rotear as aprovações da Caixa para o Slack.",

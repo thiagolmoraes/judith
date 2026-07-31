@@ -18,6 +18,7 @@ import { GithubDetail } from "./GithubDetail";
 import { GmailDetail } from "./GmailDetail";
 import { HubSpotDetail } from "./HubSpotDetail";
 import { SlackDetail } from "./SlackDetail";
+import { WhatsAppDetail } from "./WhatsAppDetail";
 import { GRP } from "./ui";
 import { useI18n } from "../../i18n/useLocale";
 
@@ -31,6 +32,10 @@ export interface DetailProps {
   cloud: CloudStatus | null;
   slack: SlackStatus | null; // live Slack health (relay/sign-in/tokens); null elsewhere
   onChanged: () => void;
+  // Leave the detail route: a page that disconnects must navigate away, or it keeps
+  // rendering a connector that no longer exists. Optional — the pages that predate it
+  // simply don't call it.
+  onGone?: () => void;
 }
 
 // Bespoke pages register here; everything else gets GenericDetail below.
@@ -40,6 +45,8 @@ const DETAIL_PAGES: Record<string, (p: DetailProps) => JSX.Element> = {
   google_calendar: (p) => <CalendarDetail {...p} />,
   hubspot: (p) => <HubSpotDetail {...p} />,
   github: (p) => <GithubDetail {...p} />,
+  // Registry name, not the brand: `whatsapp_evolution` is what descriptors.py declares.
+  whatsapp_evolution: (p) => <WhatsAppDetail {...p} />,
   // Generic multi-account connectors (accounts.py layer) share one page.
   notion: (p) => <AccountsDetail {...p} />,
   attio: (p) => <AccountsDetail {...p} />,
@@ -89,7 +96,13 @@ export function ConnectorsSection() {
              c.connected and this same route re-renders as the connected page. */
           <AvailableDetail c={c} cloud={cloud} onChanged={refresh} />
         ) : Page ? (
-          <Page c={c} cloud={cloud} slack={slack} onChanged={refresh} />
+          <Page
+            c={c}
+            cloud={cloud}
+            slack={slack}
+            onChanged={refresh}
+            onGone={() => setDetail(null)}
+          />
         ) : (
           <GenericDetail
             c={c}
