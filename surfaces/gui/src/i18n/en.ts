@@ -682,6 +682,20 @@ export const en: Catalog = {
   "conn.disconnect": "Disconnect",
   "conn.loading": "Loading…",
   "conn.unsubscribeSession": "Unsubscribe this session",
+
+  // -- whatsapp ▸ add someone -------------------------------------------------------
+  "wa.connected": "Connected",
+  "wa.addSomeone": "Add someone",
+  "wa.numberPlaceholder": "Phone number",
+  "wa.add": "Add",
+  "wa.invalidNumber": "That doesn't look like a phone number.",
+  "wa.addFailed": "Couldn't authorize that contact.",
+  "wa.searchPlaceholder": "Search my contacts",
+  "wa.searchContacts": "Search my contacts",
+  "wa.added": "Added",
+  "wa.unknownContact": "Unnamed contact",
+  "wa.searchUnavailable": "Contact search is unavailable.",
+
   "slack.addWorkspace": "Add a workspace",
   "slack.approvals": "Approvals",
   "slack.needOwner": "Choose at least one owner before routing Inbox approvals to Slack.",

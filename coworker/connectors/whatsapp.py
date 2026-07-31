@@ -19,9 +19,12 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from .base import BasePlatformAdapter, MessageEvent, SendResult, SessionSource
+
+if TYPE_CHECKING:  # the contract lives in contacts.py; imported lazily at runtime
+    from .contacts import Contact
 
 logger = logging.getLogger("coworker.connectors")
 
@@ -150,6 +153,91 @@ def webhook_to_event(payload: dict) -> Optional[MessageEvent]:
         # A DM is addressed to us by definition; in a group only an explicit @mention is.
         mentions_me=not group,
     )
+
+
+class EvolutionContactDirectory:
+    """`ContactDirectory` over Evolution's `POST /chat/findContacts/{instance}`.
+
+    The only place that knows this endpoint exists — the route and the GUI depend on the
+    `ContactDirectory` contract, so swapping Evolution stays confined to this module.
+
+    `post` is injected (defaults to httpx) purely so tests run without a server.
+    """
+
+    def __init__(
+        self,
+        base_url: str,
+        api_key: str,
+        instance: str,
+        *,
+        owner_number: str = "",
+        post=None,
+    ) -> None:
+        self.base_url = (base_url or "").rstrip("/")
+        self.api_key = api_key
+        self.instance = instance or "openworker"
+        self.owner_number = jid_to_number(owner_number or "")
+        self._post = post
+
+    def available(self) -> bool:
+        return bool(self.base_url)
+
+    def search(self, query: str, limit: int = 20) -> list["Contact"]:
+        from .contacts import Contact, matches
+
+        if not self.available() or limit <= 0:
+            return []
+        try:
+            resp = self._http_post(
+                f"{self.base_url}/chat/findContacts/{self.instance}",
+                headers={"apikey": self.api_key, "Content-Type": "application/json"},
+                json={},
+                timeout=15.0,
+            )
+            if getattr(resp, "status_code", 200) >= 400:
+                logger.info("whatsapp findContacts failed: %s", resp.status_code)
+                return []
+            body = resp.json()
+        except Exception as exc:
+            # A directory that is down must not break the page: the owner can still
+            # type a number by hand, which is the path that always works.
+            logger.info("whatsapp findContacts unavailable: %s", exc)
+            return []
+
+        out: list[Contact] = []
+        for raw in _contact_rows(body):
+            jid = str(raw.get("id") or raw.get("remoteJid") or raw.get("jid") or "")
+            if not jid or is_group(jid):  # a group is not a person to authorize
+                continue
+            number = jid_to_number(jid)
+            if not number or number == self.owner_number:  # never offer the owner
+                continue
+            name = raw.get("pushName") or raw.get("name") or raw.get("verifiedName")
+            contact = Contact(number=number, name=str(name) if name else None)
+            if matches(contact, query):
+                out.append(contact)
+            if len(out) >= limit:
+                break
+        return out
+
+    def _http_post(self, url, **kwargs):
+        if self._post is not None:
+            return self._post(url, **kwargs)
+        import httpx
+
+        return httpx.post(url, **kwargs)
+
+
+def _contact_rows(body: Any) -> list[dict]:
+    """Evolution versions answer a bare list or wrap it under a key; anything else
+    yields nothing rather than raising inside a lookup."""
+    if isinstance(body, list):
+        rows = body
+    elif isinstance(body, dict):
+        rows = body.get("contacts") or body.get("data") or body.get("records") or []
+    else:
+        rows = []
+    return [r for r in rows if isinstance(r, dict)]
 
 
 class WhatsAppAdapter(BasePlatformAdapter):

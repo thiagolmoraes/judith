@@ -1115,6 +1115,27 @@ def create_app(manager: SessionManager) -> FastAPI:
             return {"ok": False, "error": "hidden_fields must be a list"}
         return hubspot_portals.set_hidden_fields(manager.secrets, fields)
 
+    @app.get("/v1/connectors/{name}/contacts")
+    async def connector_contacts(name: str, q: str = "", limit: int = 20) -> dict[str, Any]:
+        """Search the connector's address book so the owner can authorize someone who
+        has never written in. Read-only and nothing is stored: the rows exist for this
+        response alone. A connector without the capability answers an empty list."""
+        from ..connectors.contacts import search_contacts
+
+        directory = manager.contact_directory(name)
+        if directory is None:
+            return {"ok": False, "error": "no contact directory", "contacts": []}
+        rows = await asyncio.to_thread(
+            search_contacts,
+            directory,
+            q,
+            allowed=manager.allowed_users_for(name),
+            # Clamp, don't default: `limit=0` is an explicit (if useless) request, and
+            # `or 20` would silently turn it into a full page of results.
+            limit=max(1, min(int(limit), 100)),
+        )
+        return {"ok": True, "contacts": rows}
+
     @app.post("/v1/connectors/{name}/unauthorized/{item_id}")
     async def connector_unauthorized_resolve(
         name: str, item_id: str, body: dict

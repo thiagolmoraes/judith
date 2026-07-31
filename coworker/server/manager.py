@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from ..claude_bridge.watcher import BridgeWatcher
+    from ..connectors.contacts import ContactDirectory
 
 from ..agent import build_engine
 from ..agents import get_agent
@@ -2469,6 +2470,37 @@ class SessionManager:
             if adapter is not None:
                 self.gateway.register(adapter)
         return await self.gateway.start()
+
+    def contact_directory(self, platform: str) -> Optional["ContactDirectory"]:
+        """The `ContactDirectory` for `platform`, or None when it has no such capability
+        (or isn't configured). Only WhatsApp/Evolution offers one today; the route and
+        the GUI depend on the contract, so adding a second backend lands here alone.
+
+        `contact_directory_factory` lets tests inject a fake — no network, no server.
+        """
+        override = getattr(self, "contact_directory_factory", None)
+        if override is not None:
+            return override(platform)
+        if platform != "whatsapp_evolution":
+            return None
+        profile = self.secrets.get(f"{platform}:default") or {}
+        base_url = profile.get("base_url") or ""
+        if not base_url:
+            return None
+        from ..connectors.whatsapp import EvolutionContactDirectory
+
+        return EvolutionContactDirectory(
+            base_url,
+            profile.get("api_key") or "",
+            profile.get("instance") or "openworker",
+            # The paired number is the owner's own — never offered as someone to authorize.
+            owner_number=str(profile.get("number") or profile.get("owner_number") or ""),
+        )
+
+    def allowed_users_for(self, platform: str) -> set[str]:
+        """The platform's current allow-list, for marking who a search already covers."""
+        profile = self.secrets.get(f"{platform}:default") or {}
+        return {str(u) for u in (profile.get("allowed_users") or [])}
 
     def _local_webhook_url(self, platform: str) -> str:
         """Where a self-hosted server should POST inbound events for `platform`.

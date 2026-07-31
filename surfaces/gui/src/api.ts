@@ -1645,6 +1645,29 @@ export async function allowUser(
   return res.json();
 }
 
+// One row from a connector's address book. `display` is formatted server-side so the
+// list reads the same everywhere; `number` is the bare-digits key /allow stores, and
+// `allowed` marks people already authorized so the picker offers no duplicates.
+export interface ContactRow {
+  number: string;
+  name: string | null;
+  display: string;
+  allowed: boolean;
+}
+
+/** Search a connector's contacts so the owner can authorize someone who has never
+ * written in. Read-only; a connector without a directory answers ok:false. */
+export async function searchContacts(
+  name: string,
+  q: string,
+  limit = 20,
+): Promise<{ ok: boolean; error?: string; contacts: ContactRow[] }> {
+  const res = await fetch(
+    `${httpBase()}/v1/connectors/${encodeURIComponent(name)}/contacts?q=${encodeURIComponent(q)}&limit=${limit}`,
+  );
+  return res.json();
+}
+
 // One workspace member from the roster (people picker; users:read, cached locally).
 export interface SlackMember {
   id: string;
