@@ -33,9 +33,10 @@ def test_buttons_for_kinds(tmp_path):
     st = InboxStore(tmp_path / "inbox.json")
     appr = st.add_approval("s1", "Run `write_file`?")
     btns = buttons_for(appr)
-    assert [b.label for b in btns] == ["Approve", "Deny"]
+    assert [b.label for b in btns] == ["Approve", "Always", "Deny"]
     assert decode(btns[0].value) == (appr.id, "allow")
-    assert decode(btns[1].value) == (appr.id, "deny")
+    assert decode(btns[1].value) == (appr.id, "always_persistent")
+    assert decode(btns[2].value) == (appr.id, "deny")
 
     q = st.add_question("s1", "Which region?", options=["us-east-1", "us-west-2"])
     qb = buttons_for(q)
