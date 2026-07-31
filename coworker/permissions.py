@@ -92,6 +92,9 @@ class PermissionEngine:
     # ScheduledTask's target-shaped entries. Kept by reference and re-read every check, so a
     # rule minted mid-run ("Allow every time") applies to the run's next call too.
     task_rules: dict[str, set[str]] = field(default_factory=dict)
+    # Persistent pre-approvals (~/.config/coworker/approvals.json): grants that outlive
+    # the session. Consulted like the session allowlists; None → feature off.
+    persistent: Optional[Any] = None
     # User-local risk override resolver (Phase 2). None → use the base classification.
     risk_overrides: Optional[RiskOverrides] = None
     # Shared, possibly-mutable list of roots (RootDir-like / dicts). When omitted, the single
@@ -148,14 +151,28 @@ class PermissionEngine:
             return Decision(True, "full access")
 
         # interactive / custom: allowlists.
+        command = str(arguments.get("command", "")) if is_shell else ""
         if is_shell:
-            command = str(arguments.get("command", ""))
             if self._command_allowed(command):
                 return Decision(True, "command on allowlist")
             if command and command in self.session_allow_commands:
                 return Decision(True, "command allowed for session")
         if tool_name in self.session_allow_tools and not is_connector:
             return Decision(True, "tool allowed for session")
+
+        # Persistent pre-approvals: behave as an always-on session grant. Blanket tool
+        # grants respect the same connector exclusion as the session list, plus the
+        # scope rule — external tools with a declared target argument are only ever
+        # allowed per-target (the target check lives after task_rules below).
+        if self.persistent is not None:
+            if is_shell and command and command in self.persistent.allow_commands():
+                return Decision(True, "command allowed permanently")
+            if (
+                not is_connector
+                and tool_name in self.persistent.allow_tools()
+                and not self._blanket_ineligible(tool_name, metadata)
+            ):
+                return Decision(True, "tool allowed permanently")
 
         # Task-scoped standing rules (§25): tool + exact target, owned by the automation.
         # Deliberately NOT subject to the connector exclusion above — the exact-target
@@ -169,6 +186,20 @@ class PermissionEngine:
             if target and target in self.task_rules[tool_name]:
                 rule = f"{tool_name} → {target}"
                 return Decision(True, f"allowed by standing rule: {rule}", rule=rule)
+
+        # Persistent target pins: like a standing rule, but owned by the user forever.
+        # Connector tools included — the exact-target binding is the safety.
+        if self.persistent is not None:
+            targets = self.persistent.allow_targets().get(tool_name) or set()
+            if targets:
+                target = standing_rule_candidate(
+                    tool_name, arguments, metadata, self.risk_overrides
+                )
+                if target and target in targets:
+                    rule = f"{tool_name} → {target}"
+                    return Decision(
+                        True, f"allowed by permanent rule: {rule}", rule=rule
+                    )
 
         # Custom mode auto-approves the configured tools.
         if self.mode is Mode.CUSTOM and tool_name in self.auto_allow_tools:
@@ -184,6 +215,43 @@ class PermissionEngine:
     def allow_command_for_session(self, command: str) -> None:
         if command:
             self.session_allow_commands.add(command)
+
+    # -- persistent memory ------------------------------------------------------
+    def _blanket_ineligible(self, tool_name: str, metadata: Any) -> bool:
+        """External tools with a declared target argument can only be allowed
+        per-target — a blanket grant would let one approval authorize sends to
+        anyone (the spec's scope rule)."""
+        from .connectors.tool_defs import target_arg_for
+
+        risk = classify(tool_name, metadata, self.risk_overrides)
+        return risk is RiskClass.EXTERNAL and target_arg_for(tool_name) is not None
+
+    def grant_persistent(
+        self, tool_name: str, arguments: dict[str, Any], metadata: Any = None
+    ) -> str:
+        """Route a permanent grant to its scope — exact command for shell, exact
+        target for external send tools, tool name otherwise. Returns an audit label,
+        '' when the grant is refused (no store, empty command, or no target where
+        one is required)."""
+        if self.persistent is None:
+            return ""
+        risk = classify(tool_name, metadata, self.risk_overrides)
+        if risk is RiskClass.EXEC:
+            command = str((arguments or {}).get("command", ""))
+            if not command:
+                return ""
+            self.persistent.grant_command(command)
+            return f"command: {command}"
+        if self._blanket_ineligible(tool_name, metadata):
+            target = standing_rule_candidate(
+                tool_name, arguments, metadata, self.risk_overrides
+            )
+            if not target:
+                return ""
+            self.persistent.grant_target(tool_name, target)
+            return f"{tool_name} → {target}"
+        self.persistent.grant_tool(tool_name)
+        return f"tool: {tool_name}"
 
     # -- helpers ----------------------------------------------------------------
     def _candidate(self, path: str) -> Path:
