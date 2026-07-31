@@ -33,6 +33,7 @@ import { isProjectScoped } from "./personaScope";
 import { baseName } from "./paths";
 import { itemsFromMessages } from "./itemsFromMessages";
 import { streamMode } from "./streamGate";
+import { stickToBottom } from "./stickToBottom";
 import { InboxItemCard } from "./components/InboxItemCard";
 import { isTauri, platformOS, startWindowDrag } from "./tauri";
 import { Icon } from "./components/Icon";
@@ -771,6 +772,8 @@ export function App() {
   const autoScrollingRef = useRef(false);
   const lastScrollTopRef = useRef(0);
   const [following, setFollowing] = useState(true);
+  // Smooth is right for a message arriving in a session you are already reading. Arriving
+  // AT a session is the other case, and it jumps instantly — see stickToBottom.ts.
   const scrollToBottom = () => {
     const el = scrollRef.current;
     if (!el) return;
@@ -804,6 +807,12 @@ export function App() {
   useEffect(() => {
     atBottomRef.current = true;
     setFollowing(true);
+    // Opening a session must land on the LAST message, and its items arrive from an
+    // async fetch that keeps growing the transcript afterwards — see stickToBottom.ts.
+    const el = scrollRef.current;
+    if (!el) return;
+    lastScrollTopRef.current = el.scrollHeight;
+    return stickToBottom(el, { shouldStick: () => atBottomRef.current });
   }, [sessionId]);
   useEffect(() => {
     if (atBottomRef.current) scrollToBottom();
