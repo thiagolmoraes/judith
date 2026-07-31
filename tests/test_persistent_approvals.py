@@ -113,3 +113,84 @@ def test_engine_without_store_behaves_as_before(tmp_path):
     assert engine.grant_persistent("delete_scheduled_task", {}, AUTOMATION_META) == ""
     decision = engine.evaluate("delete_scheduled_task", {}, AUTOMATION_META)
     assert decision.needs_user
+
+
+# -- end to end: the always_persistent resolution ---------------------------------
+
+
+def _turn_engine(tmp_path, turns, approver):
+    import aisuite as ai
+    from coworker.engine import TurnEngine
+    from coworker.providers import AssistantTurn, ModelCapabilities, ProviderClient
+    from coworker.tools import ToolRegistry
+
+    class Scripted(ProviderClient):
+        def __init__(self, queued):
+            self._turns = list(queued)
+
+        def complete(self, *, model, messages, tools=None, **settings):
+            return self._turns.pop(0)
+
+        def capabilities(self, model):
+            return ModelCapabilities()
+
+    registry = ToolRegistry()
+    registry.register_all(ai.toolkits.files(root=str(tmp_path), allow_write=True))
+    return TurnEngine(
+        provider=Scripted(turns),
+        registry=registry,
+        permissions=_engine(tmp_path),
+        model="gpt-5.5",
+        approver=approver,
+    )
+
+
+def test_always_persistent_resolution_grants_and_sticks(tmp_path):
+    import asyncio
+
+    from coworker.engine import ApprovalOutcome
+    from coworker.events import EventType
+    from coworker.providers import AssistantTurn, ToolCall
+
+    def tool_turn(call_id, path):
+        return AssistantTurn(
+            tool_calls=[
+                ToolCall(
+                    id=call_id,
+                    name="write_file",
+                    arguments={"path": path, "content": "x"},
+                )
+            ],
+            finish_reason="tool_calls",
+        )
+
+    def text_turn(text):
+        return AssistantTurn(text=text, finish_reason="stop")
+
+    async def always(_req):
+        return ApprovalOutcome.ALWAYS_PERSISTENT
+
+    def collect(engine, prompt):
+        async def run():
+            return [ev async for ev in engine.run(prompt)]
+
+        return asyncio.run(run())
+
+    first = _turn_engine(
+        tmp_path, [tool_turn("c1", "a.txt"), text_turn("done")], always
+    )
+    events = collect(first, "write a.txt")
+    assert EventType.PERMISSION_REQUIRED in [e.type for e in events]
+    assert (tmp_path / "a.txt").exists()
+    assert first.permissions.persistent.allow_tools() == {"write_file"}
+
+    # A brand-new engine over the same store: no prompt this time.
+    async def never(_req):  # pragma: no cover - must not be called
+        raise AssertionError("approval requested despite persistent grant")
+
+    second = _turn_engine(
+        tmp_path, [tool_turn("c2", "b.txt"), text_turn("done")], never
+    )
+    events = collect(second, "write b.txt")
+    assert EventType.PERMISSION_REQUIRED not in [e.type for e in events]
+    assert (tmp_path / "b.txt").exists()
