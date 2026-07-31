@@ -14,7 +14,13 @@ from __future__ import annotations
 import re
 
 # Fenced blocks before inline spans so a backtick inside a fence can't split it.
-_CODE_SPAN = re.compile(r"```.*?```|`[^`\n]*`", re.DOTALL)
+# Delimiters pair by length (backreference): ````…```` fences and ``…`` inline spans
+# close only on a run as long as the one that opened them.
+_CODE_SPAN = re.compile(
+    r"(?P<fence>`{3,}).*?(?P=fence)"
+    r"|(?P<tick>`{1,2})(?:(?!(?P=tick))[^\n])*?(?P=tick)",
+    re.DOTALL,
+)
 
 _HEADING = re.compile(r"^ {0,3}#{1,6}\s+(\S.*?)\s*#*\s*$", re.MULTILINE)
 _BOLD_ITALIC = re.compile(r"\*\*\*(?!\s)(.+?)(?<!\s)\*\*\*")

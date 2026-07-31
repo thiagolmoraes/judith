@@ -43,6 +43,9 @@ def test_code_spans_are_untouched():
     fenced = "```\n### not a heading\n**not bold**\n```"
     assert to_whatsapp(fenced) == fenced
     assert to_whatsapp("run `git log --format='**'` now") == "run `git log --format='**'` now"
+    assert to_whatsapp("``**not bold**``") == "``**not bold**``"
+    quad = "````\n```\n**not bold**\n```\n````"
+    assert to_whatsapp(quad) == quad
 
 
 def test_tables_become_monospace_blocks():
