@@ -13,6 +13,7 @@ import { Icon } from "./Icon";
 const USER_CLAMP_CHARS = 1200;
 
 function ClampedUserText({ text }: { text: string }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   if (text.length <= USER_CLAMP_CHARS) return <>{text}</>;
   return (
@@ -23,7 +24,7 @@ function ClampedUserText({ text }: { text: string }) {
         onClick={() => setOpen((o) => !o)}
         className="block mt-1.5 text-[12.5px] font-medium underline underline-offset-2 opacity-75 hover:opacity-100"
       >
-        {open ? "less…" : "more…"}
+        {open ? t("transcript.less") : t("transcript.more")}
       </button>
     </>
   );

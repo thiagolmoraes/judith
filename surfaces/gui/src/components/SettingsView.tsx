@@ -756,6 +756,7 @@ function ExperimentalCard() {
 // limit, so work continues instead of hitting a raw provider error. Two spec'd
 // overrides (trigger % + token cap) and the summarizer-model pin — nothing more.
 function CompactionCard() {
+  const { t } = useI18n();
   const [cfg, setCfg] = useState<CompactionSettings | null>(null);
   const [models, setModels] = useState<string[]>([]);
   const [labels, setLabels] = useState<Record<string, string>>({});
@@ -789,16 +790,14 @@ function CompactionCard() {
   const modelLabel = (id: string) => labels[id]?.split(" · ")[0] || id;
   return (
     <div className={CARD + " p-4 mb-4"} data-testid="compaction-card">
-      <div className={FIELD_LABEL}>Context compaction</div>
+      <div className={FIELD_LABEL}>{t("settings.compaction.title")}</div>
       <div className={FIELD_HELP}>
-        Long sessions are compacted automatically: older turns are summarized so the
-        coworker keeps working instead of running out of context. Your visible transcript
-        is never changed — a small marker shows where compaction happened.
+        {t("settings.compaction.help")}
       </div>
 
       <div className="mt-3 flex items-center gap-5 flex-wrap">
         <label className="flex items-center gap-2.5">
-          <span className="text-[13px] text-ink">Compact at</span>
+          <span className="text-[13px] text-ink">{t("settings.compaction.compactAt")}</span>
           <input
             type="number"
             min={10}
@@ -813,10 +812,10 @@ function CompactionCard() {
               })
             }
           />
-          <span className="text-[12.5px] text-muted">% of the context window</span>
+          <span className="text-[12.5px] text-muted">{t("settings.compaction.pctOfWindow")}</span>
         </label>
         <label className="flex items-center gap-2.5">
-          <span className="text-[13px] text-ink">or at</span>
+          <span className="text-[13px] text-ink">{t("settings.compaction.orAt")}</span>
           <input
             type="number"
             min={10_000}
@@ -834,23 +833,22 @@ function CompactionCard() {
               })
             }
           />
-          <span className="text-[12.5px] text-muted">tokens, whichever is smaller</span>
+          <span className="text-[12.5px] text-muted">{t("settings.compaction.tokensSmaller")}</span>
         </label>
       </div>
       <div className={FIELD_HELP}>
-        The cap makes very-large-context models compact early — quality and speed degrade
-        well before their nominal limit.
+        {t("settings.compaction.capHelp")}
       </div>
 
       <div className="mt-3 flex items-center gap-2.5">
-        <span className="text-[13px] text-ink">Summarizer model</span>
+        <span className="text-[13px] text-ink">{t("settings.compaction.model")}</span>
         <select
           value={cfg.compaction_model}
           data-testid="compaction-model"
           className="px-2 py-1.5 rounded-lg border border-line bg-paper text-[13px] text-ink outline-none focus:border-accent"
           onChange={(e) => save({ compaction_model: e.target.value })}
         >
-          <option value="">Session&rsquo;s own model (default)</option>
+          <option value="">{t("settings.compaction.modelDefault")}</option>
           {models.map((m) => (
             <option key={m} value={m}>
               {modelLabel(m)}
@@ -859,8 +857,7 @@ function CompactionCard() {
         </select>
       </div>
       <div className={FIELD_HELP}>
-        The summary is written by this model. The default follows whatever model the
-        session is using.
+        {t("settings.compaction.modelHelp")}
       </div>
     </div>
   );
