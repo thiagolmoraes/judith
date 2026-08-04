@@ -1054,7 +1054,7 @@ export const ptBR: Catalog = {
 
   // -- composer token usage & settings compaction -----------------------------------------
   "composer.usage.title": "Uso de tokens",
-  "composer.usage.titlePct": "Uso de tokens — {pct}% da janela de contexto usados",
+  "composer.usage.titlePct": "Uso de tokens — {pct}% da janela de contexto em uso",
   "composer.usage.titleSession": "Uso de tokens nesta sessão",
   "composer.usage.uncachedInput": "Entrada sem cache",
   "composer.usage.cacheReads": "Leituras de cache",
@@ -1062,6 +1062,11 @@ export const ptBR: Catalog = {
   "composer.usage.totalInput": "Entrada total",
   "composer.usage.input": "Entrada",
   "composer.usage.output": "Saída",
+  "composer.usage.unknownModel": "Modelo desconhecido",
+  "composer.usage.ofWindow": "{used} de {window} · {pct}%",
+  "composer.usage.inContextNow": "No contexto agora: {tokens} tokens",
+  "composer.usage.tokenCount": "{tokens} tokens",
+  "app.noticeCompacted": "Contexto compactado",
   "composer.usage.contextWindow": "Janela de contexto",
   "composer.usage.sessionTotals": "Totais da sessão",
   "composer.usage.total": "Total",

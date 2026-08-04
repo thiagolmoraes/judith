@@ -487,30 +487,36 @@ class TurnEngine:
             except Exception:
                 failed = True
         if failed and self.question_asker is not None and self.is_attended and self.is_attended():
-            while True:
-                answer = await self._interruptible(
-                    self.question_asker(
-                        {
-                            "question": (
-                                "Context compaction failed — the summarizer couldn't "
-                                "condense this session's history. How should I proceed?"
-                            ),
-                            "options": ["Retry", "Trim oldest 10%"],
-                            "allow_text": False,
-                            "header": "Compaction",
-                        },
-                        None,
-                    ),
-                    interrupted=None,
-                )
-                if not answer or answer.get("answer") != "Retry":
-                    break
-                try:
-                    state = await asyncio.to_thread(_build)
-                    failed = False
-                    break
-                except Exception:
-                    continue
+            # The asker can itself die mid-prompt (socket closed between the attended
+            # check and the send). Never let that park or crash the turn — fall through
+            # to the unattended trim below, per the never-park-on-bookkeeping policy.
+            try:
+                while True:
+                    answer = await self._interruptible(
+                        self.question_asker(
+                            {
+                                "question": (
+                                    "Context compaction failed — the summarizer couldn't "
+                                    "condense this session's history. How should I proceed?"
+                                ),
+                                "options": ["Retry", "Trim oldest 10%"],
+                                "allow_text": False,
+                                "header": "Compaction",
+                            },
+                            None,
+                        ),
+                        interrupted=None,
+                    )
+                    if not answer or answer.get("answer") != "Retry":
+                        break
+                    try:
+                        state = await asyncio.to_thread(_build)
+                        failed = False
+                        break
+                    except Exception:
+                        continue
+            except Exception:
+                pass
         if state is not None:
             self.compaction_state = state
             self._last_context_tokens = None  # stale once the outbound view shrank

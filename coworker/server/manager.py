@@ -2030,6 +2030,9 @@ class SessionManager:
         the model's context window (10–95); the cap is an absolute token ceiling; model
         pins the summarizer ('' → the session's own model). Engines read these live via
         `compaction_settings()`, so changes apply to running sessions immediately."""
+        # Validate every field before mutating anything: engines read _prefs live, so a
+        # partial write would apply one override in memory while the request errors out.
+        pct: Optional[float] = None
         if threshold_pct is not None:
             try:
                 pct = float(threshold_pct)
@@ -2040,14 +2043,16 @@ class SessionManager:
                     "ok": False,
                     "error": "compaction_threshold_pct must be between 0.10 and 0.95",
                 }
-            self._prefs["compaction_threshold_pct"] = pct
+        cap: Optional[int] = None
         if cap_tokens is not None:
             try:
-                self._prefs["compaction_cap_tokens"] = max(
-                    10_000, min(int(cap_tokens), 2_000_000)
-                )
+                cap = max(10_000, min(int(cap_tokens), 2_000_000))
             except (TypeError, ValueError):
                 return {"ok": False, "error": "compaction_cap_tokens must be a number"}
+        if pct is not None:
+            self._prefs["compaction_threshold_pct"] = pct
+        if cap is not None:
+            self._prefs["compaction_cap_tokens"] = cap
         if model is not None:
             self._prefs["compaction_model"] = str(model)
         self._save_prefs()
@@ -2688,6 +2693,12 @@ class SessionManager:
     def register_session_client(self, session_id: str, send_cb: Any) -> None:
         self._session_clients.setdefault(session_id, set()).add(send_cb)
 
+    def has_session_clients(self, session_id: str) -> bool:
+        """True while at least one GUI socket is attached to the session. The compaction
+        failure prompt keys off this: a session whose socket died is unattended no matter
+        what visibility it was configured with."""
+        return bool(self._session_clients.get(session_id))
+
     def unregister_session_client(self, session_id: str, send_cb: Any) -> None:
         clients = self._session_clients.get(session_id)
         if clients is not None:
@@ -2859,6 +2870,10 @@ class SessionManager:
             connector_filter=self.effective_connectors(session_id, task.agent),
         )
         self._seed_task_permissions(engine, task)
+        # Same compaction wiring as get_engine: without it a scheduled run silently uses
+        # the built-in defaults and ignores the summarizer-model pin, so the same task
+        # behaves differently between a scheduled fire and a "Run now" resume.
+        engine.compaction_settings = self.compaction_settings
         return engine
 
     # -- mirroring inbox items to a bound channel -------------------------------

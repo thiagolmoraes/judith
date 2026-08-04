@@ -1971,7 +1971,12 @@ def create_app(manager: SessionManager) -> FastAPI:
             return
         # Auto-compaction failure prompt (OPE-27): only an ATTENDED session may be asked
         # Retry/Trim — unattended runs auto-trim (the policy in engine._compact_now).
-        engine.is_attended = lambda: _visibility() == VIS_INLINE
+        # Visibility alone is not enough: after the socket dies the engine may keep
+        # running (WhatsApp steering reuses it), and prompting a dead socket would park
+        # the run. A live session client is what makes it attended.
+        engine.is_attended = lambda: (
+            _visibility() == VIS_INLINE and manager.has_session_clients(session_id)
+        )
         await ws.send_json(
             {
                 "type": "ready",

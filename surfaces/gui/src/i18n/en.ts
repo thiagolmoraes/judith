@@ -1004,6 +1004,11 @@ export const en: Catalog = {
   "composer.usage.totalInput": "Total input",
   "composer.usage.input": "Input",
   "composer.usage.output": "Output",
+  "composer.usage.unknownModel": "Unknown model",
+  "composer.usage.ofWindow": "{used} of {window} · {pct}%",
+  "composer.usage.inContextNow": "In context now: {tokens} tokens",
+  "composer.usage.tokenCount": "{tokens} tokens",
+  "app.noticeCompacted": "Context compacted",
   "settings.compaction.title": "Context compaction",
   "settings.compaction.help":
     "Long sessions are compacted automatically: older turns are summarized so the coworker keeps working instead of running out of context. Your visible transcript is never changed — a small marker shows where compaction happened.",

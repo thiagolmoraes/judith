@@ -621,7 +621,7 @@ function UsageChip({
     ? Math.min(100, Math.round((usage.context / contextWindow) * 100))
     : null;
   const labelFor = (id: string) =>
-    id === "unknown" ? "Unknown model" : modelLabels?.[id] || shortModel(id);
+    id === "unknown" ? t("composer.usage.unknownModel") : modelLabels?.[id] || shortModel(id);
   // One field per line, session-summed (owner ask 2026-07-28). Values are cumulative
   // across the whole session, never just the last turn; "Input" is the fresh
   // (uncached) share — the cached share sits in the cache rows at its own price.
@@ -676,12 +676,16 @@ function UsageChip({
                   />
                 </div>
                 <div className="mt-1 text-[11.5px] text-muted tabular-nums">
-                  {formatTokens(usage.context)} of {formatTokens(contextWindow)} · {pct}%
+                  {t("composer.usage.ofWindow", {
+                    used: formatTokens(usage.context),
+                    window: formatTokens(contextWindow),
+                    pct: pct ?? 0,
+                  })}
                 </div>
               </div>
             ) : usage.context > 0 ? (
               <div className="mb-2.5 text-[11.5px] text-muted tabular-nums">
-                In context now: {formatTokens(usage.context)} tokens
+                {t("composer.usage.inContextNow", { tokens: formatTokens(usage.context) })}
               </div>
             ) : null}
             <div className="text-[10.5px] uppercase tracking-[0.06em] text-faint font-semibold mb-1">
@@ -715,7 +719,9 @@ function UsageChip({
             </div>
             <div className="mt-2 pt-2 border-t border-line flex items-baseline justify-between text-[11.5px]">
               <span className="text-faint">{t("composer.usage.total")}</span>
-              <span className="text-ink tabular-nums">{formatTokens(total)} tokens</span>
+              <span className="text-ink tabular-nums">
+                {t("composer.usage.tokenCount", { tokens: formatTokens(total) })}
+              </span>
             </div>
             {model && !modelLabels?.[model] && contextWindow === undefined && (
               <div className="mt-1 text-[10.5px] text-faint leading-snug">
