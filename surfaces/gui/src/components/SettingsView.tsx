@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import {
   getSettings,
   getTrustedWorkspaces,
+  setCompactionSettings,
   setOnboarded,
   setPdfSettings,
   setScratchBase,
   setSessionsPeek,
   setWorkspaceTrusted,
+  type CompactionSettings,
   type ModelSettings,
   type PdfSettings,
   type WorkspaceCommandTrust,
@@ -124,6 +126,7 @@ export function SettingsView({
                   not under General. */}
               <div className="mt-6">
                 <TokenSavingsCard />
+                <CompactionCard />
               </div>
             </section>
           ) : tab === "voice" ? (
@@ -623,9 +626,9 @@ function UpdateInline() {
 // -- Sidebar density -------------------------------------------------------------
 // -- Token savings (PDF attachments; owner ask, 2026-07-17) ---------------------
 // Attachments replay with EVERY turn, so a big PDF quietly multiplies token spend.
-// Auto-compaction of long histories is a planned follow-up (punchlist §7) — until
-// then this card is the user's dial: attach thresholds + the fallback for models
-// without native PDF support.
+// This card is the attachment dial: attach thresholds + the fallback for models
+// without native PDF support. (Long-history spend is handled by auto-compaction —
+// the CompactionCard below, OPE-27.)
 function TokenSavingsCard() {
   const { t } = useI18n();
   const [pdf, setPdf] = useState<PdfSettings | null>(null);
@@ -744,6 +747,156 @@ function ExperimentalCard() {
           </span>
         </span>
       </label>
+    </div>
+  );
+}
+
+// -- Context compaction (OPE-27) ------------------------------------------------
+// Long sessions are summarized automatically when they approach the model's context
+// limit, so work continues instead of hitting a raw provider error. Two spec'd
+// overrides (trigger % + token cap) and the summarizer-model pin — nothing more.
+function CompactionCard() {
+  const { t } = useI18n();
+  const [cfg, setCfg] = useState<CompactionSettings | null>(null);
+  const [models, setModels] = useState<string[]>([]);
+  const [labels, setLabels] = useState<Record<string, string>>({});
+  // Numeric fields edit a local draft and commit on blur/Enter: saving per keystroke
+  // made normal typing impossible (clearing "80" snapped back, deleting a digit
+  // clamped "8" to 10) and fired a POST per intermediate value.
+  const [thresholdDraft, setThresholdDraft] = useState("");
+  const [capDraft, setCapDraft] = useState("");
+
+  useEffect(() => {
+    getSettings()
+      .then((s) => {
+        const loaded = {
+          compaction_threshold_pct: s.compaction_threshold_pct ?? 0.8,
+          compaction_cap_tokens: s.compaction_cap_tokens ?? 250_000,
+          compaction_model: s.compaction_model ?? "",
+        };
+        setCfg(loaded);
+        setThresholdDraft(String(Math.round(loaded.compaction_threshold_pct * 100)));
+        setCapDraft(String(loaded.compaction_cap_tokens));
+        setModels(s.models || []);
+        setLabels(s.model_labels || {});
+      })
+      .catch(() => {
+        setCfg({
+          compaction_threshold_pct: 0.8,
+          compaction_cap_tokens: 250_000,
+          compaction_model: "",
+        });
+        setThresholdDraft("80");
+        setCapDraft("250000");
+      });
+  }, []);
+
+  // Optimistic with revert: a rejected or {ok:false} save puts the previous value back
+  // so the card never shows a state the server refused.
+  const save = async (patch: Partial<CompactionSettings>) => {
+    const prev = cfg;
+    setCfg((p) => (p ? { ...p, ...patch } : p));
+    try {
+      const res = await setCompactionSettings(patch);
+      if (res && (res as { ok?: boolean }).ok === false) throw new Error();
+    } catch {
+      setCfg(prev);
+      if (prev) {
+        setThresholdDraft(String(Math.round(prev.compaction_threshold_pct * 100)));
+        setCapDraft(String(prev.compaction_cap_tokens));
+      }
+    }
+  };
+
+  const commitThreshold = () => {
+    if (!cfg) return;
+    const parsed = Number(thresholdDraft);
+    const pct = Number.isFinite(parsed) && thresholdDraft.trim() !== ""
+      ? Math.max(10, Math.min(Math.round(parsed), 95))
+      : Math.round(cfg.compaction_threshold_pct * 100);
+    setThresholdDraft(String(pct));
+    if (pct / 100 !== cfg.compaction_threshold_pct) {
+      void save({ compaction_threshold_pct: pct / 100 });
+    }
+  };
+
+  const commitCap = () => {
+    if (!cfg) return;
+    const parsed = Number(capDraft);
+    const cap = Number.isFinite(parsed) && capDraft.trim() !== ""
+      ? Math.max(10_000, Math.min(Math.round(parsed), 2_000_000))
+      : cfg.compaction_cap_tokens;
+    setCapDraft(String(cap));
+    if (cap !== cfg.compaction_cap_tokens) {
+      void save({ compaction_cap_tokens: cap });
+    }
+  };
+
+  if (!cfg) return null;
+  const modelLabel = (id: string) => labels[id]?.split(" · ")[0] || id;
+  return (
+    <div className={CARD + " p-4 mb-4"} data-testid="compaction-card">
+      <div className={FIELD_LABEL}>{t("settings.compaction.title")}</div>
+      <div className={FIELD_HELP}>
+        {t("settings.compaction.help")}
+      </div>
+
+      <div className="mt-3 flex items-center gap-5 flex-wrap">
+        <label className="flex items-center gap-2.5">
+          <span className="text-[13px] text-ink">{t("settings.compaction.compactAt")}</span>
+          <input
+            type="number"
+            min={10}
+            max={95}
+            value={thresholdDraft}
+            data-testid="compaction-threshold"
+            className="w-16 px-2 py-1.5 rounded-lg border border-line bg-paper text-[13px] text-ink outline-none focus:border-accent"
+            onChange={(e) => setThresholdDraft(e.target.value)}
+            onBlur={commitThreshold}
+            onKeyDown={(e) => e.key === "Enter" && commitThreshold()}
+          />
+          <span className="text-[12.5px] text-muted">{t("settings.compaction.pctOfWindow")}</span>
+        </label>
+        <label className="flex items-center gap-2.5">
+          <span className="text-[13px] text-ink">{t("settings.compaction.orAt")}</span>
+          <input
+            type="number"
+            min={10_000}
+            max={2_000_000}
+            step={10_000}
+            value={capDraft}
+            data-testid="compaction-cap"
+            className="w-28 px-2 py-1.5 rounded-lg border border-line bg-paper text-[13px] text-ink outline-none focus:border-accent"
+            onChange={(e) => setCapDraft(e.target.value)}
+            onBlur={commitCap}
+            onKeyDown={(e) => e.key === "Enter" && commitCap()}
+          />
+          <span className="text-[12.5px] text-muted">{t("settings.compaction.tokensSmaller")}</span>
+        </label>
+      </div>
+      <div className={FIELD_HELP}>
+        {t("settings.compaction.capHelp")}
+      </div>
+
+      <div className="mt-3 flex items-center gap-2.5">
+        <span className="text-[13px] text-ink">{t("settings.compaction.model")}</span>
+        <select
+          value={cfg.compaction_model}
+          data-testid="compaction-model"
+          className="px-2 py-1.5 rounded-lg border border-line bg-paper text-[13px] text-ink outline-none focus:border-accent"
+          onChange={(e) => save({ compaction_model: e.target.value })}
+        >
+          <option value="">{t("settings.compaction.modelDefault")}</option>
+          {models.map((m) => (
+            <option key={m} value={m}>
+              {modelLabel(m)}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className={FIELD_HELP}>
+        {t("settings.compaction.modelHelp")}
+      </div>
     </div>
   );
 }

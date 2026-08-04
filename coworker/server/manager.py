@@ -529,6 +529,13 @@ class SessionManager:
             )
         if record is not None and record.grants:
             self._apply_grants(engine, record.grants)
+        # Auto-compaction (OPE-27): restore the persisted view boundary and wire the live
+        # Settings getter — post-construction, so build_engine's signature stays put.
+        if record is not None and record.compaction:
+            from ..compaction import CompactionState
+
+            engine.compaction_state = CompactionState.from_dict(record.compaction)
+        engine.compaction_settings = self.compaction_settings
         self._engines[session_id] = engine
         if is_new_session:
             self._emit_session_created(session_id, agent_name)
@@ -1859,7 +1866,7 @@ class SessionManager:
         selectable = [m for m in self._curated_models() if _selectable(m)]
         if self.model not in selectable:
             selectable.insert(0, self.model)
-        from ..providers.matrix import model_labels
+        from ..providers.matrix import model_context_windows, model_labels
 
         return {
             "provider": "openai",
@@ -1868,6 +1875,9 @@ class SessionManager:
             # Curated-matrix display names ({full id → "GLM-5.2 · via Together"}) so every
             # picker shows human labels; custom models absent here render their raw id.
             "model_labels": model_labels(),
+            # {full id → context window in tokens}, verified matrix entries only —
+            # drives the composer's context-fill meter (absent id → meter hides).
+            "model_context_windows": model_context_windows(),
             "has_key": env_key or stored,
             # Provider-agnostic "can this default model actually run?" — true when the default
             # model's provider is configured (any provider, not just OpenAI). Drives the GUI's
@@ -1887,6 +1897,7 @@ class SessionManager:
             # hardcoded POSIX one (Windows -> %APPDATA%\coworker, macOS/Linux -> ~/.config).
             "secrets_path": str(self.secrets.path),
             **self.pdf_settings(),
+            **self.compaction_settings_payload(),
         }
 
     def _surfaces(self) -> dict[str, bool]:
@@ -1982,6 +1993,78 @@ class SessionManager:
             "pdf_max_pages": max(1, min(pages, 100)),
             "pdf_max_mb": max(1, min(mb, 10)),
         }
+
+    def compaction_settings(self) -> dict[str, Any]:
+        """The live auto-compaction knobs (OPE-27) — read by every engine per check, so a
+        Settings change applies without a rebuild. Only the two spec'd overrides plus the
+        summarizer-model pin; absent keys fall back to compaction.py defaults."""
+        from ..compaction import DEFAULT_CAP_TOKENS, DEFAULT_THRESHOLD_PCT
+
+        # prefs.json is user-editable; a garbage value must fall back, not blow up the
+        # turn that happens to check compaction next (same pattern as pdf_settings).
+        try:
+            threshold = float(
+                self._prefs.get("compaction_threshold_pct") or DEFAULT_THRESHOLD_PCT
+            )
+        except (TypeError, ValueError):
+            threshold = DEFAULT_THRESHOLD_PCT
+        try:
+            cap = int(self._prefs.get("compaction_cap_tokens") or DEFAULT_CAP_TOKENS)
+        except (TypeError, ValueError):
+            cap = DEFAULT_CAP_TOKENS
+        return {
+            "threshold_pct": threshold,
+            "cap_tokens": cap,
+            # "" → the session's own model (engine falls back to self.model).
+            "model": str(self._prefs.get("compaction_model") or ""),
+        }
+
+    def compaction_settings_payload(self) -> dict[str, Any]:
+        """The same knobs under REST-facing names (prefixed to keep /v1/settings flat)."""
+        settings = self.compaction_settings()
+        return {
+            "compaction_threshold_pct": settings["threshold_pct"],
+            "compaction_cap_tokens": settings["cap_tokens"],
+            "compaction_model": settings["model"],
+        }
+
+    def set_compaction_settings(
+        self,
+        threshold_pct: Any = None,
+        cap_tokens: Any = None,
+        model: Any = None,
+    ) -> dict[str, Any]:
+        """Persist the auto-compaction overrides (OPE-27). Threshold is a fraction of
+        the model's context window (0.10–0.95); the cap is an absolute token ceiling;
+        model pins the summarizer ('' → the session's own model). Engines read these live
+        via `compaction_settings()`, so changes apply to running sessions immediately."""
+        # Validate every field before mutating anything: engines read _prefs live, so a
+        # partial write would apply one override in memory while the request errors out.
+        pct: Optional[float] = None
+        if threshold_pct is not None:
+            try:
+                pct = float(threshold_pct)
+            except (TypeError, ValueError):
+                return {"ok": False, "error": "compaction_threshold_pct must be a number"}
+            if not 0.10 <= pct <= 0.95:
+                return {
+                    "ok": False,
+                    "error": "compaction_threshold_pct must be between 0.10 and 0.95",
+                }
+        cap: Optional[int] = None
+        if cap_tokens is not None:
+            try:
+                cap = max(10_000, min(int(cap_tokens), 2_000_000))
+            except (TypeError, ValueError):
+                return {"ok": False, "error": "compaction_cap_tokens must be a number"}
+        if pct is not None:
+            self._prefs["compaction_threshold_pct"] = pct
+        if cap is not None:
+            self._prefs["compaction_cap_tokens"] = cap
+        if model is not None:
+            self._prefs["compaction_model"] = str(model)
+        self._save_prefs()
+        return {"ok": True, **self.compaction_settings()}
 
     def set_pdf_settings(
         self,
@@ -2618,6 +2701,12 @@ class SessionManager:
     def register_session_client(self, session_id: str, send_cb: Any) -> None:
         self._session_clients.setdefault(session_id, set()).add(send_cb)
 
+    def has_session_clients(self, session_id: str) -> bool:
+        """True while at least one GUI socket is attached to the session. The compaction
+        failure prompt keys off this: a session whose socket died is unattended no matter
+        what visibility it was configured with."""
+        return bool(self._session_clients.get(session_id))
+
     def unregister_session_client(self, session_id: str, send_cb: Any) -> None:
         clients = self._session_clients.get(session_id)
         if clients is not None:
@@ -2789,6 +2878,10 @@ class SessionManager:
             connector_filter=self.effective_connectors(session_id, task.agent),
         )
         self._seed_task_permissions(engine, task)
+        # Same compaction wiring as get_engine: without it a scheduled run silently uses
+        # the built-in defaults and ignores the summarizer-model pin, so the same task
+        # behaves differently between a scheduled fire and a "Run now" resume.
+        engine.compaction_settings = self.compaction_settings
         return engine
 
     # -- mirroring inbox items to a bound channel -------------------------------
@@ -3659,6 +3752,11 @@ class SessionManager:
                 agent=getattr(engine, "agent_name", "code"),
                 extra_roots=self._extra_roots_of(engine),
                 grants=_grants_of(engine),
+                compaction=(
+                    engine.compaction_state.as_dict()
+                    if getattr(engine, "compaction_state", None)
+                    else {}
+                ),
             )
         )
 

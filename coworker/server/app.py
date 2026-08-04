@@ -33,6 +33,15 @@ class ApprovalRevoke(BaseModel):
     value: str = ""
     tool: Optional[str] = None
 
+
+class CompactionSettingsBody(BaseModel):
+    """POST /v1/settings/compaction — the OPE-27 overrides. All optional: absent fields
+    keep their stored value. Module-level for the same FastAPI reason as ApprovalRevoke."""
+
+    compaction_threshold_pct: Optional[float] = None
+    compaction_cap_tokens: Optional[int] = None
+    compaction_model: Optional[str] = None
+
 # Origins allowed to talk to the local sidecar. It binds to 127.0.0.1, but a page in the
 # user's own browser can still reach loopback — so without an origin gate, any website they
 # visit could read `GET /v1/sessions` (CORS was `*`) and drive a session over the WS (which
@@ -1659,6 +1668,16 @@ def create_app(manager: SessionManager) -> FastAPI:
             max_mb=b.get("pdf_max_mb"),
         )
 
+    @app.post("/v1/settings/compaction")
+    def settings_set_compaction(body: CompactionSettingsBody) -> dict[str, Any]:
+        # Auto-compaction overrides (OPE-27): threshold fraction of the context window,
+        # the absolute token cap, and the summarizer-model pin ("" → session's own model).
+        return manager.set_compaction_settings(
+            threshold_pct=body.compaction_threshold_pct,
+            cap_tokens=body.compaction_cap_tokens,
+            model=body.compaction_model,
+        )
+
     @app.post("/v1/attachments/inspect-pdf")
     def attachments_inspect_pdf(body: dict) -> dict[str, Any]:
         # Attach-time page/size probe for the composer's threshold check. Local only.
@@ -1958,6 +1977,14 @@ def create_app(manager: SessionManager) -> FastAPI:
             )
             await ws.close()
             return
+        # Auto-compaction failure prompt (OPE-27): only an ATTENDED session may be asked
+        # Retry/Trim — unattended runs auto-trim (the policy in engine._compact_now).
+        # Visibility alone is not enough: after the socket dies the engine may keep
+        # running (WhatsApp steering reuses it), and prompting a dead socket would park
+        # the run. A live session client is what makes it attended.
+        engine.is_attended = lambda: (
+            _visibility() == VIS_INLINE and manager.has_session_clients(session_id)
+        )
         await ws.send_json(
             {
                 "type": "ready",

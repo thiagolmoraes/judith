@@ -990,6 +990,42 @@ export const en: Catalog = {
   "tool.aFile": "a file",
   "tool.files": "files",
 
+  // -- composer token usage & settings compaction -----------------------------------------
+  "composer.usage.title": "Token usage",
+  "composer.usage.titlePct": "Token usage — {pct}% of the context window used",
+  "composer.usage.titleSession": "Token usage this session",
+  "composer.usage.contextWindow": "Context window",
+  "composer.usage.sessionTotals": "Session totals",
+  "composer.usage.total": "Total",
+  "composer.usage.meterUnavailable": "Context meter unavailable for custom models.",
+  "composer.usage.uncachedInput": "Uncached input",
+  "composer.usage.cacheReads": "Cache reads",
+  "composer.usage.cacheWrites": "Cache writes",
+  "composer.usage.totalInput": "Total input",
+  "composer.usage.input": "Input",
+  "composer.usage.output": "Output",
+  "composer.usage.unknownModel": "Unknown model",
+  "composer.usage.ofWindow": "{used} of {window} · {pct}%",
+  "composer.usage.inContextNow": "In context now: {tokens} tokens",
+  "composer.usage.tokenCount": "{tokens} tokens",
+  "app.noticeCompacted": "Context compacted",
+  "settings.compaction.title": "Context compaction",
+  "settings.compaction.help":
+    "Long sessions are compacted automatically: older turns are summarized so the coworker keeps working instead of running out of context. Your visible transcript is never changed — a small marker shows where compaction happened.",
+  "settings.compaction.compactAt": "Compact at",
+  "settings.compaction.pctOfWindow": "% of the context window",
+  "settings.compaction.orAt": "or at",
+  "settings.compaction.tokensSmaller": "tokens, whichever is smaller",
+  "settings.compaction.capHelp":
+    "The cap makes very-large-context models compact early — quality and speed degrade well before their nominal limit.",
+  "settings.compaction.model": "Summarizer model",
+  "settings.compaction.modelDefault": "Session's own model (default)",
+  "settings.compaction.modelHelp":
+    "The summary is written by this model. The default follows whatever model the session is using.",
+  "transcript.less": "less…",
+  "transcript.more": "more…",
+  "app.compactingContext": "Compacting context…",
+
   // -- counts ----------------------------------------------------------------------
   "count.repositories": { one: "{count} repository", other: "{count} repositories" },
   "count.sessions": { one: "{count} session", other: "{count} sessions" },
