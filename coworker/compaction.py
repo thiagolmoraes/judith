@@ -167,7 +167,9 @@ def pick_boundary(messages: list[dict[str, Any]], *, keep_tokens: int) -> Option
         if boundary is None:
             boundary = inside[-1] if inside else users[-1]
     if boundary is None:
-        boundary = _fit(assistants) or (assistants[-1] if assistants else None)
+        # `is not None`, not `or`: index 0 is a valid fit and must not fall through.
+        fitted = _fit(assistants)
+        boundary = fitted if fitted is not None else (assistants[-1] if assistants else None)
     # A boundary at (or before) the first real message summarizes nothing — skip.
     if boundary is None or boundary <= start:
         return None

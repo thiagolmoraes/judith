@@ -61,10 +61,13 @@ export interface TurnUsage {
 
 // Per-session accumulation, keyed by model id (multiple models when the user
 // switched mid-session). `context` = the latest round-trip's prompt-side total —
-// what currently occupies the active model's context window.
+// what currently occupies the active model's context window. `contextModel` names
+// the model that reported it, so the meter can hide after a model switch instead
+// of comparing the old total against the new model's window.
 export interface SessionUsage {
   byModel: Record<string, TurnUsage>;
   context: number;
+  contextModel: string | null;
 }
 
 export interface SessionInfo {

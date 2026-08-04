@@ -115,6 +115,10 @@ class TurnEngine:
         self.compaction_settings: Optional[Callable[[], dict[str, Any]]] = None
         self.is_attended: Optional[Callable[[], bool]] = None
         self._last_context_tokens: Optional[int] = None
+        # Incremental estimate cache (state key, messages counted, running tokens): the
+        # no-usage fallback would otherwise re-serialize the whole history every loop
+        # iteration. History is append-only, so only new messages need counting.
+        self._estimate_cache: tuple[int, int, int] = (0, 0, 0)
         self.audit_context: dict[str, Any] = {}
         if instructions and not (
             self.messages and self.messages[0].get("role") == "system"
@@ -442,15 +446,45 @@ class TurnEngine:
         cfg = self._compaction_config()
         if cfg.get("enabled") is False:
             return False
-        signal = self._last_context_tokens or _compaction.estimate_tokens(
-            self._outbound_messages()
-        )
+        signal = self._last_context_tokens or self._estimated_context_tokens()
         return _compaction.should_compact(
             signal,
             cfg.get("context_window"),
             threshold_pct=float(cfg["threshold_pct"]),
             cap_tokens=int(cfg["cap_tokens"]),
         )
+
+    def _estimated_context_tokens(self) -> int:
+        """Incremental fallback estimate for providers that report no usage. Counts only
+        messages appended since the last call; resets when the compaction boundary moves
+        (the outbound view changed shape under us)."""
+        view = self._outbound_messages()
+        key = id(self.compaction_state) if self.compaction_state is not None else 0
+        cached_key, counted, tokens = self._estimate_cache
+        if cached_key != key or counted > len(view):
+            counted, tokens = 0, 0
+        if counted < len(view):
+            tokens += _compaction.estimate_tokens(view[counted:])
+            counted = len(view)
+        self._estimate_cache = (key, counted, tokens)
+        return tokens
+
+    def _note_compaction_failure(self, exc: Exception) -> None:
+        """Out-of-band trace for a summarizer failure: the turn falls back to trim by
+        policy, but the cause must land somewhere diagnosable."""
+        if self.audit_sink is None:
+            return
+        try:
+            self.audit_sink(
+                {
+                    **self.audit_context,
+                    "tool": "_compaction",
+                    "arguments": {},
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+            )
+        except Exception:
+            pass
 
     async def _compact_now(self, *, force: bool = False) -> Optional[str]:
         """Run the compaction policy. Callers gate on `_compaction_due()` (or `force`,
@@ -484,8 +518,9 @@ class TurnEngine:
                 state = await asyncio.to_thread(_build)
                 failed = False
                 break
-            except Exception:
+            except Exception as exc:
                 failed = True
+                self._note_compaction_failure(exc)
         if failed and self.question_asker is not None and self.is_attended and self.is_attended():
             # The asker can itself die mid-prompt (socket closed between the attended
             # check and the send). Never let that park or crash the turn — fall through
@@ -513,10 +548,11 @@ class TurnEngine:
                         state = await asyncio.to_thread(_build)
                         failed = False
                         break
-                    except Exception:
+                    except Exception as exc:
+                        self._note_compaction_failure(exc)
                         continue
-            except Exception:
-                pass
+            except Exception as exc:
+                self._note_compaction_failure(exc)
         if state is not None:
             self.compaction_state = state
             self._last_context_tokens = None  # stale once the outbound view shrank

@@ -332,7 +332,9 @@ def _request(
                 if method.upper() != "GET":
                     return {"error": "address-checked requests must be GET"}
                 try:
-                    resp = get_checked(client, url)
+                    # headers/params ride along; auth deliberately does not — the URL is
+                    # model-supplied and a credential must not follow its redirects.
+                    resp = get_checked(client, url, headers=headers, params=params)
                 except PermissionError as exc:
                     return {"error": str(exc)}
             else:

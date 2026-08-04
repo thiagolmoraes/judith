@@ -22,19 +22,22 @@ test("Settings: Context compaction card edits threshold, cap, and summarizer mod
   await expect(card.getByTestId("compaction-model")).toHaveValue("");
 
   // Threshold edits POST as a fraction, clamped to 10–95%.
+  // Numeric fields commit on blur (typing must not save intermediate values).
+  const threshold = card.getByTestId("compaction-threshold");
   const [req] = await Promise.all([
     page.waitForRequest(
       (r) => r.url().endsWith("/v1/settings/compaction") && r.method() === "POST",
     ),
-    card.getByTestId("compaction-threshold").fill("70"),
+    threshold.fill("70").then(() => threshold.blur()),
   ]);
   expect(req.postDataJSON()).toEqual({ compaction_threshold_pct: 0.7 });
 
+  const cap = card.getByTestId("compaction-cap");
   const [req2] = await Promise.all([
     page.waitForRequest(
       (r) => r.url().endsWith("/v1/settings/compaction") && r.method() === "POST",
     ),
-    card.getByTestId("compaction-cap").fill("100000"),
+    cap.fill("100000").then(() => cap.blur()),
   ]);
   expect(req2.postDataJSON()).toEqual({ compaction_cap_tokens: 100000 });
 

@@ -12,7 +12,7 @@ from coworker.providers.anthropic_provider import AnthropicProvider
 MARKER = {"type": "ephemeral"}
 
 
-def _kwargs(messages, tools=None):
+def _kwargs(messages, tools=None) -> dict:
     return AnthropicProvider(client=object())._request_kwargs(
         model="claude-haiku-4-5", messages=messages, tools=tools, settings={}
     )

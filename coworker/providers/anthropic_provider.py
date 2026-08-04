@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Optional
+from typing import Any, Iterator, Optional
 
 from .base import (
     AssistantTurn,
@@ -34,7 +34,7 @@ from .base import (
 from .capabilities import capabilities_for
 
 
-def _usage_from(usage: Any) -> Optional[TokenUsage]:
+def _usage_from(usage: object | None) -> Optional[TokenUsage]:
     """Messages-API usage object → normalized counts (input_tokens excludes cache)."""
     if usage is None:
         return None
@@ -527,7 +527,7 @@ class AnthropicProvider(ProviderClient):
         messages: list[dict[str, Any]],
         tools: Optional[list[dict[str, Any]]] = None,
         **settings: Any,
-    ):
+    ) -> Iterator[StreamChunk]:
         kwargs = self._request_kwargs(
             model=model, messages=messages, tools=tools, settings=settings
         )

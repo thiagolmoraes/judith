@@ -14,14 +14,17 @@ const USER_CLAMP_CHARS = 1200;
 
 function ClampedUserText({ text }: { text: string }) {
   const { t } = useI18n();
-  const [open, setOpen] = useState(false);
+  // Keyed on the text itself: switching sessions can reuse this component at the same
+  // transcript position, and a stale `open` would auto-expand the new session's message.
+  const [openFor, setOpenFor] = useState<string | null>(null);
+  const open = openFor === text;
   if (text.length <= USER_CLAMP_CHARS) return <>{text}</>;
   return (
     <>
       {open ? text : text.slice(0, USER_CLAMP_CHARS).trimEnd() + "…"}
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => setOpenFor(open ? null : text)}
         className="block mt-1.5 text-[12.5px] font-medium underline underline-offset-2 opacity-75 hover:opacity-100"
       >
         {open ? t("transcript.less") : t("transcript.more")}

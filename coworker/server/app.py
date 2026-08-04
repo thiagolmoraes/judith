@@ -33,6 +33,15 @@ class ApprovalRevoke(BaseModel):
     value: str = ""
     tool: Optional[str] = None
 
+
+class CompactionSettingsBody(BaseModel):
+    """POST /v1/settings/compaction — the OPE-27 overrides. All optional: absent fields
+    keep their stored value. Module-level for the same FastAPI reason as ApprovalRevoke."""
+
+    compaction_threshold_pct: Optional[float] = None
+    compaction_cap_tokens: Optional[int] = None
+    compaction_model: Optional[str] = None
+
 # Origins allowed to talk to the local sidecar. It binds to 127.0.0.1, but a page in the
 # user's own browser can still reach loopback — so without an origin gate, any website they
 # visit could read `GET /v1/sessions` (CORS was `*`) and drive a session over the WS (which
@@ -1660,14 +1669,13 @@ def create_app(manager: SessionManager) -> FastAPI:
         )
 
     @app.post("/v1/settings/compaction")
-    def settings_set_compaction(body: dict) -> dict[str, Any]:
-        # Auto-compaction overrides (OPE-27): threshold % of the context window, the
-        # absolute token cap, and the summarizer-model pin ("" → session's own model).
-        b = body or {}
+    def settings_set_compaction(body: CompactionSettingsBody) -> dict[str, Any]:
+        # Auto-compaction overrides (OPE-27): threshold fraction of the context window,
+        # the absolute token cap, and the summarizer-model pin ("" → session's own model).
         return manager.set_compaction_settings(
-            threshold_pct=b.get("compaction_threshold_pct"),
-            cap_tokens=b.get("compaction_cap_tokens"),
-            model=b.get("compaction_model"),
+            threshold_pct=body.compaction_threshold_pct,
+            cap_tokens=body.compaction_cap_tokens,
+            model=body.compaction_model,
         )
 
     @app.post("/v1/attachments/inspect-pdf")

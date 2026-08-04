@@ -760,30 +760,76 @@ function CompactionCard() {
   const [cfg, setCfg] = useState<CompactionSettings | null>(null);
   const [models, setModels] = useState<string[]>([]);
   const [labels, setLabels] = useState<Record<string, string>>({});
+  // Numeric fields edit a local draft and commit on blur/Enter: saving per keystroke
+  // made normal typing impossible (clearing "80" snapped back, deleting a digit
+  // clamped "8" to 10) and fired a POST per intermediate value.
+  const [thresholdDraft, setThresholdDraft] = useState("");
+  const [capDraft, setCapDraft] = useState("");
 
   useEffect(() => {
     getSettings()
       .then((s) => {
-        setCfg({
+        const loaded = {
           compaction_threshold_pct: s.compaction_threshold_pct ?? 0.8,
           compaction_cap_tokens: s.compaction_cap_tokens ?? 250_000,
           compaction_model: s.compaction_model ?? "",
-        });
+        };
+        setCfg(loaded);
+        setThresholdDraft(String(Math.round(loaded.compaction_threshold_pct * 100)));
+        setCapDraft(String(loaded.compaction_cap_tokens));
         setModels(s.models || []);
         setLabels(s.model_labels || {});
       })
-      .catch(() =>
+      .catch(() => {
         setCfg({
           compaction_threshold_pct: 0.8,
           compaction_cap_tokens: 250_000,
           compaction_model: "",
-        }),
-      );
+        });
+        setThresholdDraft("80");
+        setCapDraft("250000");
+      });
   }, []);
 
+  // Optimistic with revert: a rejected or {ok:false} save puts the previous value back
+  // so the card never shows a state the server refused.
   const save = async (patch: Partial<CompactionSettings>) => {
+    const prev = cfg;
     setCfg((p) => (p ? { ...p, ...patch } : p));
-    await setCompactionSettings(patch);
+    try {
+      const res = await setCompactionSettings(patch);
+      if (res && (res as { ok?: boolean }).ok === false) throw new Error();
+    } catch {
+      setCfg(prev);
+      if (prev) {
+        setThresholdDraft(String(Math.round(prev.compaction_threshold_pct * 100)));
+        setCapDraft(String(prev.compaction_cap_tokens));
+      }
+    }
+  };
+
+  const commitThreshold = () => {
+    if (!cfg) return;
+    const parsed = Number(thresholdDraft);
+    const pct = Number.isFinite(parsed) && thresholdDraft.trim() !== ""
+      ? Math.max(10, Math.min(Math.round(parsed), 95))
+      : Math.round(cfg.compaction_threshold_pct * 100);
+    setThresholdDraft(String(pct));
+    if (pct / 100 !== cfg.compaction_threshold_pct) {
+      void save({ compaction_threshold_pct: pct / 100 });
+    }
+  };
+
+  const commitCap = () => {
+    if (!cfg) return;
+    const parsed = Number(capDraft);
+    const cap = Number.isFinite(parsed) && capDraft.trim() !== ""
+      ? Math.max(10_000, Math.min(Math.round(parsed), 2_000_000))
+      : cfg.compaction_cap_tokens;
+    setCapDraft(String(cap));
+    if (cap !== cfg.compaction_cap_tokens) {
+      void save({ compaction_cap_tokens: cap });
+    }
   };
 
   if (!cfg) return null;
@@ -802,15 +848,12 @@ function CompactionCard() {
             type="number"
             min={10}
             max={95}
-            value={Math.round(cfg.compaction_threshold_pct * 100)}
+            value={thresholdDraft}
             data-testid="compaction-threshold"
             className="w-16 px-2 py-1.5 rounded-lg border border-line bg-paper text-[13px] text-ink outline-none focus:border-accent"
-            onChange={(e) =>
-              save({
-                compaction_threshold_pct:
-                  Math.max(10, Math.min(Number(e.target.value) || 80, 95)) / 100,
-              })
-            }
+            onChange={(e) => setThresholdDraft(e.target.value)}
+            onBlur={commitThreshold}
+            onKeyDown={(e) => e.key === "Enter" && commitThreshold()}
           />
           <span className="text-[12.5px] text-muted">{t("settings.compaction.pctOfWindow")}</span>
         </label>
@@ -821,17 +864,12 @@ function CompactionCard() {
             min={10_000}
             max={2_000_000}
             step={10_000}
-            value={cfg.compaction_cap_tokens}
+            value={capDraft}
             data-testid="compaction-cap"
             className="w-28 px-2 py-1.5 rounded-lg border border-line bg-paper text-[13px] text-ink outline-none focus:border-accent"
-            onChange={(e) =>
-              save({
-                compaction_cap_tokens: Math.max(
-                  10_000,
-                  Math.min(Number(e.target.value) || 250_000, 2_000_000),
-                ),
-              })
-            }
+            onChange={(e) => setCapDraft(e.target.value)}
+            onBlur={commitCap}
+            onKeyDown={(e) => e.key === "Enter" && commitCap()}
           />
           <span className="text-[12.5px] text-muted">{t("settings.compaction.tokensSmaller")}</span>
         </label>

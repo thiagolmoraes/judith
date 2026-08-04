@@ -1591,7 +1591,14 @@ export function App() {
               prefill={composerPrefill}
               resetKey={sessionId}
               usage={usage}
-              contextWindow={modelContextWindows[model]}
+              // The meter compares `usage.context` against the ACTIVE model's window;
+              // after a model switch that total belongs to the previous model, so hide
+              // the meter until the new model reports its first usage.
+              contextWindow={
+                !usage.contextModel || usage.contextModel === model
+                  ? modelContextWindows[model]
+                  : undefined
+              }
               placeholder={
                 agent === "code"
                   ? t("app.placeholderCode")

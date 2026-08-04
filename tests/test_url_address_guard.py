@@ -49,7 +49,14 @@ def test_cgnat_neighbours_still_allowed(monkeypatch):
 
 def test_ipv4_mapped_ipv6_loopback_is_blocked():
     """::ffff:127.0.0.1 must be judged as the v4 address it carries."""
-    assert guard.check_url("http://[::ffff:127.0.0.1]/")
+    reason = guard.check_url("http://[::ffff:127.0.0.1]/")
+    assert reason is not None and "loopback" in reason
+
+
+def test_invalid_port_is_refused_not_raised():
+    """A bad port must come back as a reason — browser_automation calls check_url raw."""
+    reason = guard.check_url("http://example.com:99999/")
+    assert reason is not None and "invalid port" in reason
 
 
 def test_public_literal_is_allowed():
@@ -124,7 +131,7 @@ class _Client:
         self.script = script
         self.requested = []
 
-    def get(self, url):
+    def get(self, url, headers=None, params=None):
         self.requested.append(url)
         return self.script.pop(0)
 

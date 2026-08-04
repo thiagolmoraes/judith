@@ -30,7 +30,7 @@ def _load_roots(raw: Optional[str]) -> list[dict]:
     return value if isinstance(value, list) else []
 
 
-def _load_grants(raw: Optional[str]) -> dict:
+def _load_json_dict(raw: Optional[str]) -> dict:
     if not raw:
         return {}
     try:
@@ -243,9 +243,9 @@ class ConversationStore:
             extra_roots=_load_roots(
                 row["extra_roots"] if "extra_roots" in row.keys() else None
             ),
-            grants=_load_grants(row["grants"] if "grants" in row.keys() else None),
+            grants=_load_json_dict(row["grants"] if "grants" in row.keys() else None),
             # Auto-compaction state (OPE-27) — same defensive parse as grants.
-            compaction=_load_grants(
+            compaction=_load_json_dict(
                 row["compaction"] if "compaction" in row.keys() else None
             ),
             pinned=bool(row["pinned"]),

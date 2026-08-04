@@ -62,6 +62,12 @@ def check_url(url: str) -> Optional[str]:
     host = parts.hostname
     if not host:
         return "url has no host"
+    # `.port` raises on a non-numeric or out-of-range port; judge that here so direct
+    # check_url callers (browser_automation) get a reason back, never an exception.
+    try:
+        port = parts.port
+    except ValueError:
+        return f"refusing to fetch {host}: the url has an invalid port"
 
     # A literal address needs no lookup.
     try:
@@ -69,11 +75,16 @@ def check_url(url: str) -> Optional[str]:
     except ValueError:
         literal = None
     if literal is not None:
+        # ::ffff:127.0.0.1 must be judged as the v4 address it carries, exactly like
+        # the resolved branch below.
+        mapped = getattr(literal, "ipv4_mapped", None)
+        if mapped is not None:
+            literal = mapped
         reason = _blocked_reason(literal)
         return f"refusing to fetch {host}: {reason}" if reason else None
 
     try:
-        infos = socket.getaddrinfo(host, parts.port or (443 if parts.scheme == "https" else 80),
+        infos = socket.getaddrinfo(host, port or (443 if parts.scheme == "https" else 80),
                                    proto=socket.IPPROTO_TCP)
     except OSError as exc:
         return f"could not resolve {host}: {exc}"
@@ -94,19 +105,25 @@ def check_url(url: str) -> Optional[str]:
     return None
 
 
-def get_checked(client, url: str, *, max_redirects: int = MAX_REDIRECTS):
+def get_checked(client, url: str, *, max_redirects: int = MAX_REDIRECTS, headers=None, params=None):
     """GET `url`, validating the address before every hop.
 
     `client` must be built with `follow_redirects=False`; redirects are walked here so each
     Location is checked. Returns the final response. Raises `PermissionError` when a hop is
     refused, `RuntimeError` when the redirect budget is exhausted.
+
+    `headers` ride along on every hop; `params` only on the first (a Location target is
+    already the complete URL). No auth parameter on purpose: the URL comes from the model,
+    and a credential must never follow a redirect it controls.
     """
     seen = url
+    first = True
     for _ in range(max_redirects + 1):
         reason = check_url(seen)
         if reason:
             raise PermissionError(reason)
-        resp = client.get(seen)
+        resp = client.get(seen, headers=headers, params=params if first else None)
+        first = False
         if resp.status_code not in (301, 302, 303, 307, 308):
             return resp
         location = resp.headers.get("location")

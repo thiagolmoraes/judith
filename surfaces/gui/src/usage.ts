@@ -8,7 +8,7 @@ import type { ConversationMessage } from "./api";
 import type { SessionUsage, TurnUsage } from "./types";
 
 export function emptyUsage(): SessionUsage {
-  return { byModel: {}, context: 0 };
+  return { byModel: {}, context: 0, contextModel: null };
 }
 
 const num = (v: any): number => {
@@ -42,6 +42,7 @@ export function addTurnUsage(prev: SessionUsage, raw: any): SessionUsage {
     // Prompt-side total of the LATEST round-trip = what currently sits in the
     // context window (not a sum — each request resends the whole history).
     context: turn.input + turn.cache_read + turn.cache_write,
+    contextModel: turn.model ?? null,
   };
 }
 

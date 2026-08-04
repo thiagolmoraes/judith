@@ -2000,13 +2000,21 @@ class SessionManager:
         summarizer-model pin; absent keys fall back to compaction.py defaults."""
         from ..compaction import DEFAULT_CAP_TOKENS, DEFAULT_THRESHOLD_PCT
 
-        return {
-            "threshold_pct": float(
+        # prefs.json is user-editable; a garbage value must fall back, not blow up the
+        # turn that happens to check compaction next (same pattern as pdf_settings).
+        try:
+            threshold = float(
                 self._prefs.get("compaction_threshold_pct") or DEFAULT_THRESHOLD_PCT
-            ),
-            "cap_tokens": int(
-                self._prefs.get("compaction_cap_tokens") or DEFAULT_CAP_TOKENS
-            ),
+            )
+        except (TypeError, ValueError):
+            threshold = DEFAULT_THRESHOLD_PCT
+        try:
+            cap = int(self._prefs.get("compaction_cap_tokens") or DEFAULT_CAP_TOKENS)
+        except (TypeError, ValueError):
+            cap = DEFAULT_CAP_TOKENS
+        return {
+            "threshold_pct": threshold,
+            "cap_tokens": cap,
             # "" → the session's own model (engine falls back to self.model).
             "model": str(self._prefs.get("compaction_model") or ""),
         }
@@ -2026,10 +2034,10 @@ class SessionManager:
         cap_tokens: Any = None,
         model: Any = None,
     ) -> dict[str, Any]:
-        """Persist the auto-compaction overrides (OPE-27). Threshold is a percentage of
-        the model's context window (10–95); the cap is an absolute token ceiling; model
-        pins the summarizer ('' → the session's own model). Engines read these live via
-        `compaction_settings()`, so changes apply to running sessions immediately."""
+        """Persist the auto-compaction overrides (OPE-27). Threshold is a fraction of
+        the model's context window (0.10–0.95); the cap is an absolute token ceiling;
+        model pins the summarizer ('' → the session's own model). Engines read these live
+        via `compaction_settings()`, so changes apply to running sessions immediately."""
         # Validate every field before mutating anything: engines read _prefs live, so a
         # partial write would apply one override in memory while the request errors out.
         pct: Optional[float] = None
