@@ -78,10 +78,40 @@ def test_compute_next_run_defaults_to_local_time():
     assert (local.hour, local.minute) == (19, 10)
 
 
-def test_compute_next_run_once_in_past_is_none():
+def test_compute_next_run_once_in_past_stays_due_until_attempted():
+    """Run-once-catch-up: a one-shot that never got to run keeps its (past) fire time,
+    so the scheduler's catch-up pass fires it. It used to recompute to None, which made
+    a disable/enable cycle silently kill the task."""
     past = "2020-01-01T00:00:00+00:00"
     t = _task(schedule=Schedule(kind="once", fire_at=past))
-    assert compute_next_run(t) is None
+    nxt = compute_next_run(t)
+    assert nxt is not None
+    assert datetime.fromtimestamp(nxt, tz=timezone.utc).year == 2020
+
+
+def test_compute_next_run_once_attempted_is_done():
+    past = "2020-01-01T00:00:00+00:00"
+    ran = _task(schedule=Schedule(kind="once", fire_at=past), run_count=1)
+    assert compute_next_run(ran) is None
+    # A failed attempt counts as attempted too — one-shots never retry.
+    failed = _task(
+        schedule=Schedule(kind="once", fire_at=past),
+        last_run=1577836800.0,
+        last_status="error",
+    )
+    assert compute_next_run(failed) is None
+
+
+def test_store_reenabling_missed_oneshot_keeps_it_due(tmp_path):
+    store = TaskStore(tmp_path / "auto.db")
+    t = _task(schedule=Schedule(kind="once", fire_at="2020-01-01T00:00:00+00:00"))
+    store.save(t)
+    t.enabled = False
+    store.save(t)
+    t.enabled = True
+    saved = store.save(t)  # save() recomputes next_run
+    assert saved.next_run is not None
+    assert [x.id for x in store.due()] == [t.id]
 
 
 # -- store ---------------------------------------------------------------------

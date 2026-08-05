@@ -35,7 +35,14 @@ def compute_next_run(
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=_tz(sched.timezone))
         ts = dt.timestamp()
-        return ts if (task.run_count == 0 and ts > now) else None
+        # A one-shot that was never attempted stays due even when its time has
+        # passed — that's the declared run-once-catch-up policy (missed while the
+        # server was down, or re-saved after the moment). Silently recomputing to
+        # None made a disable/enable cycle kill the task with no trace. Anything
+        # already attempted (last_run set, success or error) is done: one-shots
+        # never retry.
+        never_attempted = task.run_count == 0 and task.last_run is None
+        return ts if never_attempted else None
     # cron
     from croniter import croniter
 
