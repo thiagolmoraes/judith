@@ -84,6 +84,34 @@ class SQLiteMemoryStore(MemoryStore):
             rows = self._conn.execute(query, params).fetchall()
         return [_row_to_item(row) for row in rows]
 
+    def search(
+        self,
+        query: str,
+        *,
+        scope: Optional[Scope] = None,
+        workspace: Optional[str] = None,
+        limit: int = 20,
+    ) -> list[MemoryItem]:
+        # LIKE is enough at this scale (hundreds of rows); newest first so the most
+        # recent take on a topic wins the limit. ESCAPE so a literal % or _ in the
+        # query can't blow the match wide open.
+        pattern = (
+            "%" + query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        )
+        sql = "SELECT * FROM memories WHERE content LIKE ? ESCAPE '\\'"
+        params: list[object] = [pattern]
+        if scope is not None:
+            sql += " AND scope = ?"
+            params.append(Scope(scope).value)
+        if workspace is not None:
+            sql += " AND workspace = ?"
+            params.append(workspace)
+        sql += " ORDER BY id DESC LIMIT ?"
+        params.append(int(limit))
+        with self._lock:
+            rows = self._conn.execute(sql, params).fetchall()
+        return [_row_to_item(row) for row in rows]
+
     def update(self, item_id: int, content: str) -> Optional[MemoryItem]:
         with self._lock:
             self._conn.execute(

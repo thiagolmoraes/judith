@@ -58,7 +58,28 @@ def memory_tools(store: MemoryStore, *, workspace: Optional[str]) -> list:
             return {"deleted": True, "id": memory_id}
         return {"deleted": False, "error": f"no memory with id {memory_id}"}
 
+    def memory_search(query: str) -> dict:
+        """Search stored memories by text. The known-memories list only shows the most
+        recent entries — use this to find older ones before assuming something was
+        never saved.
+
+        Args:
+            query (str): Words to look for inside memory text (substring match).
+        """
+        # Same visibility as the injected block: global memories plus this workspace's.
+        found = store.search(query, scope=Scope.GLOBAL)
+        if workspace is not None:
+            found += store.search(query, scope=Scope.WORKSPACE, workspace=workspace)
+        found.sort(key=lambda m: m.id, reverse=True)
+        return {
+            "results": [
+                {"id": m.id, "scope": m.scope.value, "content": m.content}
+                for m in found[:20]
+            ],
+            "count": len(found[:20]),
+        }
+
     return [
         ai.tool(fn, metadata=ai.ToolMetadata(**_META))
-        for fn in (remember, memory_update, memory_forget)
+        for fn in (remember, memory_update, memory_forget, memory_search)
     ]
