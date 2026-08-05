@@ -104,7 +104,7 @@ MATRIX = [
 ]
 
 
-@pytest.mark.parametrize("factory,expected", MATRIX, ids=lambda p: getattr(p, "__name__", ""))
+@pytest.mark.parametrize(("factory", "expected"), MATRIX, ids=lambda p: getattr(p, "__name__", ""))
 def test_persona_gets_exactly_its_gated_tools(factory, expected, tmp_path):
     engine = _engine(factory(), tmp_path)
     try:
