@@ -84,6 +84,75 @@ class SQLiteMemoryStore(MemoryStore):
             rows = self._conn.execute(query, params).fetchall()
         return [_row_to_item(row) for row in rows]
 
+    def search(
+        self,
+        query: str,
+        *,
+        scope: Optional[Scope] = None,
+        workspace: Optional[str] = None,
+        limit: int = 20,
+    ) -> list[MemoryItem]:
+        # LIKE is enough at this scale (hundreds of rows); newest first so the most
+        # recent take on a topic wins the limit. ESCAPE so a literal % or _ in the
+        # query can't blow the match wide open.
+        pattern = (
+            "%" + query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        )
+        sql = "SELECT * FROM memories WHERE content LIKE ? ESCAPE '\\'"
+        params: list[object] = [pattern]
+        if scope is not None:
+            sql += " AND scope = ?"
+            params.append(Scope(scope).value)
+        if workspace is not None:
+            sql += " AND workspace = ?"
+            params.append(workspace)
+        # max(0, …): SQLite treats LIMIT -1 as no limit — a negative limit must mean
+        # "nothing", never "everything".
+        sql += " ORDER BY id DESC LIMIT ?"
+        params.append(max(0, int(limit)))
+        with self._lock:
+            rows = self._conn.execute(sql, params).fetchall()
+        return [_row_to_item(row) for row in rows]
+
+    def recent(
+        self,
+        *,
+        scope: Optional[Scope] = None,
+        workspace: Optional[str] = None,
+        limit: int = 30,
+    ) -> list[MemoryItem]:
+        sql = "SELECT * FROM memories WHERE 1 = 1"
+        params: list[object] = []
+        if scope is not None:
+            sql += " AND scope = ?"
+            params.append(Scope(scope).value)
+        if workspace is not None:
+            sql += " AND workspace = ?"
+            params.append(workspace)
+        sql += " ORDER BY id DESC LIMIT ?"
+        params.append(max(0, int(limit)))
+        with self._lock:
+            rows = self._conn.execute(sql, params).fetchall()
+        return [_row_to_item(row) for row in rows]
+
+    def count(
+        self,
+        *,
+        scope: Optional[Scope] = None,
+        workspace: Optional[str] = None,
+    ) -> int:
+        sql = "SELECT COUNT(*) FROM memories WHERE 1 = 1"
+        params: list[object] = []
+        if scope is not None:
+            sql += " AND scope = ?"
+            params.append(Scope(scope).value)
+        if workspace is not None:
+            sql += " AND workspace = ?"
+            params.append(workspace)
+        with self._lock:
+            row = self._conn.execute(sql, params).fetchone()
+        return int(row[0])
+
     def update(self, item_id: int, content: str) -> Optional[MemoryItem]:
         with self._lock:
             self._conn.execute(

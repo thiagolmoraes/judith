@@ -60,11 +60,45 @@ class MemoryStore(ABC):
     @abstractmethod
     def delete(self, item_id: int) -> bool: ...
 
+    @abstractmethod
+    def search(
+        self,
+        query: str,
+        *,
+        scope: Optional[Scope] = None,
+        workspace: Optional[str] = None,
+        limit: int = 20,
+    ) -> list[MemoryItem]: ...
 
-def format_memories(items: list[MemoryItem]) -> str:
+    @abstractmethod
+    def recent(
+        self,
+        *,
+        scope: Optional[Scope] = None,
+        workspace: Optional[str] = None,
+        limit: int = 30,
+    ) -> list[MemoryItem]: ...
+
+    @abstractmethod
+    def count(
+        self,
+        *,
+        scope: Optional[Scope] = None,
+        workspace: Optional[str] = None,
+    ) -> int: ...
+
+
+def format_memories(items: list[MemoryItem], *, omitted: int = 0) -> str:
     """Render memories for injection into the system prompt. Ids are shown so the agent
-    can revise a memory (`memory_update`) or retire it (`memory_forget`)."""
+    can revise a memory (`memory_update`) or retire it (`memory_forget`). When the
+    caller capped the list, `omitted` says how many older ones stayed out — the note
+    points the agent at `memory_search` instead of pretending they don't exist."""
     if not items:
         return ""
     lines = [f"- [#{item.id}] {item.content}" for item in items]
-    return "Known memories (from earlier sessions):\n" + "\n".join(lines)
+    block = "Known memories (from earlier sessions):\n" + "\n".join(lines)
+    if omitted > 0:
+        block += (
+            f"\n({omitted} older memories not shown — use memory_search to find them.)"
+        )
+    return block

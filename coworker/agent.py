@@ -59,6 +59,11 @@ in which files, how you'll verify) — don't describe edits as if you were makin
 the plan is approved, this same session switches to execution and you implement it; if
 rejected, revise the plan using the feedback."""
 
+# The known-memories block stops growing with the store: only the newest N are injected
+# and older ones stay reachable via memory_search. Months of use must not translate into
+# an ever-fatter system prompt.
+_MEMORY_INJECT_CAP = 30
+
 # When-to-remember rules, injected only when a memory store is wired. Without these,
 # models either never call `remember` or save noise the repo already records.
 _MEMORY_GUIDANCE = """\
@@ -70,7 +75,8 @@ history, AGENTS.md) or details that only matter to the current task. Use absolut
 never "yesterday".
 - Before saving, check the known-memories list: if an entry already covers it, revise that \
 entry with `memory_update` instead of adding a near-duplicate; retire wrong or obsolete \
-entries with `memory_forget`.
+entries with `memory_forget`. The list shows only the most recent entries — when something \
+should be on record but isn't listed, check with `memory_search` before saving it again.
 - Memories reflect when they were written. If one names a file, flag, or URL, verify it \
 still exists before relying on it."""
 
@@ -259,10 +265,19 @@ def build_engine(
             memory_tools(memory_store, workspace=str(ws) if ws else None)
         )
         instructions = f"{instructions}\n\n{_MEMORY_GUIDANCE}"
-        remembered = memory_store.list(scope=Scope.GLOBAL)
+        # Newest N across both scopes, fetched with LIMIT at the store (no full-table
+        # read + sort just to throw most of it away). The block itself tells the model
+        # how many more exist so memory_search is the recall path, not a bigger prompt.
+        remembered = memory_store.recent(scope=Scope.GLOBAL, limit=_MEMORY_INJECT_CAP)
+        total = memory_store.count(scope=Scope.GLOBAL)
         if ws is not None:
-            remembered += memory_store.list(scope=Scope.WORKSPACE, workspace=str(ws))
-        block = format_memories(remembered)
+            remembered += memory_store.recent(
+                scope=Scope.WORKSPACE, workspace=str(ws), limit=_MEMORY_INJECT_CAP
+            )
+            total += memory_store.count(scope=Scope.WORKSPACE, workspace=str(ws))
+        remembered.sort(key=lambda m: m.id)
+        shown = remembered[-_MEMORY_INJECT_CAP:]
+        block = format_memories(shown, omitted=max(0, total - len(shown)))
         if block:
             instructions = f"{instructions}\n\n{block}"
 

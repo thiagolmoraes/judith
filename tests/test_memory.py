@@ -57,6 +57,77 @@ def test_format_memories_shows_ids(tmp_path):
     assert f"[#{item.id}]" in rendered  # ids let the agent update/forget
 
 
+def test_format_memories_notes_omitted_entries(tmp_path):
+    store = _store(tmp_path)
+    store.add("kept", workspace="/proj")
+    rendered = format_memories(store.list(workspace="/proj"), omitted=7)
+    assert "7 older memories not shown" in rendered
+    assert "memory_search" in rendered
+    # No note when nothing was left out.
+    assert "not shown" not in format_memories(store.list(workspace="/proj"))
+
+
+# -- search ---------------------------------------------------------------------
+
+
+def test_search_matches_substring_newest_first(tmp_path):
+    store = _store(tmp_path)
+    old = store.add("deploy uses blue-green strategy", scope=Scope.GLOBAL)
+    new = store.add("deploy window is Friday 6pm", scope=Scope.GLOBAL)
+    found = store.search("deploy", scope=Scope.GLOBAL)
+    assert [m.id for m in found] == [new.id, old.id]
+
+
+def test_search_respects_workspace_isolation(tmp_path):
+    store = _store(tmp_path)
+    store.add("port 8080 in use", scope=Scope.WORKSPACE, workspace="/proj/a")
+    assert store.search("port", scope=Scope.WORKSPACE, workspace="/proj/b") == []
+    assert len(store.search("port", scope=Scope.WORKSPACE, workspace="/proj/a")) == 1
+
+
+def test_search_escapes_like_wildcards(tmp_path):
+    store = _store(tmp_path)
+    store.add("progress at 100% done", scope=Scope.GLOBAL)
+    store.add("totally unrelated", scope=Scope.GLOBAL)
+    # A literal % must not turn into match-everything.
+    assert len(store.search("100%", scope=Scope.GLOBAL)) == 1
+    assert store.search("100_", scope=Scope.GLOBAL) == []
+
+
+def test_search_negative_limit_returns_nothing(tmp_path):
+    store = _store(tmp_path)
+    store.add("anything", scope=Scope.GLOBAL)
+    # SQLite reads LIMIT -1 as "no limit" — a negative limit must mean nothing.
+    assert store.search("anything", scope=Scope.GLOBAL, limit=-1) == []
+
+
+def test_recent_and_count_fetch_bounded(tmp_path):
+    store = _store(tmp_path)
+    ids = [
+        store.add(f"note {i}", scope=Scope.WORKSPACE, workspace="/proj").id
+        for i in range(5)
+    ]
+    store.add("elsewhere", scope=Scope.WORKSPACE, workspace="/other")
+    recent = store.recent(scope=Scope.WORKSPACE, workspace="/proj", limit=2)
+    assert [m.id for m in recent] == [ids[-1], ids[-2]]  # newest first, capped
+    assert store.count(scope=Scope.WORKSPACE, workspace="/proj") == 5
+    assert store.recent(scope=Scope.WORKSPACE, workspace="/proj", limit=-3) == []
+
+
+def test_memory_search_tool_covers_global_and_workspace(tmp_path):
+    store = _store(tmp_path)
+    store.add("prefers dark theme", scope=Scope.GLOBAL)
+    store.add("this repo pins node 20", scope=Scope.WORKSPACE, workspace="/proj")
+    store.add("other repo pins node 18", scope=Scope.WORKSPACE, workspace="/other")
+    reg = ToolRegistry()
+    reg.register_all(memory_tools(store, workspace="/proj"))
+    result = reg.execute("memory_search", {"query": "node"})
+    contents = [r["content"] for r in result["results"]]
+    assert contents == ["this repo pins node 20"]  # other workspace stays invisible
+    themed = reg.execute("memory_search", {"query": "theme"})
+    assert themed["count"] == 1
+
+
 # -- remember tool --------------------------------------------------------------
 
 
@@ -161,6 +232,30 @@ def test_build_code_engine_injects_memory(tmp_path):
         assert (
             "Don't save what the repo already records" in engine.messages[0]["content"]
         )
+    finally:
+        engine.executor.close()
+
+
+def test_build_engine_caps_injected_memories_at_newest(tmp_path):
+    from coworker.agent import _MEMORY_INJECT_CAP, build_code_engine
+
+    workspace = str(tmp_path.resolve())
+    store = SQLiteMemoryStore(tmp_path / "mem.db")
+    total = _MEMORY_INJECT_CAP + 5
+    for i in range(total):
+        store.add(f"fact number {i:03d}", scope=Scope.WORKSPACE, workspace=workspace)
+
+    engine = build_code_engine(
+        workspace=tmp_path, provider=_StubProvider(), memory_store=store
+    )
+    try:
+        system = engine.messages[0]["content"]
+        # Oldest 5 stay out; the newest cap-full is in; the note says how many more exist.
+        assert "fact number 004" not in system
+        assert "fact number 005" in system
+        assert f"fact number {total - 1:03d}" in system
+        assert "5 older memories not shown" in system
+        assert "memory_search" in engine.registry.names()
     finally:
         engine.executor.close()
 
