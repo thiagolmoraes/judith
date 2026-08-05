@@ -135,6 +135,37 @@ def test_run_history_ages_out_past_retention(tmp_path):
     assert len(store.runs(other.id)) == 1
 
 
+def test_retention_never_drops_a_running_run(tmp_path):
+    from coworker.automation.store import RUN_HISTORY_KEEP
+
+    store = TaskStore(tmp_path / "auto.db")
+    t = _task()
+    store.save(t)
+    # A suspended run (parked approval) sits at the OLD end of the history…
+    suspended = TaskRun(task_id=t.id, status="running", started_at=0.0)
+    store.add_run(suspended)
+    # …and enough newer runs land to push it past the retention cut.
+    for i in range(RUN_HISTORY_KEEP + 10):
+        store.add_run(TaskRun(task_id=t.id, status="ok", started_at=float(i + 1)))
+    # find_run must still resolve it — a standing approval depends on this lookup.
+    assert store.find_run(suspended.run_id) is not None
+
+
+def test_retention_tie_break_keeps_highest_run_ids(tmp_path):
+    from coworker.automation.store import RUN_HISTORY_KEEP
+
+    store = TaskStore(tmp_path / "auto.db")
+    t = _task()
+    store.save(t)
+    # Same started_at for every run: the run_id tie-break IS the retention contract.
+    total = RUN_HISTORY_KEEP + 1
+    ids = [f"run-{i:04d}" for i in range(total)]
+    for rid in ids:
+        store.add_run(TaskRun(task_id=t.id, run_id=rid, status="ok", started_at=7.0))
+    kept = {r.run_id for r in store.runs(t.id, limit=total)}
+    assert kept == set(ids[1:])  # the lowest run_id aged out, the top 200 stayed
+
+
 # -- scheduler loop ------------------------------------------------------------
 async def test_scheduler_runs_due_task_and_advances(tmp_path):
     store = TaskStore(tmp_path / "auto.db")

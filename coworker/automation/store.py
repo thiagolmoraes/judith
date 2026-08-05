@@ -152,8 +152,12 @@ class TaskStore:
             )
             # Retention on write: drop everything past the newest RUN_HISTORY_KEEP for
             # this task (run_id breaks started_at ties so the cut is deterministic).
+            # A run still marked running never ages out — a suspended run's parked
+            # approval resolves through find_run, and deleting the row would orphan it.
             self._conn.execute(
-                "DELETE FROM task_runs WHERE task_id=? AND run_id NOT IN ("
+                "DELETE FROM task_runs WHERE task_id=? "
+                "AND json_extract(data, '$.status') != 'running' "
+                "AND run_id NOT IN ("
                 "SELECT run_id FROM task_runs WHERE task_id=? "
                 "ORDER BY started_at DESC, run_id DESC LIMIT ?)",
                 (run.task_id, run.task_id, RUN_HISTORY_KEEP),
