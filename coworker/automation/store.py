@@ -18,6 +18,11 @@ from zoneinfo import ZoneInfo
 
 from .models import ScheduledTask, TaskRun
 
+# Runs kept per task. History exists for the task-detail view and for standing-approval
+# resolution of RECENT runs; an unbounded table only grows the DB forever (a 5-minute
+# cron writes ~100k rows/year). Old runs age out on write.
+RUN_HISTORY_KEEP = 200
+
 
 def compute_next_run(
     task: ScheduledTask, *, after: Optional[float] = None
@@ -144,6 +149,14 @@ class TaskStore:
             self._conn.execute(
                 "INSERT OR REPLACE INTO task_runs (run_id, task_id, started_at, data) VALUES (?, ?, ?, ?)",
                 (run.run_id, run.task_id, run.started_at, json.dumps(run.to_dict())),
+            )
+            # Retention on write: drop everything past the newest RUN_HISTORY_KEEP for
+            # this task (run_id breaks started_at ties so the cut is deterministic).
+            self._conn.execute(
+                "DELETE FROM task_runs WHERE task_id=? AND run_id NOT IN ("
+                "SELECT run_id FROM task_runs WHERE task_id=? "
+                "ORDER BY started_at DESC, run_id DESC LIMIT ?)",
+                (run.task_id, run.task_id, RUN_HISTORY_KEEP),
             )
             self._conn.commit()
         return run
