@@ -498,14 +498,16 @@ async def test_overlap_skip_logs_once_per_episode(tmp_path, caplog):
     t = _task()
     store.save(t)
     gate = asyncio.Event()
+    entered = asyncio.Event()  # barrier: the runner is provably inside gate.wait()
 
     async def slow_runner(task, trigger):
+        entered.set()
         await gate.wait()
         return TaskRun(task_id=task.id, status="ok", trigger=trigger)
 
     sched = Scheduler(store, slow_runner)
     first = asyncio.create_task(sched.run_task(t, trigger="manual"))
-    await asyncio.sleep(0.02)
+    await entered.wait()
     with caplog.at_level("INFO", logger="coworker.automation"):
         await sched.run_task(t, trigger="manual")  # overlaps → logged
         await sched.run_task(t, trigger="manual")  # still same episode → silent
@@ -514,9 +516,10 @@ async def test_overlap_skip_logs_once_per_episode(tmp_path, caplog):
     gate.set()
     await first
     gate.clear()
+    entered.clear()
     # New episode after the run finished: the guard logs again.
     second = asyncio.create_task(sched.run_task(t, trigger="manual"))
-    await asyncio.sleep(0.02)
+    await entered.wait()
     with caplog.at_level("INFO", logger="coworker.automation"):
         await sched.run_task(t, trigger="manual")
     assert sum("skipping" in r.message for r in caplog.records) == 2

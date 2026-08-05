@@ -105,7 +105,7 @@ class Scheduler:
             run = TaskRun(
                 task_id=task.id, status="error", error=str(exc), trigger=trigger
             )
-            self.store.add_run(run)
+            await asyncio.to_thread(self.store.add_run, run)
         finally:
             self._running_ids.discard(task.id)
             self._skip_logged.discard(task.id)
@@ -113,11 +113,14 @@ class Scheduler:
         # max_runs budget: "run this 3 times" means 3 executions, not 3 attempts —
         # otherwise a flaky network burns the whole allowance without ever running.
         # The failure still lands in last_status/last_run and the run history.
-        fresh = self.store.get(task.id)
+        # Store calls hop to a thread: they lock + hit SQLite, and several runs can
+        # finish at once — the event loop (ticks, wake resumption) must not wait on
+        # them. The connection is check_same_thread=False + RLock, so this is safe.
+        fresh = await asyncio.to_thread(self.store.get, task.id)
         if fresh is not None:
             if run is not None and run.status != "error":
                 fresh.run_count += 1
             fresh.last_run = run.started_at if run else None
             fresh.last_status = run.status if run else "error"
-            self.store.save(fresh)
+            await asyncio.to_thread(self.store.save, fresh)
         return run
