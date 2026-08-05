@@ -70,6 +70,23 @@ class MemoryStore(ABC):
         limit: int = 20,
     ) -> list[MemoryItem]: ...
 
+    @abstractmethod
+    def recent(
+        self,
+        *,
+        scope: Optional[Scope] = None,
+        workspace: Optional[str] = None,
+        limit: int = 30,
+    ) -> list[MemoryItem]: ...
+
+    @abstractmethod
+    def count(
+        self,
+        *,
+        scope: Optional[Scope] = None,
+        workspace: Optional[str] = None,
+    ) -> int: ...
+
 
 def format_memories(items: list[MemoryItem], *, omitted: int = 0) -> str:
     """Render memories for injection into the system prompt. Ids are shown so the agent

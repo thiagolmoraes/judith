@@ -265,14 +265,19 @@ def build_engine(
             memory_tools(memory_store, workspace=str(ws) if ws else None)
         )
         instructions = f"{instructions}\n\n{_MEMORY_GUIDANCE}"
-        remembered = memory_store.list(scope=Scope.GLOBAL)
+        # Newest N across both scopes, fetched with LIMIT at the store (no full-table
+        # read + sort just to throw most of it away). The block itself tells the model
+        # how many more exist so memory_search is the recall path, not a bigger prompt.
+        remembered = memory_store.recent(scope=Scope.GLOBAL, limit=_MEMORY_INJECT_CAP)
+        total = memory_store.count(scope=Scope.GLOBAL)
         if ws is not None:
-            remembered += memory_store.list(scope=Scope.WORKSPACE, workspace=str(ws))
-        # Newest N across both scopes; the block itself tells the model how many more
-        # exist so memory_search is the recall path, not a bigger prompt.
+            remembered += memory_store.recent(
+                scope=Scope.WORKSPACE, workspace=str(ws), limit=_MEMORY_INJECT_CAP
+            )
+            total += memory_store.count(scope=Scope.WORKSPACE, workspace=str(ws))
         remembered.sort(key=lambda m: m.id)
-        omitted = max(0, len(remembered) - _MEMORY_INJECT_CAP)
-        block = format_memories(remembered[-_MEMORY_INJECT_CAP:], omitted=omitted)
+        shown = remembered[-_MEMORY_INJECT_CAP:]
+        block = format_memories(shown, omitted=max(0, total - len(shown)))
         if block:
             instructions = f"{instructions}\n\n{block}"
 

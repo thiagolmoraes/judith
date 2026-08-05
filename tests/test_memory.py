@@ -94,6 +94,26 @@ def test_search_escapes_like_wildcards(tmp_path):
     assert store.search("100_", scope=Scope.GLOBAL) == []
 
 
+def test_search_negative_limit_returns_nothing(tmp_path):
+    store = _store(tmp_path)
+    store.add("anything", scope=Scope.GLOBAL)
+    # SQLite reads LIMIT -1 as "no limit" — a negative limit must mean nothing.
+    assert store.search("anything", scope=Scope.GLOBAL, limit=-1) == []
+
+
+def test_recent_and_count_fetch_bounded(tmp_path):
+    store = _store(tmp_path)
+    ids = [
+        store.add(f"note {i}", scope=Scope.WORKSPACE, workspace="/proj").id
+        for i in range(5)
+    ]
+    store.add("elsewhere", scope=Scope.WORKSPACE, workspace="/other")
+    recent = store.recent(scope=Scope.WORKSPACE, workspace="/proj", limit=2)
+    assert [m.id for m in recent] == [ids[-1], ids[-2]]  # newest first, capped
+    assert store.count(scope=Scope.WORKSPACE, workspace="/proj") == 5
+    assert store.recent(scope=Scope.WORKSPACE, workspace="/proj", limit=-3) == []
+
+
 def test_memory_search_tool_covers_global_and_workspace(tmp_path):
     store = _store(tmp_path)
     store.add("prefers dark theme", scope=Scope.GLOBAL)
