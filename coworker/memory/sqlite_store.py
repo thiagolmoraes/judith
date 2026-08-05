@@ -40,6 +40,15 @@ class SQLiteMemoryStore(MemoryStore):
         }
         if "updated_at" not in cols:
             self._conn.execute("ALTER TABLE memories ADD COLUMN updated_at TEXT")
+        # Rows whose scope the enum no longer knows (the retired 'session', or anything
+        # hand-edited) would poison every read: Scope(row["scope"]) raises and one bad
+        # row takes list() down with it. Fold them into workspace — data preserved, and
+        # a workspace-less row surfaces only in the unfiltered Settings list, where the
+        # user can retire it.
+        self._conn.execute(
+            "UPDATE memories SET scope = 'workspace' WHERE scope NOT IN (?, ?)",
+            (Scope.GLOBAL.value, Scope.WORKSPACE.value),
+        )
         self._conn.commit()
 
     def add(

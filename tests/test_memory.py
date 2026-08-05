@@ -81,6 +81,34 @@ def test_legacy_schema_migrates_in_place(tmp_path):
     assert store.add("fresh", scope=Scope.GLOBAL).content == "fresh"
 
 
+def test_legacy_session_scope_rows_fold_into_workspace(tmp_path):
+    import sqlite3
+
+    # A hand-written (or pre-contract) row with the retired 'session' scope must not
+    # poison reads — Scope('session') would raise on every unfiltered list().
+    db = tmp_path / "legacy.db"
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE memories ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, scope TEXT NOT NULL, key TEXT, "
+        "content TEXT NOT NULL, workspace TEXT, session_id TEXT, "
+        "created_at TEXT DEFAULT CURRENT_TIMESTAMP)"
+    )
+    conn.execute(
+        "INSERT INTO memories (scope, content, session_id) "
+        "VALUES ('session', 'orphaned note', 's-old')"
+    )
+    conn.execute("INSERT INTO memories (scope, content) VALUES ('global', 'keep me')")
+    conn.commit()
+    conn.close()
+
+    store = SQLiteMemoryStore(db)
+    everything = store.list()  # unfiltered read must not raise
+    assert {m.content for m in everything} == {"orphaned note", "keep me"}
+    folded = next(m for m in everything if m.content == "orphaned note")
+    assert folded.scope is Scope.WORKSPACE
+
+
 def test_format_memories_shows_ids(tmp_path):
     store = _store(tmp_path)
     item = store.add("fact one", workspace="/proj")
