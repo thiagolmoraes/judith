@@ -447,3 +447,81 @@ async def test_scheduled_run_broadcasts_run_started_event(tmp_path, monkeypatch)
     assert event["data"]["session_id"] == run.session_id
     assert event["data"]["trigger"] == "schedule"
     assert dead not in manager._event_clients  # dropped, not fatal
+
+
+# -- run budget × failures ------------------------------------------------------
+
+
+async def test_error_run_does_not_consume_max_runs(tmp_path):
+    store = TaskStore(tmp_path / "auto.db")
+    t = _task(schedule=Schedule(kind="cron", cron="* * * * *"), max_runs=1)
+    store.save(t)
+
+    async def failing_runner(task, trigger):
+        raise RuntimeError("network down")
+
+    sched = Scheduler(store, failing_runner)
+    await sched.run_task(t, trigger="manual")
+    after_failure = store.get(t.id)
+    # "run this once" means one execution, not one attempt: the budget survives
+    # the failure, so the task stays scheduled and can actually run later.
+    assert after_failure.run_count == 0
+    assert after_failure.last_status == "error"
+    assert after_failure.next_run is not None
+
+    async def ok_runner(task, trigger):
+        return TaskRun(task_id=task.id, status="ok", trigger=trigger)
+
+    sched_ok = Scheduler(store, ok_runner)
+    await sched_ok.run_task(after_failure, trigger="manual")
+    done = store.get(t.id)
+    assert done.run_count == 1
+    assert done.next_run is None  # max_runs reached by the successful run
+
+
+async def test_error_run_still_lands_in_history(tmp_path):
+    store = TaskStore(tmp_path / "auto.db")
+    t = _task()
+    store.save(t)
+
+    async def failing_runner(task, trigger):
+        raise RuntimeError("boom")
+
+    sched = Scheduler(store, failing_runner)
+    run = await sched.run_task(t, trigger="manual")
+    assert run.status == "error" and "boom" in run.error
+    assert [r.status for r in store.runs(t.id)] == ["error"]
+
+
+async def test_overlap_skip_logs_once_per_episode(tmp_path, caplog):
+    store = TaskStore(tmp_path / "auto.db")
+    t = _task()
+    store.save(t)
+    gate = asyncio.Event()
+    entered = asyncio.Event()  # barrier: the runner is provably inside gate.wait()
+
+    async def slow_runner(task, trigger):
+        entered.set()
+        await gate.wait()
+        return TaskRun(task_id=task.id, status="ok", trigger=trigger)
+
+    sched = Scheduler(store, slow_runner)
+    first = asyncio.create_task(sched.run_task(t, trigger="manual"))
+    await entered.wait()
+    with caplog.at_level("INFO", logger="coworker.automation"):
+        await sched.run_task(t, trigger="manual")  # overlaps → logged
+        await sched.run_task(t, trigger="manual")  # still same episode → silent
+    assert sum("skipping" in r.message for r in caplog.records) == 1
+
+    gate.set()
+    await first
+    gate.clear()
+    entered.clear()
+    # New episode after the run finished: the guard logs again.
+    second = asyncio.create_task(sched.run_task(t, trigger="manual"))
+    await entered.wait()
+    with caplog.at_level("INFO", logger="coworker.automation"):
+        await sched.run_task(t, trigger="manual")
+    assert sum("skipping" in r.message for r in caplog.records) == 2
+    gate.set()
+    await second
