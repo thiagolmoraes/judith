@@ -37,6 +37,9 @@ class Scheduler:
         self._task: Optional[asyncio.Task] = None
         self._running_ids: set[str] = set()  # overlap guard
         self._spawned: set[asyncio.Task] = set()  # keep spawned runs referenced
+        # A long run keeps its task due, so every 30s tick hits the overlap guard.
+        # Log the skip once per running episode, not once per tick.
+        self._skip_logged: set[str] = set()
 
     def start(self) -> None:
         if self._task is None:
@@ -90,7 +93,9 @@ class Scheduler:
 
     async def run_task(self, task: ScheduledTask, *, trigger: str) -> Optional[TaskRun]:
         if task.id in self._running_ids:  # skip-on-overlap
-            logger.info("skipping %s — previous run still going", task.id)
+            if task.id not in self._skip_logged:
+                self._skip_logged.add(task.id)
+                logger.info("skipping %s — previous run still going", task.id)
             return None
         self._running_ids.add(task.id)
         try:
@@ -103,10 +108,15 @@ class Scheduler:
             self.store.add_run(run)
         finally:
             self._running_ids.discard(task.id)
-        # advance the task (run_count/last_run) → save recomputes next_run.
+            self._skip_logged.discard(task.id)
+        # Advance the task → save recomputes next_run. Errors don't consume the
+        # max_runs budget: "run this 3 times" means 3 executions, not 3 attempts —
+        # otherwise a flaky network burns the whole allowance without ever running.
+        # The failure still lands in last_status/last_run and the run history.
         fresh = self.store.get(task.id)
         if fresh is not None:
-            fresh.run_count += 1
+            if run is not None and run.status != "error":
+                fresh.run_count += 1
             fresh.last_run = run.started_at if run else None
             fresh.last_status = run.status if run else "error"
             self.store.save(fresh)
