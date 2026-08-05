@@ -1,8 +1,8 @@
 """Persistent memory — adapter interface + scopes.
 
 Memory is the long-lived layer above transient conversation state: durable facts,
-preferences, task notes, summaries. Scopes: global (user-wide), workspace (per project),
-session. Backends are adapters (`SQLiteMemoryStore` now, `PostgresMemoryStore` later).
+preferences, task notes, summaries. Scopes: global (user-wide) and workspace (per
+project). Backends are adapters (`SQLiteMemoryStore` now, `PostgresMemoryStore` later).
 """
 
 from __future__ import annotations
@@ -14,9 +14,10 @@ from typing import Optional
 
 
 class Scope(str, Enum):
+    # SESSION existed here for a while but no tool or surface could ever create one —
+    # per-session state lives in the conversation itself, not in durable memory.
     GLOBAL = "global"
     WORKSPACE = "workspace"
-    SESSION = "session"
 
 
 @dataclass
@@ -24,10 +25,12 @@ class MemoryItem:
     id: int
     scope: Scope
     content: str
-    key: Optional[str] = None
     workspace: Optional[str] = None
-    session_id: Optional[str] = None
     created_at: Optional[str] = None
+    # Set by update(); None means the memory still reads as originally written. The
+    # prompt guidance tells the model memories "reflect when they were written" — this
+    # is the timestamp that backs that up.
+    updated_at: Optional[str] = None
 
 
 class MemoryStore(ABC):
@@ -37,9 +40,7 @@ class MemoryStore(ABC):
         content: str,
         *,
         scope: Scope = Scope.WORKSPACE,
-        key: Optional[str] = None,
         workspace: Optional[str] = None,
-        session_id: Optional[str] = None,
     ) -> MemoryItem: ...
 
     @abstractmethod
@@ -51,7 +52,6 @@ class MemoryStore(ABC):
         *,
         scope: Optional[Scope] = None,
         workspace: Optional[str] = None,
-        session_id: Optional[str] = None,
     ) -> list[MemoryItem]: ...
 
     @abstractmethod

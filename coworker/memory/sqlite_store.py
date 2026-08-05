@@ -20,17 +20,35 @@ class SQLiteMemoryStore(MemoryStore):
         self._lock = threading.RLock()
         self._conn = sqlite3.connect(self.path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+        # `key` and `session_id` existed in earlier schemas but nothing ever wrote or
+        # read them; new databases don't get the columns, existing ones keep them as
+        # inert nullables (dropping a column would force a table rebuild for nothing).
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS memories (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 scope TEXT NOT NULL,
-                key TEXT,
                 content TEXT NOT NULL,
                 workspace TEXT,
-                session_id TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT
             )
             """)
+        # Migration for databases created before updated_at existed.
+        cols = {
+            r["name"]
+            for r in self._conn.execute("PRAGMA table_info(memories)").fetchall()
+        }
+        if "updated_at" not in cols:
+            self._conn.execute("ALTER TABLE memories ADD COLUMN updated_at TEXT")
+        # Rows whose scope the enum no longer knows (the retired 'session', or anything
+        # hand-edited) would poison every read: Scope(row["scope"]) raises and one bad
+        # row takes list() down with it. Fold them into workspace — data preserved, and
+        # a workspace-less row surfaces only in the unfiltered Settings list, where the
+        # user can retire it.
+        self._conn.execute(
+            "UPDATE memories SET scope = 'workspace' WHERE scope NOT IN (?, ?)",
+            (Scope.GLOBAL.value, Scope.WORKSPACE.value),
+        )
         self._conn.commit()
 
     def add(
@@ -38,16 +56,13 @@ class SQLiteMemoryStore(MemoryStore):
         content: str,
         *,
         scope: Scope = Scope.WORKSPACE,
-        key: Optional[str] = None,
         workspace: Optional[str] = None,
-        session_id: Optional[str] = None,
     ) -> MemoryItem:
         scope = Scope(scope)
         with self._lock:
             cursor = self._conn.execute(
-                "INSERT INTO memories (scope, key, content, workspace, session_id) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (scope.value, key, content, workspace, session_id),
+                "INSERT INTO memories (scope, content, workspace) VALUES (?, ?, ?)",
+                (scope.value, content, workspace),
             )
             self._conn.commit()
             item = self.get(cursor.lastrowid)
@@ -66,7 +81,6 @@ class SQLiteMemoryStore(MemoryStore):
         *,
         scope: Optional[Scope] = None,
         workspace: Optional[str] = None,
-        session_id: Optional[str] = None,
     ) -> list[MemoryItem]:
         query = "SELECT * FROM memories WHERE 1 = 1"
         params: list[object] = []
@@ -76,9 +90,6 @@ class SQLiteMemoryStore(MemoryStore):
         if workspace is not None:
             query += " AND workspace = ?"
             params.append(workspace)
-        if session_id is not None:
-            query += " AND session_id = ?"
-            params.append(session_id)
         query += " ORDER BY id"
         with self._lock:
             rows = self._conn.execute(query, params).fetchall()
@@ -156,7 +167,9 @@ class SQLiteMemoryStore(MemoryStore):
     def update(self, item_id: int, content: str) -> Optional[MemoryItem]:
         with self._lock:
             self._conn.execute(
-                "UPDATE memories SET content = ? WHERE id = ?", (content, item_id)
+                "UPDATE memories SET content = ?, updated_at = CURRENT_TIMESTAMP "
+                "WHERE id = ?",
+                (content, item_id),
             )
             self._conn.commit()
         return self.get(item_id)
@@ -176,8 +189,7 @@ def _row_to_item(row: sqlite3.Row) -> MemoryItem:
         id=row["id"],
         scope=Scope(row["scope"]),
         content=row["content"],
-        key=row["key"],
         workspace=row["workspace"],
-        session_id=row["session_id"],
         created_at=row["created_at"],
+        updated_at=row["updated_at"],
     )
