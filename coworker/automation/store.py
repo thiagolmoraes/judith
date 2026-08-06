@@ -22,7 +22,9 @@ from .models import ScheduledTask, TaskRun
 def compute_next_run(
     task: ScheduledTask, *, after: Optional[float] = None
 ) -> Optional[float]:
-    """Next fire time (epoch seconds), or None if the task is exhausted/one-shot-past."""
+    """Next fire time (epoch seconds), or None when the task is exhausted. A one-shot
+    keeps its (possibly past) fire time until it has been attempted — the scheduler's
+    catch-up pass fires it once; attempted (success or error) means done."""
     sched = task.schedule
     now = after if after is not None else _epoch_now()
     if sched.kind == "once":

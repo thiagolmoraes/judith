@@ -85,8 +85,8 @@ def test_compute_next_run_once_in_past_stays_due_until_attempted():
     past = "2020-01-01T00:00:00+00:00"
     t = _task(schedule=Schedule(kind="once", fire_at=past))
     nxt = compute_next_run(t)
-    assert nxt is not None
-    assert datetime.fromtimestamp(nxt, tz=timezone.utc).year == 2020
+    # The original instant is preserved exactly, not just some past timestamp.
+    assert nxt == datetime.fromisoformat(past).timestamp()
 
 
 def test_compute_next_run_once_attempted_is_done():
