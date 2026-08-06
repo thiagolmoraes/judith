@@ -27,7 +27,9 @@ RUN_HISTORY_KEEP = 200
 def compute_next_run(
     task: ScheduledTask, *, after: Optional[float] = None
 ) -> Optional[float]:
-    """Next fire time (epoch seconds), or None if the task is exhausted/one-shot-past."""
+    """Next fire time (epoch seconds), or None when the task is exhausted. A one-shot
+    keeps its (possibly past) fire time until it has been attempted — the scheduler's
+    catch-up pass fires it once; attempted (success or error) means done."""
     sched = task.schedule
     now = after if after is not None else _epoch_now()
     if sched.kind == "once":
@@ -40,7 +42,14 @@ def compute_next_run(
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=_tz(sched.timezone))
         ts = dt.timestamp()
-        return ts if (task.run_count == 0 and ts > now) else None
+        # A one-shot that was never attempted stays due even when its time has
+        # passed — that's the declared run-once-catch-up policy (missed while the
+        # server was down, or re-saved after the moment). Silently recomputing to
+        # None made a disable/enable cycle kill the task with no trace. Anything
+        # already attempted (last_run set, success or error) is done: one-shots
+        # never retry.
+        never_attempted = task.run_count == 0 and task.last_run is None
+        return ts if never_attempted else None
     # cron
     from croniter import croniter
 
