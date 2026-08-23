@@ -64,4 +64,7 @@ coworker = ["personas/builtin/*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The reviewer-eval tests import from the repo-root scripts/ package; the pytest
+# console script (CI) does not put the root on sys.path the way `python -m pytest` does.
+pythonpath = ["."]
 asyncio_mode = "auto"
