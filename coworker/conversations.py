@@ -549,9 +549,13 @@ class ConversationStore:
                 "DELETE FROM sessions WHERE session_id = ?", (session_id,)
             )
             self._conn.commit()
-        path = self._file(session_id)
-        if path.exists():
-            path.unlink()
+            # Row and file go together, under the same lock. load() writes now (the
+            # pairing repair rewrites the file) and save() re-creates the row. With
+            # the unlink outside the lock, a save between the two steps could leave
+            # a row whose file was then removed underneath it.
+            path = self._file(session_id)
+            if path.exists():
+                path.unlink()
         return cur.rowcount > 0
 
     def rename(self, session_id: str, title: str) -> bool:

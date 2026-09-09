@@ -287,3 +287,20 @@ def test_empty_never_saved_session_does_not_grow_a_file(tmp_path):
 
     assert rec.messages == []
     assert not _jsonl(tmp_path, SID).exists()
+
+
+# -- delete ----------------------------------------------------------------------
+
+def test_delete_removes_the_row_and_the_log_together(tmp_path):
+    """Both halves go, and a second delete reports nothing left. load() writes now,
+    so the unlink sits under the same lock as the row delete."""
+    store = _store(tmp_path)
+    store.save(_record(SID, [_user("go")]))
+    jsonl = _jsonl(tmp_path, SID)
+    assert jsonl.exists()
+
+    assert store.delete(SID) is True
+
+    assert store.load(SID) is None
+    assert not jsonl.exists()
+    assert store.delete(SID) is False
