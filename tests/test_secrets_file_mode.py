@@ -105,3 +105,54 @@ def test_a_hostile_preexisting_temp_name_cannot_redirect_the_write(tmp_path):
 
     SecretStore(tmp_path / "secrets.json").put("openai", {"api_key": "sk-live"})
     assert victim.read_text() == "do not clobber"
+
+
+def test_a_failed_restrict_closes_the_fd_and_leaves_no_temp(tmp_path, monkeypatch):
+    """`_restrict_to_user` used to run before the fd was wrapped, so a chmod failure
+    leaked the descriptor. `put` runs on every provider save, so the leak added up."""
+    fds: list[int] = []
+    real_mkstemp = secrets_mod.tempfile.mkstemp
+
+    def capturing_mkstemp(*a, **kw):
+        fd, name = real_mkstemp(*a, **kw)
+        fds.append(fd)
+        return fd, name
+
+    def refuse_file(path, *, is_dir):
+        if not is_dir:
+            raise OSError("chmod refused")
+
+    monkeypatch.setattr(secrets_mod.tempfile, "mkstemp", capturing_mkstemp)
+    monkeypatch.setattr(secrets_mod, "_restrict_to_user", refuse_file)
+
+    with pytest.raises(OSError):
+        write_private_text(tmp_path / "token.txt", "sk-live")
+
+    assert len(fds) == 1
+    with pytest.raises(OSError):
+        os.fstat(fds[0])  # closed, not leaked
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_the_temp_is_synced_before_it_replaces_the_target(tmp_path, monkeypatch):
+    synced: list[int] = []
+    sync_seen_at_replace = {"value": False}
+    real_fsync = os.fsync
+    real_replace = os.replace
+
+    def spy_fsync(fd):
+        synced.append(fd)
+        return real_fsync(fd)
+
+    def spy_replace(src, dst):
+        sync_seen_at_replace["value"] = bool(synced)
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(secrets_mod.os, "fsync", spy_fsync)
+    monkeypatch.setattr(secrets_mod.os, "replace", spy_replace)
+
+    path = write_private_text(tmp_path / "token.txt", "sk-live")
+
+    assert len(synced) == 1
+    assert sync_seen_at_replace["value"] is True
+    assert path.read_text() == "sk-live"

@@ -115,9 +115,15 @@ def _atomic_private_write(target: Path, content: str) -> Path:
     )
     tmp = Path(tmp_name)
     try:
-        _restrict_to_user(tmp, is_dir=False)
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            # Inside the with, so a failed chmod/ACL call cannot leak the fd. Still
+            # before the write, so Windows gets its ACL on an empty file.
+            _restrict_to_user(tmp, is_dir=False)
             fh.write(content)
+            # Bytes on disk before the swap. A power cut after the rename must not
+            # leave an empty file where the secrets were.
+            fh.flush()
+            os.fsync(fh.fileno())
         os.replace(tmp, target)
     except BaseException:
         try:
