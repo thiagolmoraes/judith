@@ -118,22 +118,73 @@ def test_dropped_corrupt_line_does_not_eat_the_next_message(tmp_path):
 
 # -- a torn line with no newline -------------------------------------------------
 
-def test_torn_trailing_line_without_newline_cannot_swallow_the_next_append(tmp_path):
-    """A write cut mid-record leaves a line with no newline. The engine still holds the
-    message it believed it saved (m2), so the torn line occupies its slot in the count.
-    The next append must start on a fresh line. Otherwise the new record is glued to
-    the torn one and both vanish on load."""
-    store = _store(tmp_path)
-    m0, m1, m2 = _user("m0"), _user("m1"), _user("m2")
-    store.save(_record(SID, [m0, m1]))
-    with open(_jsonl(tmp_path, SID), "a", encoding="utf-8") as f:
-        f.write('{"role": "user", "cont')
+TORN_INSIDE_AN_EMOJI = b'{"role": "user", "content": "ol\xc3\xa1 \xf0\x9f\x98'
 
-    # No load in between: the cached engine appends its next message straight away.
-    store.save(_record(SID, [m0, m1, m2, _user("new")]))
+
+def _append_raw(tmp_path, data: bytes) -> None:
+    with open(_jsonl(tmp_path, SID), "ab") as f:
+        f.write(data)
+
+
+def test_torn_trailing_line_without_newline_cannot_swallow_the_next_append(tmp_path):
+    """A write cut mid-record leaves a line with no newline. The engine still holds
+    the message it believed it saved (m2). Counting the torn line as m2's slot would
+    append only m3, and m2 is gone for good on the next load. The engine's list is
+    the truth: a torn tail means the whole log is written again from it."""
+    store = _store(tmp_path)
+    m0, m1, m2, m3 = _user("m0"), _user("m1"), _user("m2"), _user("m3")
+    store.save(_record(SID, [m0, m1]))
+    _append_raw(tmp_path, b'{"role": "user", "cont')
+
+    # No load in between: the cached engine saves its next turn straight away.
+    store.save(_record(SID, [m0, m1, m2, m3]))
 
     rec = store.load(SID)
-    assert [m["content"] for m in rec.messages] == ["m0", "m1", "new"]
+    assert [m["content"] for m in rec.messages] == ["m0", "m1", "m2", "m3"]
+
+
+def test_torn_tool_call_line_is_recovered_with_its_result(tmp_path):
+    """A checkpoint appends [A(tool_calls), T]. The write tears inside A and T never
+    lands. Memory holds [u, A, T]; disk holds [u, A_torn]. Counting the torn line as
+    A's slot appended only T. On reload A is dropped and T is a result with no call,
+    which the provider rejects (400) and the pairing repair cannot fix."""
+    store = _store(tmp_path)
+    u, a, t = _user("go"), _assistant_with_calls("c1"), _tool_result("c1")
+    store.save(_record(SID, [u]))
+    _append_raw(tmp_path, json.dumps(a)[:24].encode("utf-8"))
+
+    store.save(_record(SID, [u, a, t]))
+
+    rec = store.load(SID)
+    assert rec.messages == [u, a, t]
+
+
+def test_torn_line_inside_a_multibyte_char_does_not_brick_load_or_save(tmp_path):
+    """A DM ends in an emoji, four bytes in UTF-8. A write cut inside it leaves bytes
+    that are not valid UTF-8. A strict text read raised UnicodeDecodeError from
+    load(), so the session could not be opened on any surface."""
+    store = _store(tmp_path)
+    m0, m1 = _user("m0"), _user("m1")
+    store.save(_record(SID, [m0, m1]))
+    _append_raw(tmp_path, TORN_INSIDE_AN_EMOJI)
+
+    rec = store.load(SID)
+    assert [m["content"] for m in rec.messages] == ["m0", "m1"]
+
+    store.save(_record(SID, rec.messages + [_user("new")]))
+
+    again = store.load(SID)
+    assert [m["content"] for m in again.messages] == ["m0", "m1", "new"]
+
+
+def test_count_tolerates_a_torn_line_inside_a_multibyte_char(tmp_path):
+    """save() counts lines before it appends. The same strict read raised there too,
+    so a torn emoji blocked every save of that session, not just its loads."""
+    store = _store(tmp_path)
+    store.save(_record(SID, [_user("m0"), _user("m1")]))
+    _append_raw(tmp_path, TORN_INSIDE_AN_EMOJI)
+
+    assert store._count(SID) == 3
 
 
 # -- legacy inline blob ----------------------------------------------------------

@@ -142,14 +142,18 @@ class ConversationStore:
         # throw every time thereafter — bricking that session on every surface that opens
         # it. Skip the bad line(s) and keep the recoverable history. (Every other JSON read
         # in this module is already tolerant; this one was the outlier.)
+        # Read bytes and decode per line. A torn write can cut inside a multi-byte
+        # character (an emoji at the end of a DM is four bytes). A strict text read of
+        # the whole file raised UnicodeDecodeError before any line was parsed, and
+        # that bricked load() the same way a bare json.loads did.
         messages: list[dict] = []
         dropped = 0
-        for line in path.read_text(encoding="utf-8").splitlines():
+        for line in path.read_bytes().split(b"\n"):
             if not line.strip():
                 continue
             try:
-                messages.append(json.loads(line))
-            except json.JSONDecodeError:
+                messages.append(json.loads(line.decode("utf-8")))
+            except (UnicodeDecodeError, json.JSONDecodeError):
                 dropped += 1
         return messages, dropped
 
@@ -268,9 +272,9 @@ class ConversationStore:
         path = self._file(sid)
         if not path.exists():
             return 0
-        return sum(
-            1 for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
-        )
+        # Bytes, not text: a torn tail is not always valid UTF-8, and a count must
+        # never raise. Same reason as _read_jsonl_lines.
+        return sum(1 for line in path.read_bytes().split(b"\n") if line.strip())
 
     @staticmethod
     def _ends_without_newline(path: Path) -> bool:
@@ -283,7 +287,8 @@ class ConversationStore:
     def _append(self, sid: str, messages: list[dict]) -> None:
         path = self._file(sid)
         # A torn last line (write cut mid-record, no newline) would swallow the next
-        # record into itself and both would be lost on load. Close it first.
+        # record into itself and both would be lost on load. Close it first. save()
+        # no longer appends onto a torn tail, but _backfill_counts still can.
         needs_newline = self._ends_without_newline(path)
         with open(path, "a", encoding="utf-8") as f:
             if needs_newline:
@@ -353,11 +358,20 @@ class ConversationStore:
                     if legacy:
                         self._append(sid, legacy)
 
-            existing = self._count(sid)
-            if len(record.messages) > existing:
-                self._append(sid, record.messages[existing:])
-            elif len(record.messages) < existing:  # rare; not append-only
+            if self._ends_without_newline(self._file(sid)):
+                # A torn tail (write cut mid-record, disk full for a moment) makes the
+                # line count a lie. Counting the torn line as a slot appended only what
+                # came after it: a checkpoint of [A(tool_calls), T] that tore inside A
+                # left T on disk with no call, and the provider rejects that (400) in
+                # a way the pairing repair cannot fix. The engine's list is the truth
+                # here. Write it whole.
                 self._rewrite(sid, record.messages)
+            else:
+                existing = self._count(sid)
+                if len(record.messages) > existing:
+                    self._append(sid, record.messages[existing:])
+                elif len(record.messages) < existing:  # rare; not append-only
+                    self._rewrite(sid, record.messages)
 
             title = record.title or title_from(record.messages)
             self._conn.execute(
