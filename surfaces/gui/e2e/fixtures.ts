@@ -119,6 +119,25 @@ const OPS_SESSION = {
   subscriptions: [],
 };
 
+// A session whose turn is LIVE on the server — its ws `ready` carries running:true, the
+// reconnect-mid-turn case (owner catch 2026-08-24): Stop + waiting row must show without
+// a local turn_start. Older than the pinned session so boot-resume stays deterministic.
+const LIVE_SESSION = {
+  session_id: "resume-live-1",
+  title: "Long audit",
+  workspace: "",
+  agent: "cowork",
+  model: "anthropic:claude-opus-4-8",
+  mode: "interactive",
+  updated_at: "2026-06-20 10:00:00",
+  messages: 2,
+  pinned: false,
+  archived: false,
+  attention: 0,
+  liveness: "working",
+  subscriptions: [],
+};
+
 // §31: a mention-spawned session — lives in the sidebar's collapsed "From Slack" group, never
 // in Recent. Older than everything else so boot-resume stays deterministic.
 const SLACK_SESSION = {
@@ -522,6 +541,7 @@ export async function mockApi(page: import("@playwright/test").Page) {
     { ...PINNED_SESSION },
     ...EXTRA_SESSIONS.map((s) => ({ ...s })),
     { ...OPS_SESSION },
+    { ...LIVE_SESSION },
     { ...SLACK_SESSION },
   ];
   // Inbox items + the outbound routing binding — mutable for resolve + the inline Slack config.
@@ -577,7 +597,10 @@ export async function mockApi(page: import("@playwright/test").Page) {
   await page.routeWebSocket(/\/ws\/session\//, (ws) => {
     const send = (type: string, data: Record<string, unknown> = {}) =>
       ws.send(JSON.stringify({ type, data }));
-    send("ready");
+    // The page's session id, from the socket URL — the live-turn session's `ready` carries
+    // running:true (reconnect-mid-turn case).
+    const sid = ws.url().split("/ws/session/")[1]?.split("?")[0] || "";
+    send("ready", sid === "resume-live-1" ? { running: true } : {});
     let pendingTool = "run_shell"; // which proposal the next approval decision resolves
     let epicTimer: ReturnType<typeof setInterval> | null = null; // the slow stream, stoppable via interrupt
     let hadTurn = false; // a user_message landed — set_model is now a mid-session switch
