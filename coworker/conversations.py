@@ -303,10 +303,24 @@ class ConversationStore:
         # tmp-then-replace pattern as subscriptions.ChannelBuffer._save).
         path = self._file(sid)
         tmp = path.with_suffix(".tmp")
-        with open(tmp, "w", encoding="utf-8") as f:
-            for m in messages:
-                f.write(json.dumps(m) + "\n")
-        tmp.replace(path)
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                for m in messages:
+                    f.write(json.dumps(m) + "\n")
+                # Push the bytes to disk before the swap. Without it a power cut
+                # right after the rename can leave an empty or short log where the
+                # old one was. The directory is not synced; the rename itself is
+                # left to the filesystem.
+                f.flush()
+                os.fsync(f.fileno())
+            tmp.replace(path)
+        except BaseException:
+            # Do not leave a half-written tmp next to the log.
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
 
     def _backfill_counts(self) -> None:
         """One-time per session: move any inline blob into a .jsonl and persist

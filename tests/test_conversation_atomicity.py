@@ -94,3 +94,54 @@ def test_shrink_rewrite_persists_reduced_history(tmp_path):
 
     # No leftover temp file next to the conversation log.
     assert not (tmp_path / "conversations" / f"{sid}.tmp").exists()
+
+
+
+def test_rewrite_syncs_the_tmp_before_the_swap(tmp_path, monkeypatch):
+    """A power cut right after the rename must not leave a short or empty log. The
+    tmp is fsync'd before it takes the log's place."""
+    import coworker.conversations as conv
+
+    store = ConversationStore(tmp_path)
+    sid = "sess3"
+    store.save(_rec(sid, 3))
+
+    synced: list[int] = []
+    real_fsync = os.fsync
+
+    def spy_fsync(fd):
+        synced.append(fd)
+        return real_fsync(fd)
+
+    monkeypatch.setattr(conv.os, "fsync", spy_fsync)
+    store._rewrite(sid, _rec(sid, 2).messages)
+
+    assert len(synced) == 1
+    assert len(store.load(sid).messages) == 2
+
+
+def test_rewrite_failure_removes_the_tmp_and_keeps_the_log(tmp_path, monkeypatch):
+    """A failure mid-rewrite leaves no tmp behind and the log exactly as it was."""
+    import coworker.conversations as conv
+
+    store = ConversationStore(tmp_path)
+    sid = "sess4"
+    store.save(_rec(sid, 3))
+    log = tmp_path / "conversations" / f"{sid}.jsonl"
+    before = log.read_bytes()
+
+    real_dumps = conv.json.dumps
+    calls = {"n": 0}
+
+    def failing_dumps(*a, **kw):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise ValueError("simulated serialisation failure")
+        return real_dumps(*a, **kw)
+
+    monkeypatch.setattr(conv.json, "dumps", failing_dumps)
+    with pytest.raises(ValueError):
+        store._rewrite(sid, _rec(sid, 2).messages)
+
+    assert log.read_bytes() == before
+    assert list((tmp_path / "conversations").glob("*.tmp")) == []
