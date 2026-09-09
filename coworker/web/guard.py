@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import ipaddress
 import socket
-from typing import Optional
+from typing import Any, Mapping, Optional
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 MAX_REDIRECTS = 5
@@ -150,7 +150,14 @@ def _without_host(headers: dict) -> dict:
     return {k: v for k, v in headers.items() if k.lower() != "host"}
 
 
-def get_checked(client, url: str, *, max_redirects: int = MAX_REDIRECTS, headers=None, params=None):
+def get_checked(
+    client: Any,
+    url: str,
+    *,
+    max_redirects: int = MAX_REDIRECTS,
+    headers: Optional[Mapping[str, str]] = None,
+    params: Optional[Mapping[str, Any]] = None,
+) -> Any:
     """GET `url`, validating and pinning the address before every hop.
 
     `client` must be built with `follow_redirects=False`; redirects are walked here so each
