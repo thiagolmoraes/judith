@@ -119,9 +119,9 @@ const OPS_SESSION = {
   subscriptions: [],
 };
 
-// A session whose turn is LIVE on the server — its ws `ready` carries running:true, the
-// reconnect-mid-turn case (owner catch 2026-08-24): Stop + waiting row must show without
-// a local turn_start. Older than the pinned session so boot-resume stays deterministic.
+// A session whose turn is live on the server. Its ws `ready` carries running:true, the
+// reconnect-mid-turn case. Stop + waiting row must show without a local turn_start.
+// Older than the pinned session so boot-resume stays deterministic.
 const LIVE_SESSION = {
   session_id: "resume-live-1",
   title: "Long audit",
@@ -597,7 +597,7 @@ export async function mockApi(page: import("@playwright/test").Page) {
   await page.routeWebSocket(/\/ws\/session\//, (ws) => {
     const send = (type: string, data: Record<string, unknown> = {}) =>
       ws.send(JSON.stringify({ type, data }));
-    // The page's session id, from the socket URL — the live-turn session's `ready` carries
+    // The page's session id, from the socket URL. The live-turn session's `ready` carries
     // running:true (reconnect-mid-turn case).
     const sid = ws.url().split("/ws/session/")[1]?.split("?")[0] || "";
     send("ready", sid === "resume-live-1" ? { running: true } : {});

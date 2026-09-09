@@ -1054,8 +1054,7 @@ def test_set_provider_persists_extra_fields(tmp_path):
 
 def test_ws_ready_reports_live_turn(tmp_path):
     # A reconnect can land mid-turn (sidebar revisit, relaunch, dropped socket). `ready`
-    # must carry server truth on the running turn or the GUI loses Stop + the waiting row
-    # (owner catch 2026-08-24, v0.2.0 walkthrough).
+    # must carry server truth on the running turn or the GUI loses Stop + the waiting row.
     manager = SessionManager(workspace=tmp_path, provider=ScriptedProvider([_text("hi")]))
     client = TestClient(create_app(manager))
     with client.websocket_connect("/ws/session/live1") as ws:

@@ -1990,9 +1990,9 @@ def create_app(manager: SessionManager) -> FastAPI:
                 "type": "ready",
                 "data": {
                     "session_id": session_id,
-                    # A reconnect can land MID-TURN (sidebar revisit, app relaunch, WS
-                    # drop). Without server truth the GUI never learns a turn is live —
-                    # no Stop button, no waiting row (owner catch 2026-08-24).
+                    # A reconnect can land mid-turn: sidebar revisit, app relaunch, WS
+                    # drop. The GUI never sees that turn's turn_start. Without this flag
+                    # it shows no Stop button and no waiting row.
                     "running": manager.is_running(session_id),
                     "agent": getattr(engine, "agent_name", "code"),
                     "model": engine.model,
