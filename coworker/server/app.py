@@ -2036,6 +2036,11 @@ def create_app(manager: SessionManager) -> FastAPI:
                     if event.type.value in _CHECKPOINTS:
                         manager.save(session_id, engine)
             finally:
+                # Set before anything can yield. The broadcast below awaits, and in
+                # that gap another driver (inbound WhatsApp via deliver_to_session)
+                # can claim the session. The disconnect callback reads this flag to
+                # know the claim it would clear is no longer this turn's.
+                turn_task["released"] = True
                 manager.mark_idle(session_id)
                 manager.save(session_id, engine)
                 await manager.broadcast_session(
@@ -2060,7 +2065,9 @@ def create_app(manager: SessionManager) -> FastAPI:
         # the UI can clear it.
         # `claimed` remembers that THIS socket won the running flag at least once. The
         # disconnect backstop needs it to tell its own claim from another driver's turn.
-        turn_task: dict[str, Any] = {"task": None, "claimed": False}
+        # `released` says run_turn's own finally already let the flag go for the
+        # current task. Reset per claim: one socket runs many turns.
+        turn_task: dict[str, Any] = {"task": None, "claimed": False, "released": False}
 
         async def claim_turn(*, retry: bool = False, content=None) -> None:
             if not manager.try_mark_running(session_id):
@@ -2069,6 +2076,7 @@ def create_app(manager: SessionManager) -> FastAPI:
                 )
                 return
             turn_task["claimed"] = True
+            turn_task["released"] = False
             turn_task["task"] = asyncio.create_task(run_turn(content, retry=retry))
 
         try:
@@ -2232,13 +2240,21 @@ def create_app(manager: SessionManager) -> FastAPI:
             pass
         finally:
             manager.unregister_session_client(session_id, ws.send_json)
-            # A turn that is still running when the socket closes keeps going — the
+            # A turn that is still running when the socket closes keeps going: the
             # session is durable and the result persists. But if it ends because the
             # socket died, its own cleanup may never run, so release the lock here as
-            # the backstop. mark_idle is idempotent, so doing it twice is harmless.
+            # the backstop. mark_idle is not safe to repeat blindly. It clears whatever
+            # claim is on the session, and run_turn's finally yields (the turn_done
+            # broadcast) between its own mark_idle and the task ending. Another driver
+            # can claim the session in that gap. So only release when run_turn never
+            # got to its finally: a task cancelled before its first step.
             task = turn_task["task"]
             if task is not None and not task.done():
-                task.add_done_callback(lambda _t: manager.mark_idle(session_id))
+                task.add_done_callback(
+                    lambda _t: None
+                    if turn_task["released"]
+                    else manager.mark_idle(session_id)
+                )
             elif turn_task["claimed"] and task is None and manager.is_running(session_id):
                 # Only an orphaned claim of THIS socket (claimed, but no task ever
                 # started) is released here. A finished task already ran run_turn's

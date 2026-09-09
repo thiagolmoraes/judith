@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+import threading
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -1082,3 +1085,60 @@ def test_ws_disconnect_leaves_another_drivers_turn_running(tmp_path):
         assert manager.is_running("bg1") is True
     finally:
         manager.mark_idle("bg1")
+
+
+class _BlocksUntilReleased(ProviderClient):
+    """Holds the turn open until the test says go. The provider runs on a worker
+    thread, so waiting here leaves the server loop free to process the socket close."""
+
+    def __init__(self):
+        self.started = threading.Event()
+        self.release = threading.Event()
+
+    def complete(self, *, model, messages, tools=None, **settings):
+        self.started.set()
+        assert self.release.wait(timeout=10), "test never released the provider"
+        return _text("hi")
+
+    def capabilities(self, model):
+        return ModelCapabilities()
+
+
+def test_ws_disconnect_callback_spares_a_claim_made_in_the_turn_done_gap(
+    tmp_path, monkeypatch
+):
+    # run_turn's finally releases the flag, then awaits the turn_done broadcast. That
+    # await yields the loop, and an inbound DM (deliver_to_session) can claim the
+    # session right there. The socket closed while the turn ran, so its done callback
+    # fires after that claim. It must see run_turn already released its own claim and
+    # leave the newer one alone. Clearing it lets the next inbound pass
+    # try_mark_running and run a second engine on top of the live one.
+    provider = _BlocksUntilReleased()
+    manager = SessionManager(workspace=tmp_path, provider=provider)
+    finished = threading.Event()
+    claimed_in_gap: list[bool] = []
+    real_broadcast = manager.broadcast_session
+
+    async def broadcast_with_a_rival(session_id, message):
+        if message.get("type") == "turn_done":
+            # The rival arrives in the gap and takes the flag run_turn just let go of.
+            claimed_in_gap.append(manager.try_mark_running(session_id))
+            # Registered after the socket's own done callback, so it runs after it.
+            asyncio.current_task().add_done_callback(lambda _t: finished.set())
+        await real_broadcast(session_id, message)
+
+    monkeypatch.setattr(manager, "broadcast_session", broadcast_with_a_rival)
+
+    # One portal for the whole test: the turn task has to outlive its socket.
+    with TestClient(create_app(manager)) as client:
+        with client.websocket_connect("/ws/session/gap1") as ws:
+            assert ws.receive_json()["type"] == "ready"
+            ws.send_json({"type": "user_message", "text": "hello"})
+            assert provider.started.wait(timeout=10)
+        # Socket gone, turn still parked in the provider: the disconnect registered
+        # its done callback on the live task.
+        provider.release.set()
+        assert finished.wait(timeout=10)
+
+    assert claimed_in_gap == [True]
+    assert manager.is_running("gap1") is True
