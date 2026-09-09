@@ -377,7 +377,9 @@ _LEAKED_TOOL_SYNTAX = (
     "<function_calls>",
     "<invoke ",
 )
-_FENCED = re.compile(r"```.*?```|~~~.*?~~~|`[^`\n]*`", re.DOTALL)
+# An open fence runs to the end of the text. A model that stops mid example is still
+# answering, and the marker after the fence must not read as a leaked call.
+_FENCED = re.compile(r"```.*?(?:```|\Z)|~~~.*?(?:~~~|\Z)|`[^`\n]*`", re.DOTALL)
 
 
 def looks_like_unparsed_tool_call(

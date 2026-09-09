@@ -305,6 +305,16 @@ def test_looks_like_unparsed_tool_call_ignores_code_and_needs_tools():
     assert looks_like_unparsed_tool_call(leaked, None) is False  # no tools offered → not a call
 
 
+def test_looks_like_unparsed_tool_call_ignores_an_unclosed_fence():
+    """A model that stops mid-example leaves the fence open. That is still an answer
+    about tool syntax, not a leaked call. A closed fence followed by a bare marker
+    is still a leak."""
+    assert looks_like_unparsed_tool_call("Example:\n```\n<function=x>", _TODO_TOOLS) is False
+    assert looks_like_unparsed_tool_call("Example:\n~~~\n<tool_call>", _TODO_TOOLS) is False
+    closed_then_leak = "```\n<function=x>\n```\n</function>"
+    assert looks_like_unparsed_tool_call(closed_then_leak, _TODO_TOOLS) is True
+
+
 def test_salvage_nested_braces_in_tag():
     text = '<tool_call>{"name": "todo_write", "arguments": {"items": [{"content": "a", "status": "pending"}]}}</tool_call>'
     calls = _salvage_tool_calls_from_text(text, _TODO_TOOLS)
