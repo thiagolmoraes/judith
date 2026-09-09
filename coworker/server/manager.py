@@ -3514,7 +3514,7 @@ class SessionManager:
                 f"who asked for it is not looking at this app."
             )
         sent_from_run = False
-        unparsed = False
+        unparsed_error: Optional[str] = None
         try:
             async for _event in engine.run(opening):
                 data = _event.data or {}
@@ -3523,11 +3523,13 @@ class SessionManager:
                         sent_from_run = True
                 elif _event.type.value == "error":
                     if data.get("error_type") == "UnparsedToolCall":
-                        unparsed = True
+                        unparsed_error = data.get("error") or "unparsed tool call"
             # On UnparsedToolCall the last assistant message is the half-written
             # call, not a result. Same rule as the inbound path: a fragment must not
             # reach the reply rescue below nor the completion summary.
-            run.result_text = None if unparsed else _last_assistant_text(engine.messages)
+            run.result_text = (
+                None if unparsed_error else _last_assistant_text(engine.messages)
+            )
             if run_reply_target and not sent_from_run and run.result_text:
                 # Same safety net the inbound path has: the model was told where to
                 # answer and sometimes answers on screen anyway. Silent either way.
@@ -3535,9 +3537,15 @@ class SessionManager:
                     run.session_id, run_reply_target, run.result_text
                 )
             run.artifacts = _recent_files(task.workspace, since=run.started_at)
-            run.status = "ok"
-            if task.notify_on_completion:
-                await self._notify_task_done(task, run)
+            if unparsed_error:
+                # The engine ended this turn on its error path. A run with no answer
+                # is not a success, and an empty completion notice tells the owner
+                # nothing. Record the failure so the run history shows it.
+                run.status, run.error = "error", unparsed_error
+            else:
+                run.status = "ok"
+                if task.notify_on_completion:
+                    await self._notify_task_done(task, run)
         except Exception as exc:
             run.status, run.error = "error", str(exc)
         finally:

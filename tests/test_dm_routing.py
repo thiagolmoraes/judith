@@ -435,10 +435,11 @@ def test_a_scheduled_run_never_delivers_an_unparsed_tool_call_fragment(
 
     run = asyncio.run(mgr._run_scheduled_task(task, trigger="schedule"))
 
-    assert run.status == "ok"
+    assert run.status == "error", "a turn that ended on the error path is not a success"
+    assert run.error and "tool call" in run.error
     assert not run.result_text, "the fragment is not a result"
     assert rescued == [] and sent == [], "the rescue must not fire on an unparsed call"
-    assert summaries == [""], "the completion summary must not carry the fragment"
+    assert summaries == [], "no completion notice: there is nothing to report"
 
 
 def test_other_errors_still_rescue_the_text_that_came_before(tmp_path, monkeypatch):
