@@ -1067,3 +1067,19 @@ def test_ws_ready_reports_live_turn(tmp_path):
             assert ws.receive_json()["data"]["running"] is True
     finally:
         manager.mark_idle("live1")
+
+
+def test_ws_disconnect_leaves_another_drivers_turn_running(tmp_path):
+    # A turn started by deliver_to_session (inbound WhatsApp, self-wake, automation)
+    # owns the running flag. A GUI socket that only viewed the session must not release
+    # it on close. If it did, the next inbound would pass try_mark_running and run a
+    # second engine on top of the live one, and `ready.running` would lie.
+    manager = SessionManager(workspace=tmp_path, provider=ScriptedProvider([_text("hi")]))
+    client = TestClient(create_app(manager))
+    manager.mark_running("bg1")
+    try:
+        with client.websocket_connect("/ws/session/bg1") as ws:
+            assert ws.receive_json()["data"]["running"] is True
+        assert manager.is_running("bg1") is True
+    finally:
+        manager.mark_idle("bg1")

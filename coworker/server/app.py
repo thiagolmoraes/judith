@@ -2058,7 +2058,9 @@ def create_app(manager: SessionManager) -> FastAPI:
         # including inbound WhatsApp/Slack DMs — is queued into a turn that will never
         # execute. A stuck session is indistinguishable from a busy one, and nothing in
         # the UI can clear it.
-        turn_task: dict[str, Optional[asyncio.Task]] = {"task": None}
+        # `claimed` remembers that THIS socket won the running flag at least once. The
+        # disconnect backstop needs it to tell its own claim from another driver's turn.
+        turn_task: dict[str, Any] = {"task": None, "claimed": False}
 
         async def claim_turn(*, retry: bool = False, content=None) -> None:
             if not manager.try_mark_running(session_id):
@@ -2066,6 +2068,7 @@ def create_app(manager: SessionManager) -> FastAPI:
                     "This session is already running a turn. Wait for it to finish or stop it."
                 )
                 return
+            turn_task["claimed"] = True
             turn_task["task"] = asyncio.create_task(run_turn(content, retry=retry))
 
         try:
@@ -2236,7 +2239,13 @@ def create_app(manager: SessionManager) -> FastAPI:
             task = turn_task["task"]
             if task is not None and not task.done():
                 task.add_done_callback(lambda _t: manager.mark_idle(session_id))
-            elif manager.is_running(session_id):
+            elif turn_task["claimed"] and task is None and manager.is_running(session_id):
+                # Only an orphaned claim of THIS socket (claimed, but no task ever
+                # started) is released here. A finished task already ran run_turn's
+                # own mark_idle. A running flag this socket never claimed belongs to
+                # another driver: inbound WhatsApp, self-wake, an automation, all via
+                # deliver_to_session. Clearing it would let the next inbound pass
+                # try_mark_running and start a second engine run on top of the live one.
                 manager.mark_idle(session_id)
 
     @app.websocket("/ws/events")
