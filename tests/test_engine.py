@@ -38,9 +38,12 @@ class ScriptedProvider(ProviderClient):
         self._turns = list(turns)
         self._loop = loop
         self.calls = 0
+        # What each call was handed, so a test can check the history the model saw.
+        self.seen_messages: list[list[dict]] = []
 
     def complete(self, *, model, messages, tools=None, **settings):
         self.calls += 1
+        self.seen_messages.append([dict(m) for m in messages])
         return self._turns[0] if self._loop else self._turns.pop(0)
 
     def capabilities(self, model):
@@ -463,6 +466,37 @@ def test_leaked_tool_call_ends_the_turn_as_a_retriable_error(tmp_path):
         "kind": "error",
     }
     assert engine._tail_is_retriable_error() is True
+
+
+def test_leaked_tool_call_fragment_is_not_replayed_on_retry(tmp_path):
+    """retry() replays history as is and the outbound feed drops only the notice. With
+    the fragment left in history as the last assistant message, the provider saw its own
+    half-written call and tended to keep completing it. The fragment is taken back out,
+    so the retry starts again from the user turn."""
+    leaked = "Let me read the key files.\n<tool_call>\n<function=nope_not_a_tool>\n<parameter="
+    engine, provider = _engine(
+        tmp_path, [_text_turn(leaked), _text_turn("Here is a real answer.")]
+    )
+    _collect(engine, "explore the codebase")
+
+    assert not any(
+        m.get("role") == "assistant" and "<function=" in str(m.get("content"))
+        for m in engine.messages
+    )
+    assert engine.messages[-1]["role"] == "notice"
+    assert engine._tail_is_retriable_error() is True
+
+    async def _retry():
+        return [ev async for ev in engine.retry()]
+
+    events = asyncio.run(_retry())
+
+    assert events[-1].type == EventType.TURN_END
+    assert events[-1].data["status"] == "completed"
+    assert provider.calls == 2
+    second_call = provider.seen_messages[1]
+    assert not any("<function=" in str(m.get("content")) for m in second_call)
+    assert second_call[-1]["role"] == "user"
 
 
 def test_ordinary_text_answer_still_completes(tmp_path):

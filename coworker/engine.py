@@ -402,7 +402,8 @@ class TurnEngine:
 
             self._turn_truncated = turn.finish_reason == "length"
             _sanitize_mangled_calls(turn)
-            self.messages.append(_assistant_message(turn, model=self.model))
+            assistant_message = _assistant_message(turn, model=self.model)
+            self.messages.append(assistant_message)
             payload: dict[str, Any] = {
                 "text": turn.text,
                 "tool_calls": [tc.name for tc in turn.tool_calls],
@@ -424,6 +425,13 @@ class TurnEngine:
                 # instead, on the error path so the GUI offers Retry — this is drift, not a
                 # deterministic failure, so retrying the same model usually works.
                 if looks_like_unparsed_tool_call(turn.text, self.registry.schemas() or None):
+                    # Take the fragment back out of history. retry() replays history as
+                    # is and the outbound feed drops only the notice, so the provider
+                    # would see the half-written call as its own last turn and keep
+                    # completing it. The GUI already got the ASSISTANT_MESSAGE event;
+                    # that is fine, the error that follows explains it.
+                    if self.messages and self.messages[-1] is assistant_message:
+                        self.messages.pop()
                     message = (
                         f"{self.model} replied with a tool call this endpoint couldn't parse, "
                         "so the turn was stopped rather than answered from a partial call. "
