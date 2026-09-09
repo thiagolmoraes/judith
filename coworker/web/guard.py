@@ -144,6 +144,12 @@ def _pinned(url: str, ip: str) -> tuple[str, dict, dict]:
     return request_url, {"Host": host_header}, extensions
 
 
+def _without_host(headers: dict) -> dict:
+    """Drop every caller Host header, whatever its case. Header names are
+    case-insensitive, so "host" next to the pin's "Host" is two Host headers."""
+    return {k: v for k, v in headers.items() if k.lower() != "host"}
+
+
 def get_checked(client, url: str, *, max_redirects: int = MAX_REDIRECTS, headers=None, params=None):
     """GET `url`, validating and pinning the address before every hop.
 
@@ -173,6 +179,9 @@ def get_checked(client, url: str, *, max_redirects: int = MAX_REDIRECTS, headers
             resp = client.get(seen, headers=hop_headers, params=hop_params)
         else:
             request_url, pin_headers, extensions = _pinned(seen, pin)
+            # The pin's Host must be the only one on the wire. dict.update only
+            # replaces the exact key "Host"; a caller's "host" would ride along.
+            hop_headers = _without_host(hop_headers)
             hop_headers.update(pin_headers)
             resp = client.get(request_url, headers=hop_headers, params=hop_params, extensions=extensions)
         if resp.status_code not in (301, 302, 303, 307, 308):

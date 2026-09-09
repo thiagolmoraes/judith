@@ -204,6 +204,38 @@ def test_pinned_host_header_preserves_an_explicit_port(monkeypatch):
     assert "sni_hostname" not in call["extensions"], "plain http has no TLS handshake"
 
 
+def test_pinned_host_replaces_a_caller_host_in_any_case(monkeypatch):
+    """Header names are case-insensitive. A caller's "host" next to the pin's "Host" is
+    two Host headers on the wire, and the caller's could point virtual hosting at a site
+    that was never vetted. Only the pin's may survive, on every hop. Other caller headers
+    ride along; params only on the first hop."""
+    _resolves_to(monkeypatch, "93.184.216.34")
+    client = _Client([_Resp(302, location="https://example.com/b"), _Resp(200)])
+    guard.get_checked(
+        client,
+        "https://example.com/a",
+        headers={"User-Agent": "ua", "host": "evil.example"},
+        params={"q": "1"},
+    )
+    first, second = client.calls
+    assert first["headers"]["Host"] == "example.com"
+    assert first["headers"]["User-Agent"] == "ua"
+    assert [k for k in first["headers"] if k.lower() == "host"] == ["Host"]
+    assert first["params"] == {"q": "1"}
+    assert second["params"] is None
+    assert second["headers"]["Host"] == "example.com"
+    assert [k for k in second["headers"] if k.lower() == "host"] == ["Host"]
+
+
+def test_literal_address_hop_keeps_caller_headers_untouched():
+    """No pin on a literal address, so nothing to override: the caller's headers go
+    out exactly as given."""
+    client = _Client([_Resp(200)])
+    headers = {"host": "kept.example", "User-Agent": "ua"}
+    guard.get_checked(client, "https://93.184.216.34/x", headers=headers)
+    assert client.calls[0]["headers"] == headers
+
+
 def test_ipv6_answers_are_pinned_with_brackets(monkeypatch):
     _resolves_to(monkeypatch, "2606:2800:220:1:248:1893:25c8:1946")
     client = _Client([_Resp(200)])
