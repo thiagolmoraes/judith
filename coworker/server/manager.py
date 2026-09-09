@@ -3514,12 +3514,20 @@ class SessionManager:
                 f"who asked for it is not looking at this app."
             )
         sent_from_run = False
+        unparsed = False
         try:
             async for _event in engine.run(opening):
+                data = _event.data or {}
                 if _event.type.value == "assistant_message":
-                    if "send_message" in ((_event.data or {}).get("tool_calls") or []):
+                    if "send_message" in (data.get("tool_calls") or []):
                         sent_from_run = True
-            run.result_text = _last_assistant_text(engine.messages)
+                elif _event.type.value == "error":
+                    if data.get("error_type") == "UnparsedToolCall":
+                        unparsed = True
+            # On UnparsedToolCall the last assistant message is the half-written
+            # call, not a result. Same rule as the inbound path: a fragment must not
+            # reach the reply rescue below nor the completion summary.
+            run.result_text = None if unparsed else _last_assistant_text(engine.messages)
             if run_reply_target and not sent_from_run and run.result_text:
                 # Same safety net the inbound path has: the model was told where to
                 # answer and sometimes answers on screen anyway. Silent either way.

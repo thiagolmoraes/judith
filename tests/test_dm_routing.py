@@ -389,6 +389,58 @@ def test_an_unparsed_tool_call_fragment_is_never_delivered(tmp_path, monkeypatch
     assert sent == []
 
 
+def test_a_scheduled_run_never_delivers_an_unparsed_tool_call_fragment(
+    tmp_path, monkeypatch
+):
+    """Same leak, other path. An automation made from WhatsApp inherits that reply
+    target, and the run takes the last assistant text as its result. When the engine
+    ends on UnparsedToolCall that text is the half-written call. It went out to the
+    contact as the reply and landed in the completion summary as well."""
+    from coworker.automation.models import Schedule, ScheduledTask
+
+    sent: list[tuple[str, str]] = []
+
+    def fake_tool(secrets, senders=None):
+        def send_message(target: str, text: str):
+            sent.append((target, text))
+            return {"ok": True, "message_id": "M", "target": target}
+
+        return send_message
+
+    import coworker.connectors.tools as tools_mod
+
+    monkeypatch.setattr(tools_mod, "make_send_message_tool", fake_tool)
+
+    mgr = SessionManager(workspace=tmp_path, provider=_LeaksAToolCall())
+    mgr.dm_sessions.set("whatsapp_evolution:5511@s.whatsapp.net", "chat-1", channel="x")
+    rescued = _spy_on_rescue(mgr, monkeypatch)
+    summaries: list[str] = []
+    real_broadcast = mgr.broadcast_session
+
+    async def capture_task_done(session_id, message):
+        if message.get("type") == "task_done":
+            summaries.append(message["data"]["text"])
+        await real_broadcast(session_id, message)
+
+    monkeypatch.setattr(mgr, "broadcast_session", capture_task_done)
+
+    task = ScheduledTask(
+        title="Bom dia",
+        instructions="mande bom dia",
+        schedule=Schedule(kind="cron", cron="0 8 * * *"),
+        workspace=str(tmp_path / "ws"),
+        origin_session_id="chat-1",
+    )
+    mgr.task_store.save(task)
+
+    run = asyncio.run(mgr._run_scheduled_task(task, trigger="schedule"))
+
+    assert run.status == "ok"
+    assert not run.result_text, "the fragment is not a result"
+    assert rescued == [] and sent == [], "the rescue must not fire on an unparsed call"
+    assert summaries == [""], "the completion summary must not carry the fragment"
+
+
 def test_other_errors_still_rescue_the_text_that_came_before(tmp_path, monkeypatch):
     """Only UnparsedToolCall blanks the text. An answer composed before a provider
     failure is still real and still goes out."""
