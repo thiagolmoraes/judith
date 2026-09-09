@@ -3104,11 +3104,17 @@ class SessionManager:
                 # A background turn has no user watching to read an inline error: a dead model or
                 # tool failure would otherwise vanish. Log it and park it in the dead-letter store.
                 if event.type.value == "error":
-                    reason = (event.data or {}).get("error", "unknown error")
+                    data = event.data or {}
+                    reason = data.get("error", "unknown error")
                     logger.warning(
                         "background turn failed for %s: %s", session_id, reason
                     )
                     self.unrouted.record(session_id, "-", message, reason=reason)
+                    if data.get("error_type") == "UnparsedToolCall":
+                        # The assistant_message just before this carried the
+                        # half-written tool call as text. It is not a reply. The
+                        # rescue below must not send that fragment to the contact.
+                        last_text = ""
             if reply_target and not sent_any and not deferred and last_text:
                 await self._deliver_unsent_reply(session_id, reply_target, last_text)
             self.save(session_id, engine)

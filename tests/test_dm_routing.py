@@ -317,6 +317,102 @@ def test_a_self_wake_still_knows_where_to_reply(tmp_path, monkeypatch):
     assert sent[0][0] == "slack:D1"
 
 
+class _LeaksAToolCall(ProviderClient):
+    """Writes the tool call as text the endpoint never parsed. The engine emits that
+    fragment as an assistant_message, then ends the turn on the UnparsedToolCall path."""
+
+    def complete(self, *, model, messages, tools=None, **settings):
+        return AssistantTurn(
+            text="Vou responder agora.\n<tool_call>\n<function=send_message>\n<parameter=target>",
+            tool_calls=[],
+        )
+
+    def capabilities(self, model):
+        return ModelCapabilities()
+
+
+class _AnswersThenTheProviderDies(ProviderClient):
+    """Round one: prose plus a tool call. Round two: the provider raises, so the engine
+    ends on an error of a different type."""
+
+    def __init__(self):
+        self._calls = 0
+
+    def complete(self, *, model, messages, tools=None, **settings):
+        self._calls += 1
+        if self._calls == 1:
+            return AssistantTurn(
+                text="ok",
+                tool_calls=[ToolCall(id="1", name="nope_not_a_tool", arguments={})],
+            )
+        raise RuntimeError("provider down")
+
+    def capabilities(self, model):
+        return ModelCapabilities()
+
+
+def _spy_on_rescue(mgr, monkeypatch) -> list[str]:
+    """Record every text handed to _deliver_unsent_reply, then run the real thing."""
+    rescued: list[str] = []
+    real = mgr._deliver_unsent_reply
+
+    async def spy(session_id, target, text):
+        rescued.append(text)
+        await real(session_id, target, text)
+
+    monkeypatch.setattr(mgr, "_deliver_unsent_reply", spy)
+    return rescued
+
+
+def test_an_unparsed_tool_call_fragment_is_never_delivered(tmp_path, monkeypatch):
+    """The engine emits the half-written call as assistant text BEFORE it emits the
+    UnparsedToolCall error. The safety net saw that text as an unsent answer and mailed
+    "<function=send_message>..." to the contact's phone. A fragment is not a reply."""
+    sent: list[tuple[str, str]] = []
+
+    def fake_tool(secrets, senders=None):
+        def send_message(target: str, text: str):
+            sent.append((target, text))
+            return {"ok": True, "message_id": "M", "target": target}
+
+        return send_message
+
+    import coworker.connectors.tools as tools_mod
+
+    monkeypatch.setattr(tools_mod, "make_send_message_tool", fake_tool)
+
+    mgr = SessionManager(workspace=tmp_path, provider=_LeaksAToolCall())
+    rescued = _spy_on_rescue(mgr, monkeypatch)
+    asyncio.run(mgr._dispatch_inbound(_dm("oi")))
+
+    assert rescued == [], "the rescue must not fire on an unparsed tool call"
+    assert sent == []
+
+
+def test_other_errors_still_rescue_the_text_that_came_before(tmp_path, monkeypatch):
+    """Only UnparsedToolCall blanks the text. An answer composed before a provider
+    failure is still real and still goes out."""
+    sent: list[tuple[str, str]] = []
+
+    def fake_tool(secrets, senders=None):
+        def send_message(target: str, text: str):
+            sent.append((target, text))
+            return {"ok": True, "message_id": "M", "target": target}
+
+        return send_message
+
+    import coworker.connectors.tools as tools_mod
+
+    monkeypatch.setattr(tools_mod, "make_send_message_tool", fake_tool)
+
+    mgr = SessionManager(workspace=tmp_path, provider=_AnswersThenTheProviderDies())
+    rescued = _spy_on_rescue(mgr, monkeypatch)
+    asyncio.run(mgr._dispatch_inbound(_dm("oi")))
+
+    assert rescued == ["ok"]
+    assert sent == [("slack:D1", "ok")]
+
+
 def test_an_app_session_gets_no_reply_target(tmp_path):
     """A session nobody messaged from a platform must not acquire one: answering on
     screen IS the answer there, and sending would surprise whoever is typing."""
