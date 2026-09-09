@@ -130,10 +130,12 @@ class ConversationStore:
             raise ValueError(f"unsafe session id: {sid!r}")
         return path
 
-    def _read_jsonl(self, sid: str) -> Optional[list[dict]]:
+    def _read_jsonl_lines(self, sid: str) -> tuple[Optional[list[dict]], int]:
+        """Parse the log. Returns (messages, dropped): `dropped` is how many lines were
+        skipped as invalid JSON. (None, 0) when there is no file yet."""
         path = self._file(sid)
         if not path.exists():
-            return None
+            return None, 0
         # Tolerate a corrupt/truncated line rather than failing the whole load. An append
         # interrupted mid-write (crash, disk full) leaves one malformed trailing line; a
         # bare `json.loads` in a comprehension would raise JSONDecodeError and make load()
@@ -141,14 +143,18 @@ class ConversationStore:
         # it. Skip the bad line(s) and keep the recoverable history. (Every other JSON read
         # in this module is already tolerant; this one was the outlier.)
         messages: list[dict] = []
+        dropped = 0
         for line in path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
                 continue
             try:
                 messages.append(json.loads(line))
             except json.JSONDecodeError:
-                continue
-        return messages
+                dropped += 1
+        return messages, dropped
+
+    def _read_jsonl(self, sid: str) -> Optional[list[dict]]:
+        return self._read_jsonl_lines(sid)[0]
 
     # -- tool-call/result pairing repair ---------------------------------------
     @staticmethod
@@ -266,10 +272,36 @@ class ConversationStore:
             1 for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
         )
 
+    @staticmethod
+    def _ends_without_newline(path: Path) -> bool:
+        if not path.exists() or path.stat().st_size == 0:
+            return False
+        with open(path, "rb") as f:
+            f.seek(-1, os.SEEK_END)
+            return f.read(1) != b"\n"
+
     def _append(self, sid: str, messages: list[dict]) -> None:
-        with open(self._file(sid), "a", encoding="utf-8") as f:
+        path = self._file(sid)
+        # A torn last line (write cut mid-record, no newline) would swallow the next
+        # record into itself and both would be lost on load. Close it first.
+        needs_newline = self._ends_without_newline(path)
+        with open(path, "a", encoding="utf-8") as f:
+            if needs_newline:
+                f.write("\n")
             for m in messages:
                 f.write(json.dumps(m) + "\n")
+
+    def _rewrite(self, sid: str, messages: list[dict]) -> None:
+        # Atomic rewrite: write the full log to a temp file, then replace in one
+        # step. An in-place open(..., "w") truncates the file immediately, so a
+        # crash mid-rewrite would erase the conversation history (same
+        # tmp-then-replace pattern as subscriptions.ChannelBuffer._save).
+        path = self._file(sid)
+        tmp = path.with_suffix(".tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            for m in messages:
+                f.write(json.dumps(m) + "\n")
+        tmp.replace(path)
 
     def _backfill_counts(self) -> None:
         """One-time per session: move any inline blob into a .jsonl and persist
@@ -325,16 +357,7 @@ class ConversationStore:
             if len(record.messages) > existing:
                 self._append(sid, record.messages[existing:])
             elif len(record.messages) < existing:  # rare; not append-only
-                # Atomic rewrite: write the full log to a temp file, then replace in one
-                # step. An in-place open(..., "w") truncates the file immediately, so a
-                # crash mid-rewrite would erase the conversation history (same
-                # tmp-then-replace pattern as subscriptions.ChannelBuffer._save).
-                path = self._file(sid)
-                tmp = path.with_suffix(".tmp")
-                with open(tmp, "w", encoding="utf-8") as f:
-                    for m in record.messages:
-                        f.write(json.dumps(m) + "\n")
-                tmp.replace(path)
+                self._rewrite(sid, record.messages)
 
             title = record.title or title_from(record.messages)
             self._conn.execute(
@@ -369,18 +392,25 @@ class ConversationStore:
             row = self._conn.execute(
                 "SELECT * FROM sessions WHERE session_id = ?", (session_id,)
             ).fetchone()
-        if not row:
-            return None
-        messages = self._read_jsonl(session_id)
-        if messages is None:
-            try:
-                messages = json.loads(row["messages"] or "[]")
-            except json.JSONDecodeError:
-                messages = []
-        # Self-heal: ensure every tool result immediately follows its call.
-        # An interrupted turn can persist a user message between an assistant
-        # tool_calls block and its tool result, which providers reject (400).
-        messages = self._repair_tool_pairing(messages)
+            if not row:
+                return None
+            raw, dropped = self._read_jsonl_lines(session_id)
+            if raw is None:
+                try:
+                    raw = json.loads(row["messages"] or "[]")
+                except json.JSONDecodeError:
+                    raw = []
+            # Self-heal: ensure every tool result immediately follows its call.
+            # An interrupted turn can persist a user message between an assistant
+            # tool_calls block and its tool result, which providers reject (400).
+            messages = self._repair_tool_pairing(raw)
+            # save() appends by line count. So the list we hand back must match the
+            # disk line for line, or the next save duplicates (placeholder inserted)
+            # or loses (corrupt line dropped) messages. Rewrite when they diverge.
+            # Also materialises a legacy blob, so save() sees a file and skips the
+            # blob migration.
+            if dropped > 0 or messages is not raw:
+                self._rewrite(session_id, messages)
         return SessionRecord(
             session_id=session_id,
             workspace=row["workspace"],
