@@ -317,6 +317,12 @@ class ConversationStore:
             ).fetchall()
             for row in rows:
                 sid = row["session_id"]
+                if not is_safe_session_id(sid):
+                    # Rows written before the id check can carry an unsafe id. _file()
+                    # raises on it, and that would stop the whole store from opening.
+                    # Rule: unsafe id means no file. Leave the row alone; load() reads
+                    # its blob and delete() can still remove it.
+                    continue
                 jsonl = self._file(sid)
                 if jsonl.exists() and row["title"] and row["n_msgs"]:
                     continue  # already migrated
@@ -408,7 +414,10 @@ class ConversationStore:
             ).fetchone()
             if not row:
                 return None
-            raw, dropped = self._read_jsonl_lines(session_id)
+            # Unsafe id means no file (see _backfill_counts). Skip the disk read and
+            # serve the inline blob, so a legacy row still loads instead of raising.
+            safe_id = is_safe_session_id(session_id)
+            raw, dropped = self._read_jsonl_lines(session_id) if safe_id else (None, 0)
             if raw is None:
                 try:
                     raw = json.loads(row["messages"] or "[]")
@@ -428,7 +437,9 @@ class ConversationStore:
             # call index + 2, which it reads as out of place). load() runs on every
             # inbound and every inbox poll. Identity as the signal meant one rewrite
             # per read for any session that ever ran two tools in one step.
-            if dropped > 0 or messages != raw:
+            # Never rewrite for an unsafe id. That would create the very file the id
+            # check exists to prevent.
+            if safe_id and (dropped > 0 or messages != raw):
                 self._rewrite(session_id, messages)
                 # The session list reads n_msgs from the index. Keep it in step with
                 # the file now. Waiting for the next save leaves a stale count.
@@ -553,9 +564,12 @@ class ConversationStore:
             # pairing repair rewrites the file) and save() re-creates the row. With
             # the unlink outside the lock, a save between the two steps could leave
             # a row whose file was then removed underneath it.
-            path = self._file(session_id)
-            if path.exists():
-                path.unlink()
+            # Unsafe id means no file, and _file() raises on it. Drop the row and stop,
+            # so a legacy row with a bad id can still be deleted.
+            if is_safe_session_id(session_id):
+                path = self._file(session_id)
+                if path.exists():
+                    path.unlink()
         return cur.rowcount > 0
 
     def rename(self, session_id: str, title: str) -> bool:
