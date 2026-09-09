@@ -409,8 +409,20 @@ class ConversationStore:
             # or loses (corrupt line dropped) messages. Rewrite when they diverge.
             # Also materialises a legacy blob, so save() sees a file and skips the
             # blob migration.
-            if dropped > 0 or messages is not raw:
+            # Compare content, not identity. The repair pass builds a fresh list for
+            # a well-formed block with two or more calls (the second result sits at
+            # call index + 2, which it reads as out of place). load() runs on every
+            # inbound and every inbox poll. Identity as the signal meant one rewrite
+            # per read for any session that ever ran two tools in one step.
+            if dropped > 0 or messages != raw:
                 self._rewrite(session_id, messages)
+                # The session list reads n_msgs from the index. Keep it in step with
+                # the file now. Waiting for the next save leaves a stale count.
+                self._conn.execute(
+                    "UPDATE sessions SET n_msgs = ? WHERE session_id = ?",
+                    (len(messages), session_id),
+                )
+                self._conn.commit()
         return SessionRecord(
             session_id=session_id,
             workspace=row["workspace"],

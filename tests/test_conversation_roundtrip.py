@@ -28,12 +28,13 @@ def _assistant(text: str) -> dict:
     return {"role": "assistant", "content": text}
 
 
-def _assistant_with_calls(call_id: str = "c1") -> dict:
+def _assistant_with_calls(*call_ids: str) -> dict:
     return {
         "role": "assistant",
         "content": None,
         "tool_calls": [
-            {"id": call_id, "type": "function", "function": {"name": "run_shell", "arguments": "{}"}}
+            {"id": cid, "type": "function", "function": {"name": "run_shell", "arguments": "{}"}}
+            for cid in (call_ids or ("c1",))
         ],
     }
 
@@ -58,6 +59,16 @@ def _jsonl(tmp_path, sid: str):
 
 def _lines(path) -> list[str]:
     return [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def _write_compact(path, messages: list[dict]) -> None:
+    """Write the log by hand with compact separators. The store rewrites with the
+    default ones, so a rewrite of identical messages still shows up as a byte change.
+    Without this a needless rewrite is invisible to a bytes comparison."""
+    path.write_text(
+        "".join(json.dumps(m, separators=(",", ":")) + "\n" for m in messages),
+        encoding="utf-8",
+    )
 
 
 def _roles(messages: list[dict]) -> list[str]:
@@ -156,23 +167,59 @@ def test_legacy_blob_is_materialised_on_load_and_appends_cleanly(tmp_path):
 
 # -- idempotence -----------------------------------------------------------------
 
-def test_well_formed_log_is_not_rewritten_on_load(tmp_path, monkeypatch):
+def test_well_formed_log_is_not_rewritten_on_load(tmp_path):
     """Nothing to repair and nothing dropped: load() must leave the file alone."""
     store = _store(tmp_path)
-    store.save(
-        _record(SID, [_user("go"), _assistant_with_calls("c1"), _tool_result("c1"), _user("ok")])
-    )
+    messages = [_user("go"), _assistant_with_calls("c1"), _tool_result("c1"), _user("ok")]
+    store.save(_record(SID, messages))
     jsonl = _jsonl(tmp_path, SID)
+    _write_compact(jsonl, messages)
     before = jsonl.read_bytes()
-
-    rewrites: list[str] = []
-    monkeypatch.setattr(store, "_rewrite", lambda sid, messages: rewrites.append(sid))
 
     rec = store.load(SID)
 
     assert len(rec.messages) == 4
-    assert rewrites == []
     assert jsonl.read_bytes() == before
+
+
+def test_well_formed_multi_call_block_is_not_rewritten_on_load(tmp_path):
+    """Two calls in one assistant block, both results right behind it. The pairing
+    check reads the second result as out of place (it sits at call index + 2) and
+    builds a fresh list with the same content. Identity as the rewrite signal then
+    rewrote the file on every load, and load runs on every inbound and inbox poll."""
+    store = _store(tmp_path)
+    messages = [
+        _user("go"),
+        _assistant_with_calls("c1", "c2"),
+        _tool_result("c1"),
+        _tool_result("c2"),
+        _assistant("done"),
+    ]
+    store.save(_record(SID, messages))
+    jsonl = _jsonl(tmp_path, SID)
+    _write_compact(jsonl, messages)
+    before = jsonl.read_bytes()
+
+    first = store.load(SID)
+    assert jsonl.read_bytes() == before
+
+    second = store.load(SID)
+    assert jsonl.read_bytes() == before
+    assert first.messages == second.messages == messages
+
+
+def test_repair_on_load_updates_the_index_count(tmp_path):
+    """A placeholder inserted on load makes the file one line longer. The session
+    list reads n_msgs from the index, so the count must follow the rewrite. Waiting
+    for the next save showed a stale number until then."""
+    store = _store(tmp_path)
+    store.save(_record(SID, [_user("go"), _assistant_with_calls("c1"), _user("next")]))
+    assert store.list()[0].message_count == 3
+
+    rec = store.load(SID)
+
+    assert len(rec.messages) == 4
+    assert store.list()[0].message_count == 4
 
 
 def test_empty_never_saved_session_does_not_grow_a_file(tmp_path):
