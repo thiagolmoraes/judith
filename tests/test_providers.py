@@ -498,3 +498,4 @@ def test_over_limit_max_tokens_is_dropped_and_retried():
     calls = client.chat.completions.calls
     assert turn.text == "ok" and len(calls) == 2
     assert "max_tokens" not in calls[1]
+    assert "max_completion_tokens" not in calls[1]  # dropped, not renamed
