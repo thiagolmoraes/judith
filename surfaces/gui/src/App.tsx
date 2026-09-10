@@ -950,18 +950,21 @@ export function App() {
     if (!gatesWorkspace(target)) setWorkspace(null);
     setSessionId(newId());
   };
-  // Inbox → session: the item carries its session's workspace/agent, so open it directly.
-  // UX-026: 5s top-right toast when a SCHEDULED automation run starts (never for
-  // manual Run-now — the user is already watching). Rides the app-wide /ws/events
-  // stream; View run opens the run's live session.
-  const [runToast, setRunToast] = useState<{
-    title: string; sessionId: string; workspace: string; agent: string; time: string;
-  } | null>(null);
+  // One top-right toast slot, 5s then gone. Two things use it. UX-026: a SCHEDULED
+  // automation run starting (never manual Run-now, the user is already watching);
+  // it rides the app-wide /ws/events stream and View run opens the run's live
+  // session. And the answer to a Release click on a row that is not the open
+  // session, where a transcript notice would talk about the wrong session.
+  type Toast =
+    | { kind: "run"; title: string; sessionId: string; workspace: string; agent: string; time: string }
+    | { kind: "notice"; tone: "info" | "warn"; text: string };
+  const [toast, setToast] = useState<Toast | null>(null);
   useEffect(() => {
     const stop = connectEvents((msg) => {
       if (msg.type !== "automation_run_started") return;
       const d = (msg.data ?? {}) as Record<string, string>;
-      setRunToast({
+      setToast({
+        kind: "run",
         title: d.task_title || t("app.automationFallback"),
         sessionId: d.session_id || "",
         workspace: d.workspace || "",
@@ -973,10 +976,10 @@ export function App() {
     return stop;
   }, []);
   useEffect(() => {
-    if (!runToast) return;
-    const t = window.setTimeout(() => setRunToast(null), 5000);
+    if (!toast) return;
+    const t = window.setTimeout(() => setToast(null), 5000);
     return () => window.clearTimeout(t);
-  }, [runToast]);
+  }, [toast]);
 
   const openSessionFromInbox = (sid: string, ws: string, ag: string) => selectSession(sid, ws, ag);
   const selectSession = async (id: string, ws: string, ag: string) => {
@@ -1122,10 +1125,20 @@ export function App() {
     } catch {
       return; // network failure: the row keeps its state, same as every other action
     }
-    // A refusal or a no-op changes nothing on screen, so say so in the transcript.
-    const feedback = releaseFeedback(result);
+    // A refusal or a no-op changes nothing on screen, so say so. In the transcript when
+    // the released row is the open session, as a toast when it is another row.
+    const feedback = releaseFeedback(result, {
+      id,
+      title: sessions.find((s) => s.session_id === id)?.title,
+      openId: sessionId,
+    });
     if (feedback) {
-      setItems((p) => [...p, { kind: "notice", tone: feedback.tone, text: t(feedback.key) }]);
+      const text = t(feedback.key, feedback.vars);
+      if (feedback.surface === "transcript") {
+        setItems((p) => [...p, { kind: "notice", tone: feedback.tone, text }]);
+      } else {
+        setToast({ kind: "notice", tone: feedback.tone, text });
+      }
     }
     refreshSessions();
   };
@@ -1248,36 +1261,53 @@ export function App() {
       )}
       {/* Desktop-only auto-update prompt (15s after boot, then every 30 min; inert in browser). */}
       <UpdateBanner />
-      {/* UX-026: automation-start toast — quiet panel, neutral dot/drain, accent only
-          on the action (rev 2); auto-dismisses with the 5s drain bar. */}
-      {runToast && (
+      {/* The toast slot. Quiet panel, neutral dot/drain, accent only on the action
+          (UX-026 rev 2); auto-dismisses with the 5s drain bar. A run toast has the
+          View run action. A notice toast is one sentence and the dismiss. */}
+      {toast && (
         <div
           className="fixed top-3 right-3 z-[45] w-[290px] bg-panel border border-line rounded-xl shadow-lg px-3.5 pt-3 pb-2.5"
-          data-testid="automation-toast"
+          data-testid={toast.kind === "run" ? "automation-toast" : "notice-toast"}
         >
-          <div className="flex items-center gap-2 text-[12.5px] font-semibold">
-            <span className="w-[7px] h-[7px] rounded-full bg-faint toast-pulse" />
-            {t("app.automationStarted")}
-          </div>
-          <div className="text-[12.5px] text-muted mt-0.5 ml-[15px] truncate">
-            {t("app.toastSubtitle", { title: runToast.title, time: runToast.time })}
-          </div>
+          {toast.kind === "run" ? (
+            <>
+              <div className="flex items-center gap-2 text-[12.5px] font-semibold">
+                <span className="w-[7px] h-[7px] rounded-full bg-faint toast-pulse" />
+                {t("app.automationStarted")}
+              </div>
+              <div className="text-[12.5px] text-muted mt-0.5 ml-[15px] truncate">
+                {t("app.toastSubtitle", { title: toast.title, time: toast.time })}
+              </div>
+            </>
+          ) : (
+            <div className="flex items-start gap-2 text-[12.5px]">
+              <span
+                className={
+                  "w-[7px] h-[7px] mt-[6px] rounded-full shrink-0 " +
+                  (toast.tone === "warn" ? "bg-warnInk" : "bg-faint")
+                }
+              />
+              <span>{toast.text}</span>
+            </div>
+          )}
           <div className="flex items-center justify-between ml-[15px] mt-1.5">
+            {toast.kind === "run" && (
+              <button
+                className="text-[12.5px] text-accent font-medium"
+                data-testid="toast-view-run"
+                onClick={() => {
+                  selectSession(toast.sessionId, toast.workspace, toast.agent);
+                  setToast(null);
+                }}
+              >
+                {t("app.viewRun")}
+              </button>
+            )}
             <button
-              className="text-[12.5px] text-accent font-medium"
-              data-testid="toast-view-run"
-              onClick={() => {
-                selectSession(runToast.sessionId, runToast.workspace, runToast.agent);
-                setRunToast(null);
-              }}
-            >
-              {t("app.viewRun")}
-            </button>
-            <button
-              className="text-[12px] text-faint px-0.5"
+              className="text-[12px] text-faint px-0.5 ml-auto"
               data-testid="toast-dismiss"
               title={t("common.dismiss")}
-              onClick={() => setRunToast(null)}
+              onClick={() => setToast(null)}
             >
               ✕
             </button>

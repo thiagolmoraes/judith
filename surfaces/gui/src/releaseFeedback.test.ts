@@ -1,26 +1,86 @@
 import { describe, expect, it } from "vitest";
-import { releaseFeedback } from "./releaseFeedback";
+import { translate } from "./i18n";
+import { releaseFeedback, releaseTitle } from "./releaseFeedback";
+
+// The Release item was clicked on the row that is open in the transcript.
+const OPEN = { id: "s1", title: "Weekly digest", openId: "s1" };
+// Clicked on some other row.
+const OTHER = { id: "s2", title: "Weekly digest", openId: "s1" };
 
 describe("releaseFeedback", () => {
   it("warns when the server refused because the turn is really alive", () => {
-    expect(releaseFeedback({ ok: false, reason: "turn_alive", was_running: true })).toEqual({
+    expect(releaseFeedback({ ok: false, reason: "turn_alive", was_running: true }, OPEN)).toEqual({
+      surface: "transcript",
       tone: "warn",
       key: "sidebar.releaseTurnAlive",
+      vars: { title: "Weekly digest" },
     });
   });
 
   it("says so when there was no flag to clear", () => {
-    expect(releaseFeedback({ ok: true, was_running: false, queued: 0 })).toEqual({
+    expect(releaseFeedback({ ok: true, was_running: false, queued: 0 }, OPEN)).toEqual({
+      surface: "transcript",
       tone: "info",
       key: "sidebar.releaseNothingStuck",
+      vars: { title: "Weekly digest" },
     });
   });
 
   it("stays quiet after a real release: turn_done already updated the screen", () => {
-    expect(releaseFeedback({ ok: true, was_running: true, queued: 1 })).toBeNull();
+    expect(releaseFeedback({ ok: true, was_running: true, queued: 1 }, OPEN)).toBeNull();
+    expect(releaseFeedback({ ok: true, was_running: true, queued: 1 }, OTHER)).toBeNull();
   });
 
   it("stays quiet on a failure it has no words for", () => {
-    expect(releaseFeedback({ ok: false })).toBeNull();
+    expect(releaseFeedback({ ok: false }, OPEN)).toBeNull();
+  });
+
+  it("goes to the transcript only when the released row is the open session", () => {
+    const refused = { ok: false, reason: "turn_alive" as const };
+    expect(releaseFeedback(refused, OPEN)?.surface).toBe("transcript");
+    expect(releaseFeedback(refused, OTHER)?.surface).toBe("toast");
+  });
+
+  it("names the session in both surfaces", () => {
+    const refused = { ok: false, reason: "turn_alive" as const };
+    expect(releaseFeedback(refused, OPEN)?.vars).toEqual({ title: "Weekly digest" });
+    expect(releaseFeedback(refused, OTHER)?.vars).toEqual({ title: "Weekly digest" });
+  });
+
+  it("falls back to a short id for an untitled session", () => {
+    const untitled = { id: "0123456789ab", openId: "s1" };
+    expect(releaseFeedback({ ok: true, was_running: false }, untitled)?.vars).toEqual({
+      title: "01234567",
+    });
+  });
+
+  it("renders a sentence that names the session, in both languages", () => {
+    const feedback = releaseFeedback({ ok: false, reason: "turn_alive" }, OTHER)!;
+    expect(translate("en", feedback.key, feedback.vars)).toBe(
+      "“Weekly digest” is still running a turn. Open it and use Stop.",
+    );
+    expect(translate("pt-BR", feedback.key, feedback.vars)).toBe(
+      "“Weekly digest” ainda está rodando um turno. Abra e use Parar.",
+    );
+    const quiet = releaseFeedback({ ok: true, was_running: false }, OTHER)!;
+    expect(translate("en", quiet.key, quiet.vars)).toBe("Nothing was stuck in “Weekly digest”.");
+    expect(translate("pt-BR", quiet.key, quiet.vars)).toBe(
+      "Nada estava travado em “Weekly digest”.",
+    );
+  });
+});
+
+describe("releaseTitle", () => {
+  it("prefers the title", () => {
+    expect(releaseTitle("0123456789ab", "Weekly digest")).toBe("Weekly digest");
+  });
+
+  it("uses the first eight characters of the id when there is no title", () => {
+    expect(releaseTitle("0123456789ab")).toBe("01234567");
+    expect(releaseTitle("0123456789ab", "")).toBe("01234567");
+  });
+
+  it("keeps a short id whole", () => {
+    expect(releaseTitle("abc")).toBe("abc");
   });
 });
