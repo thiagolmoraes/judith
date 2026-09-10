@@ -82,6 +82,20 @@ describe("forceIdleSession", () => {
     await expect(forceIdleSession("s1")).resolves.toEqual({ ok: false, reason: "http_error", status });
   });
 
+  it("turns a fetch that never got an answer into {ok: false, reason: 'http_error'}", async () => {
+    // Sidecar down or connection refused: fetch rejects instead of answering. The caller
+    // reads the same shape as any other failure, so the click still says something on
+    // screen instead of returning in silence.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("Failed to fetch");
+      }),
+    );
+
+    await expect(forceIdleSession("s1")).resolves.toEqual({ ok: false, reason: "http_error" });
+  });
+
   it("escapes the session id in the path", async () => {
     const request = vi.fn(
       async (_url: string) => ({ ok: true, status: 200, json: async () => ({ ok: true }) }) as Response,

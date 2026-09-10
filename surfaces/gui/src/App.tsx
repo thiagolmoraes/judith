@@ -22,7 +22,6 @@ import {
   setSessionFlags,
   setUnattended,
   Session,
-  type ForceIdleResult,
   type InboxItem,
   type MessageSource,
   type Persona,
@@ -1122,12 +1121,9 @@ export function App() {
     // Never `force: true` from here, on purpose. Stop is how a live turn ends: it
     // interrupts the stream, the tool, the approval and the checkpoint. The
     // override stays a curl thing.
-    let result: ForceIdleResult;
-    try {
-      result = await forceIdleSession(id);
-    } catch {
-      return; // network failure: the row keeps its state, same as every other action
-    }
+    // forceIdleSession never throws. A refusal, a bad status and a fetch with no
+    // answer all come back as one shape, and the feedback below has words for each.
+    const result = await forceIdleSession(id);
     // A refusal or a no-op changes nothing on screen, so say so. In the transcript when
     // the released row is the open session, as a toast when it is another row.
     const feedback = releaseFeedback(result, {

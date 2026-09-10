@@ -219,9 +219,10 @@ export interface ForceIdleResult {
   // Messages still waiting in the session's queue when the server answered.
   queued?: number;
   // "turn_alive": the turn is real, not a stuck flag. Refused unless `force` is set.
-  // "http_error": the server answered with a status this client has no reading for.
+  // "http_error": the server answered with a status this client has no reading for,
+  // or never answered at all (sidecar down, connection refused).
   reason?: "turn_alive" | "http_error";
-  // The HTTP status behind "http_error".
+  // The HTTP status behind "http_error". Absent when no answer came back.
   status?: number;
 }
 
@@ -229,7 +230,8 @@ export interface ForceIdleResult {
 // reached its cleanup). The server clears the flag, sends turn_done to every socket
 // viewing the session, and opens a turn for any message queued meanwhile. A turn that
 // is really alive answers 409. That comes back as `reason: "turn_alive"`, never thrown,
-// so the caller reads one shape. `force` overrides that check.
+// so the caller reads one shape. A fetch that never gets an answer comes back as
+// `reason: "http_error"` for the same reason. `force` overrides that check.
 export async function forceIdleSession(
   sessionId: string,
   opts: { force?: boolean } = {},
@@ -239,7 +241,14 @@ export async function forceIdleSession(
     init.headers = { "Content-Type": "application/json" };
     init.body = JSON.stringify({ force: true });
   }
-  const res = await fetch(`${httpBase()}/v1/sessions/${encodeURIComponent(sessionId)}/force-idle`, init);
+  let res: Response;
+  try {
+    res = await fetch(`${httpBase()}/v1/sessions/${encodeURIComponent(sessionId)}/force-idle`, init);
+  } catch {
+    // No answer at all. Same reading as a status the client cannot use, so the
+    // click still says something on screen instead of returning in silence.
+    return { ok: false, reason: "http_error" };
+  }
   if (res.status === 409) {
     const body = (await res.json()) as ForceIdleResult;
     return { ...body, ok: false, reason: "turn_alive" };
