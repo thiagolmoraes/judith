@@ -407,6 +407,62 @@ async def test_a_release_that_cannot_claim_puts_the_message_back_in_front(
     assert "could not claim s1" in caplog.text
 
 
+async def test_a_drain_turn_that_crashes_is_logged_parked_and_unstuck(
+    manager, monkeypatch, caplog
+):
+    """deliver_to_session catches what its run raises. Anything that gets past it
+    ended in a task nobody awaited, and the message with it. The done callback
+    logs it, parks the message where a person can find it, and gives the flag
+    back, since the turn died before its own cleanup could."""
+    manager.get_engine("s1")
+    manager.try_mark_running("s1")
+    await manager.deliver_to_session("s1", "hello from WhatsApp")
+
+    async def crash(session_id, message, *, source=None, claimed=False):
+        raise RuntimeError("engine exploded")
+
+    monkeypatch.setattr(manager, "deliver_to_session", crash)
+
+    with caplog.at_level("WARNING"):
+        result = await manager.force_idle("s1")
+        await _wait_until(lambda: bool(manager.unrouted.list()))
+
+    assert result == {"ok": True, "was_running": True, "queued": 0}
+    assert "drain turn crashed for s1: engine exploded" in caplog.text
+    items = manager.unrouted.list()
+    assert len(items) == 1
+    assert items[0]["text"] == "hello from WhatsApp"
+    assert items[0]["reason"] == "engine exploded"
+    assert manager.is_running("s1") is False
+    assert manager.turn_alive("s1") is False
+
+
+async def test_a_cancelled_drain_turn_is_not_a_crash(make_manager, monkeypatch, caplog):
+    """Cancellation is how a shutdown ends a turn. Nothing to log, nothing to park."""
+    provider = _BlocksUntilReleased()
+    manager = make_manager(provider=provider)
+    monkeypatch.setattr(manager, "_maybe_autotitle", lambda session_id: None)
+    manager.get_engine("s1")
+    manager.try_mark_running("s1")
+    await manager.deliver_to_session("s1", "while stuck")
+
+    with caplog.at_level("WARNING"):
+        await manager.force_idle("s1")
+        await asyncio.to_thread(provider.started.wait, 10)
+        (turn,) = manager._drain_tasks
+        turn.cancel()
+        try:
+            await turn
+        except asyncio.CancelledError:
+            pass
+        finally:
+            provider.release.set()
+
+    assert caplog.text == ""
+    assert manager.unrouted.list() == []
+    assert manager.is_running("s1") is False
+
+
 async def test_a_forced_release_under_a_live_turn_leaves_the_queue_to_it(manager):
     """That turn injects its own queue at its next step. Draining here would start a
     second run that steals the oldest message from it."""

@@ -3148,7 +3148,29 @@ class SessionManager:
         # task is pending, and this one is the turn from the moment it is scheduled.
         self.bind_turn_task(session_id, task)
         self._drain_tasks.add(task)
-        task.add_done_callback(self._drain_tasks.discard)
+        task.add_done_callback(lambda done: self._drain_finished(session_id, text, done))
+
+    def _drain_finished(
+        self, session_id: str, text: str, task: "asyncio.Task[None]"
+    ) -> None:
+        """Done callback of a drain turn.
+
+        deliver_to_session catches what its run raises. Anything that gets past it
+        would end in a task nobody awaits, and the message with it. Log it, park
+        the message, and give the flag back when the turn died before its own
+        cleanup could.
+        """
+        self._drain_tasks.discard(task)
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is None:
+            return
+        logger.warning("drain turn crashed for %s: %s", session_id, exc)
+        self.unrouted.record(session_id, "-", text, reason=str(exc))
+        if self._turn_tasks.get(session_id) is task:
+            # The binding is still this task, so the flag is still its claim.
+            self.mark_idle(session_id)
 
     async def deliver_to_session(
         self,
