@@ -224,6 +224,32 @@ async def test_force_idle_with_force_overrides_a_live_turn(manager):
         await task
 
 
+async def test_a_refusal_reports_the_flag_as_it_finds_it(manager):
+    """A forced release clears the flag but leaves the live turn's binding. The
+    next plain call still refuses, and `was_running` must say the flag was
+    already clear, not repeat the refusal's usual True."""
+    gate = asyncio.Event()
+    task = asyncio.create_task(gate.wait())
+    manager.try_mark_running("s1")
+    manager.bind_turn_task("s1", task)
+    try:
+        forced = await manager.force_idle("s1", force=True)
+        assert forced == {"ok": True, "was_running": True, "queued": 0}
+        assert manager.turn_alive("s1") is True
+
+        refused = await manager.force_idle("s1")
+
+        assert refused == {
+            "ok": False,
+            "reason": "turn_alive",
+            "was_running": False,
+            "queued": 0,
+        }
+    finally:
+        gate.set()
+        await task
+
+
 async def test_a_turn_ends_its_own_binding_when_it_marks_idle(manager):
     """Both turn paths call mark_idle from inside the turn task, then await the
     turn_done broadcast. From mark_idle on the turn is over, even though the task

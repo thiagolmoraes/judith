@@ -3097,10 +3097,13 @@ class SessionManager:
         """
         alive = self.turn_alive(session_id)
         if alive and not force:
+            # The flag is read, not assumed. A forced release clears it and leaves
+            # the live turn's binding, so the next plain call still refuses, with
+            # nothing set.
             return {
                 "ok": False,
                 "reason": "turn_alive",
-                "was_running": True,
+                "was_running": session_id in self._running_sessions,
                 "queued": self._steering_backlog(session_id),
             }
         was = session_id in self._running_sessions
