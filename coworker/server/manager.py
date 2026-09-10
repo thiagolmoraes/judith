@@ -184,6 +184,9 @@ class SessionManager:
         self._running_sessions: set[str] = (
             set()
         )  # sessions with an in-flight turn (busy)
+        # The task driving each running turn. The flag alone cannot tell a live turn
+        # from one that died before its cleanup. The task can: done means dead.
+        self._turn_tasks: dict[str, asyncio.Task] = {}
         # Sessions with an auto-title LLM call in flight (FB-010) — one call at a time.
         self._autotitle_inflight: set[str] = set()
         self._autotitle_tasks: set[asyncio.Task] = set()
@@ -3018,8 +3021,36 @@ class SessionManager:
         self._running_sessions.add(session_id)
         return True
 
+    def bind_turn_task(
+        self, session_id: str, task: Optional["asyncio.Task[Any]"]
+    ) -> None:
+        """Remember the task that drives this session's turn.
+
+        Called right after the turn claims the running flag. A newer turn overwrites
+        an older binding on purpose: the flag was free, so the older turn is over.
+        """
+        if task is None:
+            return
+        self._turn_tasks[session_id] = task
+
+    def turn_alive(self, session_id: str) -> bool:
+        """True while the bound turn task is still pending."""
+        task = self._turn_tasks.get(session_id)
+        return task is not None and not task.done()
+
+    def _forget_turn_task(self, session_id: str) -> None:
+        # Only the bound turn itself, or a finished one, may drop the binding. The WS
+        # disconnect backstop calls mark_idle from a late done-callback, possibly after
+        # a newer turn took the session. It must not make that newer turn look dead.
+        task = self._turn_tasks.get(session_id)
+        if task is None:
+            return
+        if task.done() or task is _current_task():
+            self._turn_tasks.pop(session_id, None)
+
     def mark_idle(self, session_id: str) -> None:
         self._running_sessions.discard(session_id)
+        self._forget_turn_task(session_id)
         # Every turn path (WS, background delivery, durable resume) marks idle when it
         # finishes — the one shared post-turn moment, so auto-titling hooks in here and
         # can never add latency to the response itself.
@@ -3031,19 +3062,27 @@ class SessionManager:
     async def _resume_wake(self, wake) -> None:
         await self.deliver_to_session(wake.session_id, self._wake_message(wake))
 
-    async def force_idle(self, session_id: str) -> dict[str, Any]:
+    async def force_idle(
+        self, session_id: str, *, force: bool = False
+    ) -> dict[str, Any]:
         """Clear a session's running flag by hand.
 
         The flag is in-memory and per-process: nothing outside this manager can observe
         or clear it, so a turn that dies without running its cleanup leaves the session
         permanently "busy". Every later message is queued into a turn that will never
-        execute — silently, since the queue is invisible. This is the escape hatch.
+        execute. Silently, since the queue is invisible. This is the escape hatch.
+
+        A live turn is refused unless `force` is set. The engine has no lock. Clearing
+        the flag under a live turn lets the next message start a second run on top of
+        it, and the turn_done below would make the GUI drop Stop while it still runs.
 
         Sockets viewing the session get a `turn_done`. Without it the GUI keeps the
         Stop button and the waiting row until it reconnects. Sent even when the flag
         was already clear: a stale GUI state is harmless to reset, and the return
         value still says what was found.
         """
+        if self.turn_alive(session_id) and not force:
+            return {"ok": False, "reason": "turn_alive", "was_running": True}
         was = session_id in self._running_sessions
         self.mark_idle(session_id)
         await self.broadcast_session(session_id, {"type": "turn_done", "data": {}})
@@ -3077,6 +3116,7 @@ class SessionManager:
             logger.info("session %s busy — queued steering message", session_id)
             engine.queue_steering(message, source)
             return
+        self.bind_turn_task(session_id, asyncio.current_task())
         # When the message came from a platform, the ONLY way back is send_message.
         # Track what the turn actually did so an answer that never left can be rescued
         # below — see _deliver_unsent_reply. Rebuilt from the sidecar rather than stored
@@ -4212,6 +4252,14 @@ def _parse_inbox_json(s: str) -> dict[str, Any]:
         return v if isinstance(v, dict) else {}
     except Exception:
         return {}
+
+
+def _current_task() -> Optional["asyncio.Task[Any]"]:
+    """The task running now. None outside a loop, and None inside a loop callback."""
+    try:
+        return asyncio.current_task()
+    except RuntimeError:
+        return None
 
 
 def _epoch() -> float:

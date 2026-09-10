@@ -10,16 +10,56 @@ and nothing in the app can clear it.
 
 from __future__ import annotations
 
+import asyncio
+import threading
+
 import pytest
 
+from coworker.providers import AssistantTurn, ModelCapabilities, ProviderClient
 from coworker.server import SessionManager
 
 
 @pytest.fixture
-def manager(tmp_path, monkeypatch):
+def make_manager(tmp_path, monkeypatch):
     monkeypatch.setenv("COWORKER_STATE_DIR", str(tmp_path / "state"))
     (tmp_path / "state").mkdir(parents=True, exist_ok=True)
-    return SessionManager(workspace=tmp_path)
+
+    def build(**kwargs):
+        return SessionManager(workspace=tmp_path, **kwargs)
+
+    return build
+
+
+@pytest.fixture
+def manager(make_manager):
+    return make_manager()
+
+
+class _BlocksUntilReleased(ProviderClient):
+    """Holds the turn open until the test says go. The engine calls the provider on a
+    worker thread, so blocking here leaves the event loop free."""
+
+    def __init__(self):
+        self.started = threading.Event()
+        self.release = threading.Event()
+
+    def complete(self, *, model, messages, tools=None, **settings):
+        self.started.set()
+        assert self.release.wait(timeout=10), "test never released the provider"
+        return AssistantTurn(text="hi", finish_reason="stop")
+
+    def capabilities(self, model):
+        return ModelCapabilities()
+
+
+def _viewer_log(manager, session_id: str) -> list[dict]:
+    seen: list[dict] = []
+
+    async def viewer(message):
+        seen.append(message)
+
+    manager.register_session_client(session_id, viewer)
+    return seen
 
 
 # -- the flag ------------------------------------------------------------------
@@ -97,6 +137,119 @@ async def test_force_idle_survives_a_dead_viewer(manager):
     assert result == {"ok": True, "was_running": True}
     assert manager.is_running("s1") is False
     assert manager.has_session_clients("s1") is False
+
+
+# -- a live turn is not a stuck flag ---------------------------------------------
+# The flag cannot tell the two apart. The turn task can: a turn that died before its
+# cleanup left a done (or never bound) task, a live one is still pending.
+async def test_force_idle_refuses_while_the_turn_task_is_alive(manager):
+    """Releasing under a live turn would let the next message start a second engine
+    run on top of it, and the turn_done would make the GUI drop Stop mid-turn."""
+    gate = asyncio.Event()
+    task = asyncio.create_task(gate.wait())
+    seen = _viewer_log(manager, "s1")
+    manager.try_mark_running("s1")
+    manager.bind_turn_task("s1", task)
+    try:
+        assert manager.turn_alive("s1") is True
+
+        result = await manager.force_idle("s1")
+
+        assert result == {"ok": False, "reason": "turn_alive", "was_running": True}
+        assert manager.is_running("s1") is True
+        assert seen == []
+    finally:
+        gate.set()
+        await task
+
+
+async def test_force_idle_releases_once_the_turn_task_has_finished(manager):
+    """A finished task with the flag still set is exactly the stuck case."""
+    task = asyncio.create_task(asyncio.sleep(0))
+    manager.try_mark_running("s1")
+    manager.bind_turn_task("s1", task)
+    await task
+    assert manager.turn_alive("s1") is False
+
+    result = await manager.force_idle("s1")
+
+    assert result == {"ok": True, "was_running": True}
+    assert manager.is_running("s1") is False
+
+
+async def test_force_idle_with_force_overrides_a_live_turn(manager):
+    """The explicit override. The caller takes the two-runs risk on purpose."""
+    gate = asyncio.Event()
+    task = asyncio.create_task(gate.wait())
+    seen = _viewer_log(manager, "s1")
+    manager.try_mark_running("s1")
+    manager.bind_turn_task("s1", task)
+    try:
+        result = await manager.force_idle("s1", force=True)
+
+        assert result == {"ok": True, "was_running": True}
+        assert manager.is_running("s1") is False
+        assert seen == [{"type": "turn_done", "data": {}}]
+    finally:
+        gate.set()
+        await task
+
+
+async def test_a_turn_ends_its_own_binding_when_it_marks_idle(manager):
+    """Both turn paths call mark_idle from inside the turn task, then await the
+    turn_done broadcast. From mark_idle on the turn is over, even though the task
+    is still pending on that last await."""
+    gate = asyncio.Event()
+
+    async def turn():
+        manager.try_mark_running("s1")
+        manager.bind_turn_task("s1", asyncio.current_task())
+        manager.mark_idle("s1")
+        await gate.wait()
+
+    task = asyncio.create_task(turn())
+    await asyncio.sleep(0)
+    try:
+        assert task.done() is False
+        assert manager.turn_alive("s1") is False
+    finally:
+        gate.set()
+        await task
+
+
+async def test_a_late_mark_idle_keeps_a_newer_turns_binding(manager):
+    """The WS disconnect backstop calls mark_idle from a done-callback, possibly
+    after another driver claimed the session. That live turn must not look dead."""
+    gate = asyncio.Event()
+    newer = asyncio.create_task(gate.wait())
+    manager.try_mark_running("s1")
+    manager.bind_turn_task("s1", newer)
+    try:
+        manager.mark_idle("s1")  # from a task that is not the bound one
+
+        assert manager.turn_alive("s1") is True
+    finally:
+        gate.set()
+        await newer
+
+
+async def test_a_background_turn_counts_as_alive_until_it_ends(make_manager):
+    """deliver_to_session binds itself after claiming the flag. While its provider
+    call is open the release is refused. Once it ends, the binding is gone."""
+    provider = _BlocksUntilReleased()
+    manager = make_manager(provider=provider)
+    turn = asyncio.create_task(manager.deliver_to_session("s1", "hello"))
+    await asyncio.to_thread(provider.started.wait, 10)
+    try:
+        assert manager.turn_alive("s1") is True
+        refused = await manager.force_idle("s1")
+        assert refused["ok"] is False and refused["reason"] == "turn_alive"
+        assert manager.is_running("s1") is True
+    finally:
+        provider.release.set()
+        await turn
+    assert manager.turn_alive("s1") is False
+    assert manager.is_running("s1") is False
 
 
 # -- what happens to a message that arrives while stuck ------------------------

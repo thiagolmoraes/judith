@@ -18,7 +18,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import Body, FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -443,12 +443,18 @@ def create_app(manager: SessionManager) -> FastAPI:
         return {"unattended": manager.unattended.is_unattended(session_id)}
 
     @app.post("/v1/sessions/{session_id}/force-idle")
-    async def session_force_idle(session_id: str) -> dict[str, Any]:
-        """Clear a stuck running flag. Safe: a genuinely running turn keeps going (the
-        flag only gates NEW turns), so the worst case for a mistaken call is two turns
-        racing, which the engine already tolerates. Async on purpose: the turn_done
-        broadcast writes to sockets owned by this loop."""
-        return await manager.force_idle(session_id)
+    async def session_force_idle(
+        session_id: str, body: Optional[dict[str, Any]] = Body(default=None)
+    ) -> Any:
+        """Clear a stuck running flag. A live turn answers 409 unless the body says
+        `{"force": true}`. The engine has no lock, so a cleared flag under a live turn
+        lets the next message start a second run on top of it. Async on purpose: the
+        turn_done broadcast writes to sockets owned by this loop."""
+        force = bool((body or {}).get("force"))
+        result = await manager.force_idle(session_id, force=force)
+        if result.get("reason") == "turn_alive":
+            return JSONResponse(status_code=409, content=result)
+        return result
 
     @app.post("/v1/sessions/{session_id}/unattended")
     def set_unattended(session_id: str, body: dict) -> dict[str, Any]:
@@ -2079,6 +2085,7 @@ def create_app(manager: SessionManager) -> FastAPI:
             turn_task["claimed"] = True
             turn_task["released"] = False
             turn_task["task"] = asyncio.create_task(run_turn(content, retry=retry))
+            manager.bind_turn_task(session_id, turn_task["task"])
 
         try:
             while True:

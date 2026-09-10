@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -1136,6 +1137,94 @@ class _BlocksUntilReleased(ProviderClient):
 
     def capabilities(self, model):
         return ModelCapabilities()
+
+
+def _receive_json(ws, timeout: float = 5.0) -> dict:
+    """ws.receive_json with a deadline. TestClient's has none, so a frame that never
+    comes would hang the whole run instead of failing this one test."""
+    box: dict = {}
+
+    def _pull():
+        try:
+            box["frame"] = ws.receive_json()
+        except BaseException as exc:  # surfaced on the test thread below
+            box["error"] = exc
+
+    worker = threading.Thread(target=_pull, daemon=True)
+    worker.start()
+    worker.join(timeout)
+    if "error" in box:
+        raise box["error"]
+    assert "frame" in box, f"no frame within {timeout}s"
+    return box["frame"]
+
+
+def _read_until(ws, kind: str, timeout: float = 5.0) -> dict:
+    """Drain frames until one of `kind` arrives. Same deadline for the whole drain."""
+    deadline = time.monotonic() + timeout
+    while True:
+        frame = _receive_json(ws, timeout=max(0.1, deadline - time.monotonic()))
+        if frame["type"] == kind:
+            return frame
+
+
+def _open_live_turn(client, provider, session_id: str):
+    """Start a socket-driven turn and park it inside the provider."""
+    ws = client.websocket_connect(f"/ws/session/{session_id}")
+    ws.__enter__()
+    assert _receive_json(ws)["type"] == "ready"
+    ws.send_json({"type": "user_message", "text": "hello"})
+    assert provider.started.wait(timeout=10)
+    return ws
+
+
+def test_force_idle_over_rest_refuses_a_live_turn_unless_forced(tmp_path):
+    # The flag alone cannot tell a live turn from a stuck one. The engine has no lock,
+    # so releasing under a live turn would let the next message run a second engine
+    # on top of it. With no body (the GUI's normal click) the route says so instead
+    # of clearing. `{"force": true}` is the explicit override.
+    provider = _BlocksUntilReleased()
+    manager = SessionManager(workspace=tmp_path, provider=provider)
+    with TestClient(create_app(manager)) as client:
+        ws = _open_live_turn(client, provider, "live2")
+        try:
+            refused = client.post("/v1/sessions/live2/force-idle")
+            assert refused.status_code == 409
+            assert refused.json() == {
+                "ok": False,
+                "reason": "turn_alive",
+                "was_running": True,
+            }
+            assert manager.is_running("live2") is True
+
+            forced = client.post("/v1/sessions/live2/force-idle", json={"force": True})
+            assert forced.status_code == 200
+            assert forced.json() == {"ok": True, "was_running": True}
+            assert manager.is_running("live2") is False
+        finally:
+            provider.release.set()
+            # The forced release already sent one turn_done. The turn's own comes
+            # after its reply.
+            _read_until(ws, "assistant_message")
+            _read_until(ws, "turn_done")
+            ws.__exit__(None, None, None)
+
+
+def test_a_socket_driven_turn_is_alive_until_its_turn_done(tmp_path):
+    # claim_turn binds the task it starts. run_turn's finally ends the binding before
+    # it broadcasts turn_done, so a client that heard turn_done sees a dead turn.
+    provider = _BlocksUntilReleased()
+    manager = SessionManager(workspace=tmp_path, provider=provider)
+    with TestClient(create_app(manager)) as client:
+        ws = _open_live_turn(client, provider, "live4")
+        try:
+            assert manager.turn_alive("live4") is True
+        finally:
+            provider.release.set()
+            _read_until(ws, "turn_done")
+            ws.__exit__(None, None, None)
+    assert manager.turn_alive("live4") is False
+    assert manager.is_running("live4") is False
 
 
 def test_ws_disconnect_callback_spares_a_claim_made_in_the_turn_done_gap(
