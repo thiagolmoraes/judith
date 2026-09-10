@@ -35,6 +35,22 @@ describe("releaseFeedback", () => {
     expect(releaseFeedback({ ok: false }, OPEN)).toBeNull();
   });
 
+  it("warns, naming the session, when the server answered with an error status", () => {
+    const failed = { ok: false, reason: "http_error" as const, status: 500 };
+    expect(releaseFeedback(failed, OTHER)).toEqual({
+      surface: "toast",
+      tone: "warn",
+      key: "sidebar.releaseFailed",
+      vars: { title: "Weekly digest" },
+    });
+    expect(translate("en", "sidebar.releaseFailed", { title: "Weekly digest" })).toBe(
+      "Could not release “Weekly digest”.",
+    );
+    expect(translate("pt-BR", "sidebar.releaseFailed", { title: "Weekly digest" })).toBe(
+      "Não foi possível liberar “Weekly digest”.",
+    );
+  });
+
   it("goes to the transcript only when the released row is the open session", () => {
     const refused = { ok: false, reason: "turn_alive" as const };
     expect(releaseFeedback(refused, OPEN)?.surface).toBe("transcript");

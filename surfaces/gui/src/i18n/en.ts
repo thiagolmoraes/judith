@@ -437,6 +437,7 @@ export const en: Catalog = {
   "sidebar.releaseConfirm": "Release?",
   "sidebar.releaseTurnAlive": "“{title}” is still running a turn. Open it and use Stop.",
   "sidebar.releaseNothingStuck": "Nothing was stuck in “{title}”.",
+  "sidebar.releaseFailed": "Could not release “{title}”.",
   "composer.removeAttachment": "Remove {name}",
   "personas.intro": "Enable a coworker, then choose whether it appears in the new-session picker. The starred persona is the default for new sessions.",
   "personas.defaultTitle": "Default for new sessions",

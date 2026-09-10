@@ -219,7 +219,10 @@ export interface ForceIdleResult {
   // Messages still waiting in the session's queue when the server answered.
   queued?: number;
   // "turn_alive": the turn is real, not a stuck flag. Refused unless `force` is set.
-  reason?: "turn_alive";
+  // "http_error": the server answered with a status this client has no reading for.
+  reason?: "turn_alive" | "http_error";
+  // The HTTP status behind "http_error".
+  status?: number;
 }
 
 // Escape hatch for a session whose running flag got stuck (a background turn that never
@@ -237,9 +240,13 @@ export async function forceIdleSession(
     init.body = JSON.stringify({ force: true });
   }
   const res = await fetch(`${httpBase()}/v1/sessions/${encodeURIComponent(sessionId)}/force-idle`, init);
-  const body = (await res.json()) as ForceIdleResult;
-  if (res.status === 409) return { ...body, ok: false, reason: "turn_alive" };
-  return body;
+  if (res.status === 409) {
+    const body = (await res.json()) as ForceIdleResult;
+    return { ...body, ok: false, reason: "turn_alive" };
+  }
+  // Any other failure has no body worth reading: a proxy page, a crashed route.
+  if (!res.ok) return { ok: false, reason: "http_error", status: res.status };
+  return (await res.json()) as ForceIdleResult;
 }
 
 export interface ArtifactInfo {

@@ -26,6 +26,7 @@ export function releaseTitle(id: string, title?: string): string {
 
 function feedbackFor(result: ForceIdleResult): Pick<ReleaseFeedback, "tone" | "key"> | null {
   if (result.reason === "turn_alive") return { tone: "warn", key: "sidebar.releaseTurnAlive" };
+  if (result.reason === "http_error") return { tone: "warn", key: "sidebar.releaseFailed" };
   if (result.ok && result.was_running === false) {
     return { tone: "info", key: "sidebar.releaseNothingStuck" };
   }

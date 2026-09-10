@@ -8,7 +8,7 @@ afterEach(() => {
 describe("forceIdleSession", () => {
   it("POSTs to the session's force-idle route and returns the server's answer", async () => {
     const request = vi.fn(async (_url: string, _init?: RequestInit) => {
-      return { json: async () => ({ ok: true, was_running: true }) } as Response;
+      return { ok: true, status: 200, json: async () => ({ ok: true, was_running: true }) } as Response;
     });
     vi.stubGlobal("fetch", request);
 
@@ -25,7 +25,11 @@ describe("forceIdleSession", () => {
 
   it("sends {force: true} as JSON when asked to override a live turn", async () => {
     const request = vi.fn(async (_url: string, _init?: RequestInit) => {
-      return { status: 200, json: async () => ({ ok: true, was_running: true, queued: 0 }) } as Response;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true, was_running: true, queued: 0 }),
+      } as Response;
     });
     vi.stubGlobal("fetch", request);
 
@@ -61,8 +65,27 @@ describe("forceIdleSession", () => {
     await expect(forceIdleSession("s1")).resolves.toEqual({ ok: false, reason: "turn_alive" });
   });
 
+  it.each([401, 500, 502])("turns a %i into {ok: false, reason: 'http_error'} without reading the body", async (status) => {
+    // A proxy page or a crashed route does not answer in JSON. Reading it would throw
+    // and the click would look like a network failure with nothing said on screen.
+    const request = vi.fn(async () => {
+      return {
+        ok: false,
+        status,
+        json: async () => {
+          throw new SyntaxError("not JSON");
+        },
+      } as unknown as Response;
+    });
+    vi.stubGlobal("fetch", request);
+
+    await expect(forceIdleSession("s1")).resolves.toEqual({ ok: false, reason: "http_error", status });
+  });
+
   it("escapes the session id in the path", async () => {
-    const request = vi.fn(async (_url: string) => ({ json: async () => ({ ok: true }) }) as Response);
+    const request = vi.fn(
+      async (_url: string) => ({ ok: true, status: 200, json: async () => ({ ok: true }) }) as Response,
+    );
     vi.stubGlobal("fetch", request);
 
     await forceIdleSession("a/b c");

@@ -443,6 +443,7 @@ export const ptBR: Catalog = {
   "sidebar.releaseConfirm": "Liberar?",
   "sidebar.releaseTurnAlive": "“{title}” ainda está rodando um turno. Abra e use Parar.",
   "sidebar.releaseNothingStuck": "Nada estava travado em “{title}”.",
+  "sidebar.releaseFailed": "Não foi possível liberar “{title}”.",
   "composer.removeAttachment": "Remover {name}",
   "personas.intro": "Ative um coworker e escolha se ele aparece no seletor de nova sessão. A persona com estrela é o padrão para novas sessões.",
   "personas.defaultTitle": "Padrão para novas sessões",

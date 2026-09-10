@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import threading
 import time
 
@@ -1169,14 +1170,18 @@ class _BlocksUntilReleased(ProviderClient):
         return ModelCapabilities()
 
 
+@contextlib.contextmanager
 def _open_live_turn(client, provider, session_id: str):
-    """Start a socket-driven turn and park it inside the provider."""
-    ws = client.websocket_connect(f"/ws/session/{session_id}")
-    ws.__enter__()
-    assert _receive_json(ws)["type"] == "ready"
-    ws.send_json({"type": "user_message", "text": "hello"})
-    assert provider.started.wait(timeout=10)
-    return ws
+    """Start a socket-driven turn and park it inside the provider.
+
+    A context manager, so the socket closes on the way out even when an assert in
+    the body fails. Left open, it kept the server's portal alive past the test.
+    """
+    with client.websocket_connect(f"/ws/session/{session_id}") as ws:
+        assert _receive_json(ws)["type"] == "ready"
+        ws.send_json({"type": "user_message", "text": "hello"})
+        assert provider.started.wait(timeout=10)
+        yield ws
 
 
 def test_force_idle_over_rest_refuses_a_live_turn_unless_forced(tmp_path):
@@ -1187,29 +1192,30 @@ def test_force_idle_over_rest_refuses_a_live_turn_unless_forced(tmp_path):
     provider = _BlocksUntilReleased()
     manager = SessionManager(workspace=tmp_path, provider=provider)
     with TestClient(create_app(manager)) as client:
-        ws = _open_live_turn(client, provider, "live2")
-        try:
-            refused = client.post("/v1/sessions/live2/force-idle")
-            assert refused.status_code == 409
-            assert refused.json() == {
-                "ok": False,
-                "reason": "turn_alive",
-                "was_running": True,
-                "queued": 0,
-            }
-            assert manager.is_running("live2") is True
+        with _open_live_turn(client, provider, "live2") as ws:
+            try:
+                refused = client.post("/v1/sessions/live2/force-idle")
+                assert refused.status_code == 409
+                assert refused.json() == {
+                    "ok": False,
+                    "reason": "turn_alive",
+                    "was_running": True,
+                    "queued": 0,
+                }
+                assert manager.is_running("live2") is True
 
-            forced = client.post("/v1/sessions/live2/force-idle", json={"force": True})
-            assert forced.status_code == 200
-            assert forced.json() == {"ok": True, "was_running": True, "queued": 0}
-            assert manager.is_running("live2") is False
-        finally:
-            provider.release.set()
-            # The forced release already sent one turn_done. The turn's own comes
-            # after its reply.
-            _read_until(ws, "assistant_message")
-            _read_until(ws, "turn_done")
-            ws.__exit__(None, None, None)
+                forced = client.post(
+                    "/v1/sessions/live2/force-idle", json={"force": True}
+                )
+                assert forced.status_code == 200
+                assert forced.json() == {"ok": True, "was_running": True, "queued": 0}
+                assert manager.is_running("live2") is False
+            finally:
+                provider.release.set()
+                # The forced release already sent one turn_done. The turn's own
+                # comes after its reply.
+                _read_until(ws, "assistant_message")
+                _read_until(ws, "turn_done")
 
 
 def test_a_socket_driven_turn_is_alive_until_its_turn_done(tmp_path):
@@ -1218,13 +1224,12 @@ def test_a_socket_driven_turn_is_alive_until_its_turn_done(tmp_path):
     provider = _BlocksUntilReleased()
     manager = SessionManager(workspace=tmp_path, provider=provider)
     with TestClient(create_app(manager)) as client:
-        ws = _open_live_turn(client, provider, "live4")
-        try:
-            assert manager.turn_alive("live4") is True
-        finally:
-            provider.release.set()
-            _read_until(ws, "turn_done")
-            ws.__exit__(None, None, None)
+        with _open_live_turn(client, provider, "live4") as ws:
+            try:
+                assert manager.turn_alive("live4") is True
+            finally:
+                provider.release.set()
+                _read_until(ws, "turn_done")
     assert manager.turn_alive("live4") is False
     assert manager.is_running("live4") is False
 

@@ -1119,6 +1119,9 @@ export function App() {
   const releaseSession = async (id: string) => {
     // No local `setRunning(false)`: the server broadcasts turn_done to the open socket,
     // and that handler is the one place `running` is cleared.
+    // Never `force: true` from here, on purpose. Stop is how a live turn ends: it
+    // interrupts the stream, the tool, the approval and the checkpoint. The
+    // override stays a curl thing.
     let result: ForceIdleResult;
     try {
       result = await forceIdleSession(id);
