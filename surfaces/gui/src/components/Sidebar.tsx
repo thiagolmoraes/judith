@@ -139,7 +139,8 @@ interface Props {
   onArchiveSession: (id: string, archived: boolean) => void;
   onTogglePin: (id: string, pinned: boolean) => void;
   // Clear a stuck running flag. The row only offers it while it shows a live turn.
-  onReleaseSession: (id: string) => void;
+  // Async so the owner can wait for the server's answer and report it.
+  onReleaseSession: (id: string) => Promise<void> | void;
   onManage: () => void;
   // Grouped-nav gear + New-session menu's "Manage personas…" entry points (§7).
   onOpenPersona: (id: string) => void;
@@ -231,6 +232,9 @@ export function Sidebar(props: Props) {
   // Two-step delete inside the row's ⋮ menu: Delete arms ("Delete?"), a second click deletes.
   // Archive is the primary way to put a conversation away — one click, reversible.
   const [confirmDelId, setConfirmDelId] = useState<string | null>(null);
+  // Same two-step arm for Release. A misclick on a row that is really working would
+  // ask the server to drop a live turn, so the first click only asks "Release?".
+  const [confirmReleaseId, setConfirmReleaseId] = useState<string | null>(null);
   // The open row-actions ⋮ menu (one at a time). Fixed-position, not absolute: the expanded
   // accordion group clips overflow (its rounded fill), so an absolute popover on its lower rows
   // would be cut off — same constraint as SlackDetail's person picker.
@@ -243,12 +247,14 @@ export function Sidebar(props: Props) {
   const closeRowMenu = () => {
     setRowMenu(null);
     setConfirmDelId(null);
+    setConfirmReleaseId(null);
   };
   const openRowMenu = (id: string, anchor: HTMLElement) => {
     const r = anchor.getBoundingClientRect();
     const MENU_W = 160; // w-40
     const MENU_H = 150; // ~4 items + divider; only used to flip upward near the window bottom
     setConfirmDelId(null);
+    setConfirmReleaseId(null);
     setRowMenu({
       id,
       top: r.bottom + 4 + MENU_H > window.innerHeight ? r.top - MENU_H : r.bottom + 4,
@@ -463,6 +469,39 @@ export function Sidebar(props: Props) {
         <span className="flex-1">{label}</span>
       </button>
     );
+    // Two-step item: the first click arms it (label turns into the question), the
+    // second fires. The menu stays open in between, and closing it disarms.
+    const armedItem = (
+      testid: string,
+      icon: IconName,
+      labels: { idle: string; armed: string; armedTitle?: string },
+      armed: boolean,
+      onArm: () => void,
+      onFire: () => void,
+      danger = false,
+    ) => (
+      <button
+        title={armed ? labels.armedTitle : undefined}
+        className={
+          "w-full flex items-center gap-2 px-2.5 py-1.5 text-[12.5px] text-left hover:bg-paper" +
+          (armed ? " font-medium" : "") +
+          (danger ? " text-danger" : "")
+        }
+        data-testid={testid}
+        role="menuitem"
+        onClick={() => {
+          if (!armed) {
+            onArm();
+            return;
+          }
+          closeRowMenu();
+          onFire();
+        }}
+      >
+        <Icon name={icon} size={13} className={danger ? "shrink-0" : "shrink-0 text-muted"} />
+        <span className="flex-1">{armed ? labels.armed : labels.idle}</span>
+      </button>
+    );
     return (
       <span
         // Stay visible while this row's menu is open — the pointer may be on the menu, off the row.
@@ -507,34 +546,27 @@ export function Sidebar(props: Props) {
                 props.onArchiveSession(s.session_id, !s.archived),
               )}
               {s.liveness === "working" &&
-                item("row-menu-release", "wrench", t("sidebar.release"), () =>
-                  props.onReleaseSession(s.session_id),
+                armedItem(
+                  "row-menu-release",
+                  "wrench",
+                  { idle: t("sidebar.release"), armed: t("sidebar.releaseConfirm") },
+                  confirmReleaseId === s.session_id,
+                  () => setConfirmReleaseId(s.session_id),
+                  () => void props.onReleaseSession(s.session_id),
                 )}
               <div className="h-px bg-line my-1 mx-2" />
-              {confirmDelId === s.session_id ? (
-                <button
-                  title={t("sidebar.clickAgainDelete")}
-                  className="w-full flex items-center gap-2 px-2.5 py-1.5 text-[12.5px] text-left font-medium text-danger hover:bg-paper"
-                  data-testid="row-menu-delete"
-                  role="menuitem"
-                  onClick={() => {
-                    closeRowMenu();
-                    props.onDeleteSession(s.session_id);
-                  }}
-                >
-                  <Icon name="trash" size={13} className="shrink-0" />
-                  <span className="flex-1">{t("sidebar.deleteConfirm")}</span>
-                </button>
-              ) : (
-                <button
-                  className="w-full flex items-center gap-2 px-2.5 py-1.5 text-[12.5px] text-left text-danger hover:bg-paper"
-                  data-testid="row-menu-delete"
-                  role="menuitem"
-                  onClick={() => setConfirmDelId(s.session_id)}
-                >
-                  <Icon name="trash" size={13} className="shrink-0" />
-                  <span className="flex-1">{t("sidebar.delete")}</span>
-                </button>
+              {armedItem(
+                "row-menu-delete",
+                "trash",
+                {
+                  idle: t("sidebar.delete"),
+                  armed: t("sidebar.deleteConfirm"),
+                  armedTitle: t("sidebar.clickAgainDelete"),
+                },
+                confirmDelId === s.session_id,
+                () => setConfirmDelId(s.session_id),
+                () => props.onDeleteSession(s.session_id),
+                true,
               )}
             </div>
           </>

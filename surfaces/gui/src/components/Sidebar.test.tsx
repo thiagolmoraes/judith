@@ -176,7 +176,7 @@ describe("Release session (stuck running flag)", () => {
     SESSIONS.map((s) => (s.session_id === "s-ops-1" ? { ...s, liveness } : s));
   const openOpsMenu = () => fireEvent.click(screen.getAllByTestId("row-menu")[0]);
 
-  it("a working row offers Release and the click hands the id to the owner", async () => {
+  it("a working row offers Release in two steps: arm, then hand the id to the owner", async () => {
     stubFetch(routes);
     render(<Sidebar {...baseProps} sessions={opsWith("working")} />);
     await screen.findByText("incident watch");
@@ -184,11 +184,33 @@ describe("Release session (stuck running flag)", () => {
     openOpsMenu();
     const release = screen.getByTestId("row-menu-release");
     expect(release.textContent).toContain("Release session");
+    // First click only arms: nothing is sent, the label turns into the question.
     fireEvent.click(release);
+    expect(baseProps.onReleaseSession).not.toHaveBeenCalled();
+    expect(screen.getByTestId("row-menu-release").textContent).toContain("Release?");
+    // Second click fires.
+    fireEvent.click(screen.getByTestId("row-menu-release"));
     expect(baseProps.onReleaseSession).toHaveBeenCalledWith("s-ops-1");
     // Menu closes after the click, and the row itself was not selected.
     expect(screen.queryByTestId("row-menu-release")).toBeNull();
     expect(baseProps.onSelectSession).not.toHaveBeenCalled();
+  });
+
+  it("leaving the menu disarms Release", async () => {
+    stubFetch(routes);
+    render(<Sidebar {...baseProps} sessions={opsWith("working")} />);
+    await screen.findByText("incident watch");
+
+    openOpsMenu();
+    fireEvent.click(screen.getByTestId("row-menu-release"));
+    expect(screen.getByTestId("row-menu-release").textContent).toContain("Release?");
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByTestId("row-menu-release")).toBeNull();
+
+    // Reopened, the item is back to its first step and nothing was sent.
+    openOpsMenu();
+    expect(screen.getByTestId("row-menu-release").textContent).toContain("Release session");
+    expect(baseProps.onReleaseSession).not.toHaveBeenCalled();
   });
 
   it("an idle row hides Release", async () => {

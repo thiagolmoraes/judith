@@ -22,6 +22,7 @@ import {
   setSessionFlags,
   setUnattended,
   Session,
+  type ForceIdleResult,
   type InboxItem,
   type MessageSource,
   type Persona,
@@ -41,6 +42,7 @@ import type {
 import { isProjectScoped } from "./personaScope";
 import { baseName } from "./paths";
 import { itemsFromMessages } from "./itemsFromMessages";
+import { releaseFeedback } from "./releaseFeedback";
 import { addTurnUsage, emptyUsage, usageFromMessages } from "./usage";
 import { streamMode } from "./streamGate";
 import { InboxItemCard } from "./components/InboxItemCard";
@@ -1114,7 +1116,17 @@ export function App() {
   const releaseSession = async (id: string) => {
     // No local `setRunning(false)`: the server broadcasts turn_done to the open socket,
     // and that handler is the one place `running` is cleared.
-    await forceIdleSession(id);
+    let result: ForceIdleResult;
+    try {
+      result = await forceIdleSession(id);
+    } catch {
+      return; // network failure: the row keeps its state, same as every other action
+    }
+    // A refusal or a no-op changes nothing on screen, so say so in the transcript.
+    const feedback = releaseFeedback(result);
+    if (feedback) {
+      setItems((p) => [...p, { kind: "notice", tone: feedback.tone, text: t(feedback.key) }]);
+    }
     refreshSessions();
   };
   const deleteConversation = async (id: string) => {

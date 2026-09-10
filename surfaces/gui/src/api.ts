@@ -212,14 +212,34 @@ export async function deleteSession(sessionId: string): Promise<{ ok: boolean; e
   return res.json();
 }
 
+export interface ForceIdleResult {
+  ok: boolean;
+  // Whether there was a flag to clear.
+  was_running?: boolean;
+  // Messages still waiting in the session's queue when the server answered.
+  queued?: number;
+  // "turn_alive": the turn is real, not a stuck flag. Refused unless `force` is set.
+  reason?: "turn_alive";
+}
+
 // Escape hatch for a session whose running flag got stuck (a background turn that never
-// reached its cleanup). The server clears the flag and sends turn_done to every socket
-// viewing the session. `was_running` says whether there was anything to clear.
-export async function forceIdleSession(sessionId: string): Promise<{ ok: boolean; was_running?: boolean }> {
-  const res = await fetch(`${httpBase()}/v1/sessions/${encodeURIComponent(sessionId)}/force-idle`, {
-    method: "POST",
-  });
-  return res.json();
+// reached its cleanup). The server clears the flag, sends turn_done to every socket
+// viewing the session, and opens a turn for any message queued meanwhile. A turn that
+// is really alive answers 409. That comes back as `reason: "turn_alive"`, never thrown,
+// so the caller reads one shape. `force` overrides that check.
+export async function forceIdleSession(
+  sessionId: string,
+  opts: { force?: boolean } = {},
+): Promise<ForceIdleResult> {
+  const init: RequestInit = { method: "POST" };
+  if (opts.force) {
+    init.headers = { "Content-Type": "application/json" };
+    init.body = JSON.stringify({ force: true });
+  }
+  const res = await fetch(`${httpBase()}/v1/sessions/${encodeURIComponent(sessionId)}/force-idle`, init);
+  const body = (await res.json()) as ForceIdleResult;
+  if (res.status === 409) return { ...body, ok: false, reason: "turn_alive" };
+  return body;
 }
 
 export interface ArtifactInfo {
