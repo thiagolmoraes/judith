@@ -504,6 +504,36 @@ async def test_a_forced_release_under_a_live_turn_leaves_the_queue_to_it(manager
         await task
 
 
+@pytest.mark.parametrize("claimed", [False, True], ids=["claims-itself", "claimed-by-release"])
+async def test_a_turn_that_fails_before_it_runs_still_frees_the_session(
+    manager, monkeypatch, claimed
+):
+    """bind_turn_task and _reply_target_for sat between the claim and the try whose
+    finally gives the flag back. A raise there left the flag set, with a binding
+    to a task already finished: a stuck session made by the code meant to run
+    the turn. Both now sit inside the try."""
+    manager.get_engine("s1")
+
+    def no_target(session_id, source=None):
+        raise RuntimeError("no target")
+
+    monkeypatch.setattr(manager, "_reply_target_for", no_target)
+    if claimed:
+        assert manager.try_mark_running("s1") is True
+
+    try:
+        await manager.deliver_to_session("s1", "hello", claimed=claimed)
+    except RuntimeError:
+        pass  # the old code let it out; the session must be free either way
+
+    assert manager.is_running("s1") is False
+    assert manager.turn_alive("s1") is False
+    items = manager.unrouted.list()
+    assert len(items) == 1
+    assert items[0]["text"] == "hello"
+    assert items[0]["reason"] == "no target"
+
+
 # -- what happens to a message that arrives while stuck ------------------------
 async def test_a_message_to_a_busy_session_is_recorded(manager, monkeypatch):
     """It still gets steered into the live turn — that part was right. What was missing

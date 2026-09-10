@@ -3211,17 +3211,19 @@ class SessionManager:
             logger.info("session %s busy — queued steering message", session_id)
             engine.queue_steering(message, source)
             return
-        self.bind_turn_task(session_id, asyncio.current_task())
-        # When the message came from a platform, the ONLY way back is send_message.
-        # Track what the turn actually did so an answer that never left can be rescued
-        # below — see _deliver_unsent_reply. Rebuilt from the sidecar rather than stored
-        # separately: connector + channel_id is exactly what format_target consumes, and
-        # a second copy of the same fact could drift from it.
-        reply_target = self._reply_target_for(session_id, source)
         sent_any = False
         deferred = False
         last_text = ""
+        # Nothing that can raise sits between the claim and this try. Its finally is
+        # what gives the flag back, and a raise before it left the session stuck.
         try:
+            self.bind_turn_task(session_id, asyncio.current_task())
+            # When the message came from a platform, the ONLY way back is send_message.
+            # Track what the turn actually did so an answer that never left can be rescued
+            # below — see _deliver_unsent_reply. Rebuilt from the sidecar rather than stored
+            # separately: connector + channel_id is exactly what format_target consumes, and
+            # a second copy of the same fact could drift from it.
+            reply_target = self._reply_target_for(session_id, source)
             async for event in engine.run(message, source=source):
                 # Stream every event to any socket viewing this session, so a background turn
                 # (channel delivery, self-wake, durable resume) is seen live — not just on reselect.
