@@ -164,6 +164,23 @@ describe("Chronological list row actions (⋮ menu)", () => {
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByTestId("row-menu-rename")).toBeNull();
   });
+
+  it("the kebab stays in the tab order: faded until hover or focus, never display:none", async () => {
+    stubFetch([
+      { match: "/v1/personas", method: "GET", json: PERSONAS },
+      { match: "/v1/settings", method: "GET", json: { nav_layout: "flat" } },
+    ]);
+    render(<Sidebar {...baseProps} />);
+    await screen.findByText("incident watch");
+
+    // jsdom has no hover, so the check is on the classes: the old `hidden` is gone and
+    // the row reveals the kebab when focus lands inside it.
+    const holder = screen.getAllByTestId("row-menu")[0].parentElement!;
+    expect(holder.classList.contains("hidden")).toBe(false);
+    expect(holder.className).toContain("group-focus-within:opacity-100");
+    expect(holder.className).toContain("group-focus-within:pointer-events-auto");
+    expect(holder.className).toContain("group-hover:opacity-100");
+  });
 });
 
 describe("Release session (stuck running flag)", () => {

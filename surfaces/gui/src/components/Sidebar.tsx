@@ -504,8 +504,16 @@ export function Sidebar(props: Props) {
     );
     return (
       <span
-        // Stay visible while this row's menu is open — the pointer may be on the menu, off the row.
-        className={(menuOpen ? "flex" : "hidden group-hover:flex") + " items-center shrink-0"}
+        // Faded out, never display:none: hidden pulls the kebab out of the tab order.
+        // It shows on hover or when focus lands inside the row, and stays shown while
+        // this row's menu is open, since the pointer may be on the menu, off the row.
+        className={
+          (menuOpen
+            ? "opacity-100 pointer-events-auto"
+            : "opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto " +
+              "group-focus-within:opacity-100 group-focus-within:pointer-events-auto") +
+          " flex items-center shrink-0"
+        }
         onClick={(e) => e.stopPropagation()}
       >
         <button
