@@ -69,6 +69,24 @@ describe("releaseFeedback", () => {
     expect(releaseFeedback(refused, OTHER)?.surface).toBe("toast");
   });
 
+  it("follows the session open when the answer lands, not the one open at click time", () => {
+    // Release clicked on s1 while s1 was open, then s2 opened before the server
+    // answered. The notice must not land in s2's transcript: toast, naming s1.
+    const refused = { ok: false, reason: "turn_alive" as const };
+    const left = { id: "s1", title: "Weekly digest", openId: "s2" };
+    expect(releaseFeedback(refused, left)).toEqual({
+      surface: "toast",
+      tone: "warn",
+      key: "sidebar.releaseTurnAlive",
+      vars: { title: "Weekly digest" },
+    });
+    // The other way round: clicked on s2 from s1, then s2 opened. It belongs in the
+    // transcript now, worded for the session on screen.
+    const arrived = { id: "s2", title: "Weekly digest", openId: "s2" };
+    expect(releaseFeedback(refused, arrived)?.surface).toBe("transcript");
+    expect(releaseFeedback(refused, arrived)?.key).toBe("sidebar.releaseTurnAliveHere");
+  });
+
   it("names the session in both surfaces", () => {
     const refused = { ok: false, reason: "turn_alive" as const };
     expect(releaseFeedback(refused, OPEN)?.vars).toEqual({ title: "Weekly digest" });

@@ -204,6 +204,12 @@ export function App() {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [projects, setProjects] = useState<RecentWorkspace[]>([]);
   const [sessionId, setSessionId] = useState<string>(newId());
+  // For handlers that read the open session after an await. The closure keeps the
+  // session that was open at click time; the ref holds the one open now.
+  const sessionIdRef = useRef(sessionId);
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
   // Automation-run context (§ owner ask 2026-07-04): which task an open __run__ session belongs
   // to, driving the banner + "Back to runs". Best-effort — a run session without context still
   // shows a generic banner (detected by its __run__ id).
@@ -1125,11 +1131,13 @@ export function App() {
     // answer all come back as one shape, and the feedback below has words for each.
     const result = await forceIdleSession(id);
     // A refusal or a no-op changes nothing on screen, so say so. In the transcript when
-    // the released row is the open session, as a toast when it is another row.
+    // the released row is the open session, as a toast when it is another row. The
+    // ref, not the closure: the user may have opened another session while the
+    // request was in the air, and the verdict must land on what is on screen now.
     const feedback = releaseFeedback(result, {
       id,
       title: sessions.find((s) => s.session_id === id)?.title,
-      openId: sessionId,
+      openId: sessionIdRef.current,
     });
     if (feedback) {
       const text = t(feedback.key, feedback.vars);
