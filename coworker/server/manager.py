@@ -187,6 +187,9 @@ class SessionManager:
         # The task driving each running turn. The flag alone cannot tell a live turn
         # from one that died before its cleanup. The task can: done means dead.
         self._turn_tasks: dict[str, asyncio.Task] = {}
+        # Background turns started by force_idle to drain a stuck session's queue.
+        # Retained: the loop holds only a weak ref, and a GC'd task dies mid-turn.
+        self._drain_tasks: set[asyncio.Task] = set()
         # Sessions with an auto-title LLM call in flight (FB-010) — one call at a time.
         self._autotitle_inflight: set[str] = set()
         self._autotitle_tasks: set[asyncio.Task] = set()
@@ -3080,13 +3083,57 @@ class SessionManager:
         Stop button and the waiting row until it reconnects. Sent even when the flag
         was already clear: a stale GUI state is harmless to reset, and the return
         value still says what was found.
+
+        Messages that arrived while the flag was stuck sit in the engine's steering
+        queue, and that queue only empties on the next run. Clearing the flag alone
+        delivers nothing. So a real release starts that run: the oldest message opens
+        it, the rest ride in as steering at its first step. `queued` is what is still
+        waiting when this returns.
         """
-        if self.turn_alive(session_id) and not force:
-            return {"ok": False, "reason": "turn_alive", "was_running": True}
+        alive = self.turn_alive(session_id)
+        if alive and not force:
+            return {
+                "ok": False,
+                "reason": "turn_alive",
+                "was_running": True,
+                "queued": self._steering_backlog(session_id),
+            }
         was = session_id in self._running_sessions
         self.mark_idle(session_id)
         await self.broadcast_session(session_id, {"type": "turn_done", "data": {}})
-        return {"ok": True, "was_running": was}
+        # A forced release under a live turn drains nothing. That turn still injects
+        # its own queue at its next step. A second run here would steal from it.
+        queued = (
+            self._steering_backlog(session_id)
+            if alive
+            else self._drain_steering(session_id)
+        )
+        return {"ok": True, "was_running": was, "queued": queued}
+
+    def _steering_backlog(self, session_id: str) -> int:
+        engine = self._engines.get(session_id)
+        return engine.steering_backlog() if engine is not None else 0
+
+    def _drain_steering(self, session_id: str) -> int:
+        """Open a background turn with the oldest queued message. Returns what is left.
+
+        Only the first entry is taken. deliver_to_session runs the engine, and the
+        engine injects the rest of its queue on its own at the first step without a
+        tool call. Popping them all here would only reorder them.
+        """
+        engine = self._engines.get(session_id)
+        if engine is None:
+            return 0
+        entry = engine.pop_steering()
+        if entry is None:
+            return 0
+        text, source = entry
+        task = asyncio.get_running_loop().create_task(
+            self.deliver_to_session(session_id, text, source=source)
+        )
+        self._drain_tasks.add(task)
+        task.add_done_callback(self._drain_tasks.discard)
+        return engine.steering_backlog()
 
     async def deliver_to_session(
         self, session_id: str, message: str, *, source: Optional[dict[str, Any]] = None

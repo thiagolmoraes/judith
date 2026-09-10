@@ -1099,7 +1099,7 @@ def test_force_idle_over_rest_tells_the_viewing_socket_turn_done(tmp_path):
         with client.websocket_connect("/ws/session/s1") as ws:
             assert ws.receive_json()["data"]["running"] is True
             body = client.post("/v1/sessions/s1/force-idle").json()
-            assert body == {"ok": True, "was_running": True}
+            assert body == {"ok": True, "was_running": True, "queued": 0}
             assert ws.receive_json() == {"type": "turn_done", "data": {}}
         assert manager.is_running("s1") is False
     finally:
@@ -1119,7 +1119,7 @@ def test_force_idle_requires_the_sidecar_token(tmp_path, monkeypatch):
         "/v1/sessions/s1/force-idle", headers={"X-OpenWorker-Token": "a" * 64}
     )
     assert allowed.status_code == 200
-    assert allowed.json() == {"ok": True, "was_running": False}
+    assert allowed.json() == {"ok": True, "was_running": False, "queued": 0}
 
 
 class _BlocksUntilReleased(ProviderClient):
@@ -1194,12 +1194,13 @@ def test_force_idle_over_rest_refuses_a_live_turn_unless_forced(tmp_path):
                 "ok": False,
                 "reason": "turn_alive",
                 "was_running": True,
+                "queued": 0,
             }
             assert manager.is_running("live2") is True
 
             forced = client.post("/v1/sessions/live2/force-idle", json={"force": True})
             assert forced.status_code == 200
-            assert forced.json() == {"ok": True, "was_running": True}
+            assert forced.json() == {"ok": True, "was_running": True, "queued": 0}
             assert manager.is_running("live2") is False
         finally:
             provider.release.set()

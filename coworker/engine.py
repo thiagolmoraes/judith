@@ -172,6 +172,20 @@ class TurnEngine:
     ) -> None:
         self._steering.append((text, source))
 
+    def steering_backlog(self) -> int:
+        """How many queued messages still wait for a run to inject them."""
+        return len(self._steering)
+
+    def pop_steering(self) -> Optional[tuple[str, Optional[dict[str, Any]]]]:
+        """Take the oldest queued message out, or None when the queue is empty.
+
+        For the manager's release path: a queue left behind by a dead turn only
+        empties on the next run, and the oldest entry is what should open that run.
+        """
+        if not self._steering:
+            return None
+        return self._steering.pop(0)
+
     # -- main loop --------------------------------------------------------------
     async def run(
         self, user_input: "str | list", *, source: Optional[dict[str, Any]] = None

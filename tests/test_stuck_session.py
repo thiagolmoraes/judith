@@ -52,6 +52,32 @@ class _BlocksUntilReleased(ProviderClient):
         return ModelCapabilities()
 
 
+class _RecordingProvider(ProviderClient):
+    """Answers plain text, in order, and keeps every message list it was handed."""
+
+    def __init__(self, replies: list[str]):
+        self.replies = list(replies)
+        self.calls: list[list[dict]] = []
+
+    def complete(self, *, model, messages, tools=None, **settings):
+        self.calls.append([dict(m) for m in messages])
+        return AssistantTurn(text=self.replies.pop(0), finish_reason="stop")
+
+    def capabilities(self, model):
+        return ModelCapabilities()
+
+
+async def _wait_until(condition, timeout: float = 5.0) -> None:
+    deadline = asyncio.get_running_loop().time() + timeout
+    while not condition():
+        assert asyncio.get_running_loop().time() < deadline, "condition never held"
+        await asyncio.sleep(0.01)
+
+
+def _user_texts(call: list[dict]) -> list[str]:
+    return [str(m["content"]) for m in call if m.get("role") == "user"]
+
+
 def _viewer_log(manager, session_id: str) -> list[dict]:
     seen: list[dict] = []
 
@@ -87,7 +113,7 @@ async def test_force_idle_clears_a_stuck_flag(manager):
 async def test_force_idle_on_an_idle_session_is_a_no_op(manager):
     """Reports what it found rather than pretending: `was_running` is how a caller
     learns whether it actually unstuck anything."""
-    assert await manager.force_idle("never-ran") == {"ok": True, "was_running": False}
+    assert await manager.force_idle("never-ran") == {"ok": True, "was_running": False, "queued": 0}
 
 
 async def test_force_idle_tells_every_viewer_the_turn_is_over(manager):
@@ -118,7 +144,7 @@ async def test_force_idle_still_notifies_when_nothing_was_stuck(manager):
 
     result = await manager.force_idle("idle")
 
-    assert result == {"ok": True, "was_running": False}
+    assert result == {"ok": True, "was_running": False, "queued": 0}
     assert seen == [{"type": "turn_done", "data": {}}]
 
 
@@ -134,7 +160,7 @@ async def test_force_idle_survives_a_dead_viewer(manager):
 
     result = await manager.force_idle("s1")
 
-    assert result == {"ok": True, "was_running": True}
+    assert result == {"ok": True, "was_running": True, "queued": 0}
     assert manager.is_running("s1") is False
     assert manager.has_session_clients("s1") is False
 
@@ -155,7 +181,7 @@ async def test_force_idle_refuses_while_the_turn_task_is_alive(manager):
 
         result = await manager.force_idle("s1")
 
-        assert result == {"ok": False, "reason": "turn_alive", "was_running": True}
+        assert result == {"ok": False, "reason": "turn_alive", "was_running": True, "queued": 0}
         assert manager.is_running("s1") is True
         assert seen == []
     finally:
@@ -173,7 +199,7 @@ async def test_force_idle_releases_once_the_turn_task_has_finished(manager):
 
     result = await manager.force_idle("s1")
 
-    assert result == {"ok": True, "was_running": True}
+    assert result == {"ok": True, "was_running": True, "queued": 0}
     assert manager.is_running("s1") is False
 
 
@@ -187,7 +213,7 @@ async def test_force_idle_with_force_overrides_a_live_turn(manager):
     try:
         result = await manager.force_idle("s1", force=True)
 
-        assert result == {"ok": True, "was_running": True}
+        assert result == {"ok": True, "was_running": True, "queued": 0}
         assert manager.is_running("s1") is False
         assert seen == [{"type": "turn_done", "data": {}}]
     finally:
@@ -252,6 +278,75 @@ async def test_a_background_turn_counts_as_alive_until_it_ends(make_manager):
     assert manager.is_running("s1") is False
 
 
+# -- the queue a stuck session left behind --------------------------------------
+async def test_force_idle_hands_the_backlog_to_a_fresh_turn(make_manager, monkeypatch):
+    """Messages that arrived while the flag was stuck went to the engine's steering
+    queue, which only empties on the next run. Clearing the flag delivered nothing.
+    The release now opens that run with the oldest message; the engine injects the
+    rest at its first step, so one turn answers all of them."""
+    provider = _RecordingProvider(["first reply", "second reply"])
+    manager = make_manager(provider=provider)
+    # Auto-title rides mark_idle and would make a third provider call. Not under test.
+    monkeypatch.setattr(manager, "_maybe_autotitle", lambda session_id: None)
+    engine = manager.get_engine("s1")
+    manager.try_mark_running("s1")  # stuck: the flag is set, no turn task is bound
+    await manager.deliver_to_session("s1", "first while stuck")
+    await manager.deliver_to_session("s1", "second while stuck")
+    assert engine.steering_backlog() == 2
+
+    result = await manager.force_idle("s1")
+
+    assert result == {"ok": True, "was_running": True, "queued": 1}
+    await _wait_until(lambda: len(provider.calls) == 2 and not manager.is_running("s1"))
+    first, second = provider.calls
+    assert "first while stuck" in _user_texts(first)[-1]
+    assert not any("second while stuck" in t for t in _user_texts(first))
+    assert "first while stuck" in _user_texts(second)[-2]
+    assert "second while stuck" in _user_texts(second)[-1]
+    assert engine.steering_backlog() == 0
+
+
+async def test_a_forced_release_under_a_live_turn_leaves_the_queue_to_it(manager):
+    """That turn injects its own queue at its next step. Draining here would start a
+    second run that steals the oldest message from it."""
+    gate = asyncio.Event()
+    task = asyncio.create_task(gate.wait())
+    queued: list[str] = []
+
+    class _Engine:
+        messages: list[dict] = []  # mark_idle's auto-title hook reads this
+
+        def queue_steering(self, message, source=None):
+            queued.append(message)
+
+        def steering_backlog(self):
+            return len(queued)
+
+        def pop_steering(self):  # pragma: no cover - must not be called
+            raise AssertionError("a live turn's queue was drained")
+
+    manager._engines["s1"] = _Engine()
+    manager.try_mark_running("s1")
+    manager.bind_turn_task("s1", task)
+    await manager.deliver_to_session("s1", "arrived mid-turn")
+    try:
+        refused = await manager.force_idle("s1")
+        assert refused == {
+            "ok": False,
+            "reason": "turn_alive",
+            "was_running": True,
+            "queued": 1,
+        }
+
+        forced = await manager.force_idle("s1", force=True)
+
+        assert forced == {"ok": True, "was_running": True, "queued": 1}
+        assert queued == ["arrived mid-turn"]
+    finally:
+        gate.set()
+        await task
+
+
 # -- what happens to a message that arrives while stuck ------------------------
 async def test_a_message_to_a_busy_session_is_recorded(manager, monkeypatch):
     """It still gets steered into the live turn — that part was right. What was missing
@@ -294,7 +389,7 @@ def test_force_idle_over_rest(tmp_path, monkeypatch):
     with TestClient(create_app(mgr)) as client:
         mgr.try_mark_running("s1")
         body = client.post("/v1/sessions/s1/force-idle").json()
-        assert body == {"ok": True, "was_running": True}
+        assert body == {"ok": True, "was_running": True, "queued": 0}
         assert mgr.is_running("s1") is False
 
 
