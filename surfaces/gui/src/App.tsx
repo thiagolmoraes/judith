@@ -1275,6 +1275,10 @@ export function App() {
         <div
           className="fixed top-3 right-3 z-[45] w-[290px] bg-panel border border-line rounded-xl shadow-lg px-3.5 pt-3 pb-2.5"
           data-testid={toast.kind === "run" ? "automation-toast" : "notice-toast"}
+          // A notice is one sentence and no action, so a screen reader hears it as
+          // it appears. The run toast keeps its own reading: it carries a button.
+          role={toast.kind === "run" ? undefined : "status"}
+          aria-live={toast.kind === "run" ? undefined : "polite"}
         >
           {toast.kind === "run" ? (
             <>
