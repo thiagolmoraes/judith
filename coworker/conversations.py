@@ -246,7 +246,12 @@ class ConversationStore:
         # Build the repaired list.  We iterate through the original messages,
         # and after each assistant message we emit its tool results (moved from
         # their original position or synthesised if missing).
-        consumed_result_indices: set[int] = set()
+        # Every matched result is re-emitted right after its call, so its original
+        # slot is skipped wherever it sits. Tracking only results already emitted
+        # missed a result that came before its call, and that one was kept in
+        # place and emitted again. An orphan result (no call for its id) is not
+        # in this set and stays where it is.
+        matched_result_indices = set(found_results.values())
         repaired: list[dict] = []
 
         for i, m in enumerate(messages):
@@ -258,10 +263,7 @@ class ConversationStore:
                     if not call_id:
                         continue
                     if call_id in found_results:
-                        result_idx = found_results[call_id]
-                        if result_idx not in consumed_result_indices:
-                            repaired.append(messages[result_idx])
-                            consumed_result_indices.add(result_idx)
+                        repaired.append(messages[found_results[call_id]])
                     elif call_id not in trailing_calls:
                         # Synthesise a placeholder so the thread is well-formed.
                         # Skip trailing calls — they're pending, not corrupt.
@@ -270,8 +272,8 @@ class ConversationStore:
                             "tool_call_id": call_id,
                             "content": '{"error": "tool result was lost during an interrupted turn"}',
                         })
-            elif i in consumed_result_indices:
-                continue  # already moved this tool result up
+            elif i in matched_result_indices:
+                continue  # re-emitted right after its call
             else:
                 repaired.append(m)
 

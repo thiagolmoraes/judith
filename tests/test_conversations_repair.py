@@ -191,3 +191,34 @@ def test_load_repairs_corrupt_jsonl(tmp_path):
     # The user message is after the result.
     assert msgs[3]["role"] == "user"
     assert msgs[3]["content"] == "continue"
+
+def test_result_before_its_call_is_moved_not_duplicated():
+    """A tool result that lands before its call must be moved after the call and
+    emitted once. Skipping only results already emitted earlier in the walk left
+    this one in place and then re-emitted it after the call."""
+    messages = [
+        _user("go"),
+        _tool_result("c1"),
+        _assistant_with_calls("c1"),
+        _user("next"),
+    ]
+    repaired = ConversationStore._repair_tool_pairing(messages)
+    assert [m["role"] for m in repaired] == ["user", "assistant", "tool", "user"]
+    assert repaired[2]["tool_call_id"] == "c1"
+    assert sum(1 for m in repaired if m.get("tool_call_id") == "c1") == 1
+
+
+def test_orphan_result_stays_in_place():
+    """A tool result with no matching call is not moved or dropped. Only results
+    paired with a call are re-emitted after it."""
+    messages = [
+        _user("go"),
+        _tool_result("cX"),  # no assistant block ever issued cX
+        _assistant_with_calls("c1"),
+        _user("next"),
+        _tool_result("c1"),
+    ]
+    repaired = ConversationStore._repair_tool_pairing(messages)
+    assert [m["role"] for m in repaired] == ["user", "tool", "assistant", "tool", "user"]
+    assert repaired[1]["tool_call_id"] == "cX"
+    assert repaired[3]["tool_call_id"] == "c1"
