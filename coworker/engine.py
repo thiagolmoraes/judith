@@ -24,6 +24,7 @@ from .events import Event, EventType
 from .permissions import Mode, PermissionEngine
 from .providers import AssistantTurn, ProviderClient, ToolCall
 from .providers.errors import friendly_model_error
+from .providers.openai_provider import looks_like_unparsed_tool_call
 from .tools import ToolRegistry
 
 
@@ -125,6 +126,9 @@ class TurnEngine:
         ):
             self.messages.insert(0, {"role": "system", "content": instructions})
         self._cancel = asyncio.Event()
+        # Whether the latest assistant turn hit the output-token limit — decides which
+        # diagnosis a mangled (unparseable-args) tool call gets answered with.
+        self._turn_truncated = False
         # Each pending steering message: (text, optional MessageSource sidecar dict).
         self._steering: list[tuple[str, Optional[dict[str, Any]]]] = []
         # tool_call.id → the standing rule that auto-allowed it ("tool → target"), so the
@@ -396,7 +400,10 @@ class TurnEngine:
                 # window on this round-trip (estimate fallback when never reported).
                 self._last_context_tokens = turn.usage.context_tokens
 
-            self.messages.append(_assistant_message(turn, model=self.model))
+            self._turn_truncated = turn.finish_reason == "length"
+            _sanitize_mangled_calls(turn)
+            assistant_message = _assistant_message(turn, model=self.model)
+            self.messages.append(assistant_message)
             payload: dict[str, Any] = {
                 "text": turn.text,
                 "tool_calls": [tc.name for tc in turn.tool_calls],
@@ -411,6 +418,32 @@ class TurnEngine:
                 if self._steering:
                     self._inject_steering()
                     continue
+                # The model tried to call a tool and the syntax never parsed — salvage already
+                # had its go. Ending as "completed" here would present a half-written call as
+                # the answer, which is indistinguishable from the model deciding it was done;
+                # the user just sees narration trailing off into stray tags. Fail loudly
+                # instead, on the error path so the GUI offers Retry — this is drift, not a
+                # deterministic failure, so retrying the same model usually works.
+                if looks_like_unparsed_tool_call(turn.text, self.registry.schemas() or None):
+                    # Take the fragment back out of history. retry() replays history as
+                    # is and the outbound feed drops only the notice, so the provider
+                    # would see the half-written call as its own last turn and keep
+                    # completing it. The GUI already got the ASSISTANT_MESSAGE event;
+                    # that is fine, the error that follows explains it.
+                    if self.messages and self.messages[-1] is assistant_message:
+                        self.messages.pop()
+                    message = (
+                        f"{self.model} replied with a tool call this endpoint couldn't parse, "
+                        "so the turn was stopped rather than answered from a partial call. "
+                        "Retry, or switch to a larger model — smaller local models drift off "
+                        "the tool-call format, especially with many tools in play."
+                    )
+                    self._append_notice("error", message)
+                    yield Event(
+                        EventType.ERROR,
+                        {"error": message, "error_type": "UnparsedToolCall"},
+                    )
+                    return
                 yield Event(
                     EventType.TURN_END,
                     {"status": "completed", "iterations": iterations},
@@ -632,6 +665,13 @@ class TurnEngine:
                 {"name": tool_call.name, "arguments": tool_call.arguments},
             )
             self._audit(tool_call, stage="proposed")
+            if _is_mangled(tool_call):
+                # The arguments never parsed as JSON (a `{"_raw": …}` fallback from the
+                # provider). Executing would produce a bare parameter error the model
+                # misreads — seen in the field as an endless "wrong parameter" retry
+                # loop. Answer with the ACTUAL diagnosis instead.
+                yield self._mangled_tool(tool_call)
+                continue
             # `request_directory` and `propose_plan` are interactive: the user decides
             # out-of-band and that decision IS the consent, so they skip the
             # permission/registry path.
@@ -681,6 +721,37 @@ class TurnEngine:
             self._audit(tool_call, stage="started")
             result, status = await asyncio.to_thread(self._execute_sync, tool_call)
             yield self._record_result(tool_call, result, status)
+
+    def _mangled_tool(self, tool_call: ToolCall) -> Event:
+        """Answer a tool call whose arguments never parsed, with the real diagnosis.
+
+        Two causes, two different cures — and the model can only pick the right one if
+        the error says which happened. Truncation (`finish_reason == "length"`) means
+        "same content, smaller pieces"; plain bad JSON means "re-send with the declared
+        parameters". Either way the raw text is NOT replayed into history: a stored
+        `{"_raw": …}` call reads as a worked example and teaches the model to emit
+        `_raw` on purpose (observed 2026-08-15), on top of re-sending the junk tokens
+        every turn."""
+        if self._turn_truncated:
+            reason = (
+                "your tool-call arguments were cut off by the output-token limit before "
+                "they finished streaming — the tool never received them. Produce the same "
+                "content in smaller pieces: several calls that each write or append a "
+                "section, keeping each call's content well under the limit. Do not retry "
+                "the identical oversized call."
+            )
+        else:
+            reason = (
+                "your tool-call arguments did not parse as a JSON object, so the tool "
+                "received nothing. `_raw` is not a parameter — it is the unparsed text of "
+                "the failed call. Re-issue the call using the tool's declared parameters."
+            )
+        self.messages.append(_tool_error_message(tool_call, reason))
+        self._audit(tool_call, stage="finished", status="error", reason=reason)
+        return Event(
+            EventType.TOOL_FINISHED,
+            {"name": tool_call.name, "status": "error", "reason": reason},
+        )
 
     def _interrupted_tool(self, tool_call: ToolCall) -> Event:
         """The stop-path answer for a call that will not run: a tool-error result in the
@@ -1224,6 +1295,30 @@ def _assistant_message(turn: AssistantTurn, model: Optional[str] = None) -> dict
             for tc in turn.tool_calls
         ]
     return message
+
+
+_MANGLED_PREVIEW_CHARS = 200
+
+
+def _is_mangled(tool_call: ToolCall) -> bool:
+    """Provider arg-parsers fall back to `{"_raw": <unparsed text>}` when a tool call's
+    arguments aren't a JSON object (typically a stream truncated mid-arguments)."""
+    return set(tool_call.arguments or {}) == {"_raw"}
+
+
+def _sanitize_mangled_calls(turn: AssistantTurn) -> None:
+    """Shrink each mangled call's stored raw text to a short preview BEFORE the turn
+    enters history. The full text is junk (half a JSON document): replaying it costs
+    thousands of tokens per turn and, worse, teaches the model that `_raw` is a real
+    parameter shape it should imitate."""
+    for tc in turn.tool_calls:
+        if _is_mangled(tc):
+            raw = str(tc.arguments.get("_raw") or "")
+            if len(raw) > _MANGLED_PREVIEW_CHARS:
+                tc.arguments = {
+                    "_raw": raw[:_MANGLED_PREVIEW_CHARS]
+                    + f"… [unparsed tool-call text, {len(raw)} chars, truncated in history]"
+                }
 
 
 def _tool_result_message(tool_call: ToolCall, result: Any) -> dict[str, Any]:

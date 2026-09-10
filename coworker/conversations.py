@@ -12,12 +12,26 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import threading
 from pathlib import Path
 from typing import Optional
 
 from .sessions import SessionRecord
+
+# A session id becomes a filename (`<id>.jsonl`) and a scratch dir name, so it must be a
+# single, benign path component. Every legitimate id is hex or a `__run__`/`__task__`-
+# prefixed hex string, so this charset is a superset of what we generate; it excludes the
+# path separators and dots (`/`, `\`, `..`) a client-supplied id would need to escape the
+# store. Session ids arrive from client-controlled surfaces (the `/ws/session/{id}` route,
+# REST paths), so without this an id like `../../evil` writes `<base>/evil.jsonl` outside
+# `conversations/`.
+_SAFE_SESSION_ID = re.compile(r"\A[A-Za-z0-9_-]{1,128}\Z")
+
+
+def is_safe_session_id(sid: str) -> bool:
+    return bool(isinstance(sid, str) and _SAFE_SESSION_ID.match(sid))
 
 
 def _load_roots(raw: Optional[str]) -> list[dict]:
@@ -106,30 +120,218 @@ class ConversationStore:
 
     # -- file helpers -----------------------------------------------------------
     def _file(self, sid: str) -> Path:
-        return self.conv_dir / f"{sid}.jsonl"
+        # Single chokepoint for every conversation-file path. Reject ids that aren't a
+        # safe path component, then confirm the resolved path stays inside conv_dir — so
+        # a crafted id can never read or clobber a file outside the store.
+        if not is_safe_session_id(sid):
+            raise ValueError(f"unsafe session id: {sid!r}")
+        path = (self.conv_dir / f"{sid}.jsonl").resolve()
+        if path.parent != self.conv_dir.resolve():
+            raise ValueError(f"unsafe session id: {sid!r}")
+        return path
 
-    def _read_jsonl(self, sid: str) -> Optional[list[dict]]:
+    def _read_jsonl_lines(self, sid: str) -> tuple[Optional[list[dict]], int]:
+        """Parse the log. Returns (messages, dropped): `dropped` is how many lines were
+        skipped as invalid JSON or as JSON that is not a message object. (None, 0) when
+        there is no file yet."""
         path = self._file(sid)
         if not path.exists():
-            return None
-        return [
-            json.loads(line)
-            for line in path.read_text(encoding="utf-8").splitlines()
-            if line.strip()
-        ]
+            return None, 0
+        # Tolerate a corrupt/truncated line rather than failing the whole load. An append
+        # interrupted mid-write (crash, disk full) leaves one malformed trailing line; a
+        # bare `json.loads` in a comprehension would raise JSONDecodeError and make load()
+        # throw every time thereafter — bricking that session on every surface that opens
+        # it. Skip the bad line(s) and keep the recoverable history. (Every other JSON read
+        # in this module is already tolerant; this one was the outlier.)
+        # Read bytes and decode per line. A torn write can cut inside a multi-byte
+        # character (an emoji at the end of a DM is four bytes). A strict text read of
+        # the whole file raised UnicodeDecodeError before any line was parsed, and
+        # that bricked load() the same way a bare json.loads did.
+        messages: list[dict] = []
+        dropped = 0
+        for line in path.read_bytes().split(b"\n"):
+            if not line.strip():
+                continue
+            try:
+                message = json.loads(line.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                dropped += 1
+                continue
+            # Valid JSON is not always a message. `null`, `[]` or a bare string parse
+            # fine, then the repair pass calls .get() on them and load() raises. Count
+            # the line as dropped so the sanitising rewrite removes it from disk too.
+            if not isinstance(message, dict):
+                dropped += 1
+                continue
+            messages.append(message)
+        return messages, dropped
+
+    def _read_jsonl(self, sid: str) -> Optional[list[dict]]:
+        return self._read_jsonl_lines(sid)[0]
+
+    # -- tool-call/result pairing repair ---------------------------------------
+    @staticmethod
+    def _repair_tool_pairing(messages: list[dict]) -> list[dict]:
+        """Reorder messages so every tool result immediately follows its call.
+
+        Append-only persistence means an interrupted turn can leave a user
+        message between an assistant ``tool_calls`` block and the matching
+        ``tool`` result.  Providers reject this ordering (Anthropic 400/2013,
+        OpenAI "tool_call_ids did not have response messages"), making the
+        session permanently unrecoverable.
+
+        This pass:
+        * Moves a real ``tool`` result found later in the thread to sit right
+          after its call.
+        * Synthesises a placeholder result for a call with no matching tool
+          message — but **only** when the thread has moved past the call
+          (i.e. there are messages after the assistant block).  A trailing
+          assistant ``tool_calls`` with no result is a pending/interrupted
+          call that the engine will resume; injecting a placeholder there
+          would break durable resume.
+        * Is idempotent — a well-formed thread passes through unchanged.
+        """
+        if not messages:
+            return messages
+
+        # Collect tool_call ids from assistant messages.
+        pending_calls: dict[str, int] = {}  # call_id → index of the assistant msg
+        for i, m in enumerate(messages):
+            if m.get("role") == "assistant" and m.get("tool_calls"):
+                for tc in m["tool_calls"]:
+                    call_id = tc.get("id")
+                    if call_id:
+                        pending_calls[call_id] = i
+
+        if not pending_calls:
+            return messages  # no tool calls at all
+
+        # Find tool results and where they sit relative to their calls.
+        # call_id → index of the tool result message (if found)
+        found_results: dict[str, int] = {}
+        for i, m in enumerate(messages):
+            if m.get("role") == "tool":
+                call_id = m.get("tool_call_id")
+                if call_id and call_id in pending_calls:
+                    # Only keep the first result for each call.
+                    if call_id not in found_results:
+                        found_results[call_id] = i
+
+        # Determine which calls are "trailing" — the assistant block is the
+        # last message in the thread (nothing after it).  These are pending
+        # calls that the engine will resume; we must not inject placeholders.
+        last_msg_idx = len(messages) - 1
+        trailing_calls: set[str] = set()
+        for call_id, call_idx in pending_calls.items():
+            if call_idx == last_msg_idx:
+                trailing_calls.add(call_id)
+
+        # Calls that have a result already immediately following the assistant
+        # message are fine — no work needed.  We only need to act when a result
+        # is missing or out-of-order.  Trailing calls without results are
+        # skipped (they're pending, not corrupt).
+        needs_repair = False
+        for call_id, call_idx in pending_calls.items():
+            if call_id in trailing_calls and call_id not in found_results:
+                continue  # pending call — engine will resume
+            if call_id in found_results:
+                result_idx = found_results[call_id]
+                if result_idx != call_idx + 1:
+                    needs_repair = True  # result exists but not immediately after
+            else:
+                needs_repair = True  # no result at all
+        if not needs_repair:
+            return messages  # already well-formed (or only pending calls)
+
+        # Build the repaired list.  We iterate through the original messages,
+        # and after each assistant message we emit its tool results (moved from
+        # their original position or synthesised if missing).
+        # Every matched result is re-emitted right after its call, so its original
+        # slot is skipped wherever it sits. Tracking only results already emitted
+        # missed a result that came before its call, and that one was kept in
+        # place and emitted again. An orphan result (no call for its id) is not
+        # in this set and stays where it is.
+        matched_result_indices = set(found_results.values())
+        repaired: list[dict] = []
+
+        for i, m in enumerate(messages):
+            if m.get("role") == "assistant" and m.get("tool_calls"):
+                repaired.append(m)
+                # Emit results for each tool call in this block, in order.
+                for tc in m["tool_calls"]:
+                    call_id = tc.get("id")
+                    if not call_id:
+                        continue
+                    if call_id in found_results:
+                        repaired.append(messages[found_results[call_id]])
+                    elif call_id not in trailing_calls:
+                        # Synthesise a placeholder so the thread is well-formed.
+                        # Skip trailing calls — they're pending, not corrupt.
+                        repaired.append({
+                            "role": "tool",
+                            "tool_call_id": call_id,
+                            "content": '{"error": "tool result was lost during an interrupted turn"}',
+                        })
+            elif i in matched_result_indices:
+                continue  # re-emitted right after its call
+            else:
+                repaired.append(m)
+
+        return repaired
 
     def _count(self, sid: str) -> int:
         path = self._file(sid)
         if not path.exists():
             return 0
-        return sum(
-            1 for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
-        )
+        # Bytes, not text: a torn tail is not always valid UTF-8, and a count must
+        # never raise. Same reason as _read_jsonl_lines.
+        return sum(1 for line in path.read_bytes().split(b"\n") if line.strip())
+
+    @staticmethod
+    def _ends_without_newline(path: Path) -> bool:
+        if not path.exists() or path.stat().st_size == 0:
+            return False
+        with open(path, "rb") as f:
+            f.seek(-1, os.SEEK_END)
+            return f.read(1) != b"\n"
 
     def _append(self, sid: str, messages: list[dict]) -> None:
-        with open(self._file(sid), "a", encoding="utf-8") as f:
+        path = self._file(sid)
+        # A torn last line (write cut mid-record, no newline) would swallow the next
+        # record into itself and both would be lost on load. Close it first. save()
+        # no longer appends onto a torn tail, but _backfill_counts still can.
+        needs_newline = self._ends_without_newline(path)
+        with open(path, "a", encoding="utf-8") as f:
+            if needs_newline:
+                f.write("\n")
             for m in messages:
                 f.write(json.dumps(m) + "\n")
+
+    def _rewrite(self, sid: str, messages: list[dict]) -> None:
+        # Atomic rewrite: write the full log to a temp file, then replace in one
+        # step. An in-place open(..., "w") truncates the file immediately, so a
+        # crash mid-rewrite would erase the conversation history (same
+        # tmp-then-replace pattern as subscriptions.ChannelBuffer._save).
+        path = self._file(sid)
+        tmp = path.with_suffix(".tmp")
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                for m in messages:
+                    f.write(json.dumps(m) + "\n")
+                # Push the bytes to disk before the swap. Without it a power cut
+                # right after the rename can leave an empty or short log where the
+                # old one was. The directory is not synced; the rename itself is
+                # left to the filesystem.
+                f.flush()
+                os.fsync(f.fileno())
+            tmp.replace(path)
+        except BaseException:
+            # Do not leave a half-written tmp next to the log.
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
 
     def _backfill_counts(self) -> None:
         """One-time per session: move any inline blob into a .jsonl and persist
@@ -140,6 +342,12 @@ class ConversationStore:
             ).fetchall()
             for row in rows:
                 sid = row["session_id"]
+                if not is_safe_session_id(sid):
+                    # Rows written before the id check can carry an unsafe id. _file()
+                    # raises on it, and that would stop the whole store from opening.
+                    # Rule: unsafe id means no file. Leave the row alone; load() reads
+                    # its blob and delete() can still remove it.
+                    continue
                 jsonl = self._file(sid)
                 if jsonl.exists() and row["title"] and row["n_msgs"]:
                     continue  # already migrated
@@ -181,13 +389,20 @@ class ConversationStore:
                     if legacy:
                         self._append(sid, legacy)
 
-            existing = self._count(sid)
-            if len(record.messages) > existing:
-                self._append(sid, record.messages[existing:])
-            elif len(record.messages) < existing:  # rare; not append-only
-                with open(self._file(sid), "w", encoding="utf-8") as f:
-                    for m in record.messages:
-                        f.write(json.dumps(m) + "\n")
+            if self._ends_without_newline(self._file(sid)):
+                # A torn tail (write cut mid-record, disk full for a moment) makes the
+                # line count a lie. Counting the torn line as a slot appended only what
+                # came after it: a checkpoint of [A(tool_calls), T] that tore inside A
+                # left T on disk with no call, and the provider rejects that (400) in
+                # a way the pairing repair cannot fix. The engine's list is the truth
+                # here. Write it whole.
+                self._rewrite(sid, record.messages)
+            else:
+                existing = self._count(sid)
+                if len(record.messages) > existing:
+                    self._append(sid, record.messages[existing:])
+                elif len(record.messages) < existing:  # rare; not append-only
+                    self._rewrite(sid, record.messages)
 
             title = record.title or title_from(record.messages)
             self._conn.execute(
@@ -222,14 +437,42 @@ class ConversationStore:
             row = self._conn.execute(
                 "SELECT * FROM sessions WHERE session_id = ?", (session_id,)
             ).fetchone()
-        if not row:
-            return None
-        messages = self._read_jsonl(session_id)
-        if messages is None:
-            try:
-                messages = json.loads(row["messages"] or "[]")
-            except json.JSONDecodeError:
-                messages = []
+            if not row:
+                return None
+            # Unsafe id means no file (see _backfill_counts). Skip the disk read and
+            # serve the inline blob, so a legacy row still loads instead of raising.
+            safe_id = is_safe_session_id(session_id)
+            raw, dropped = self._read_jsonl_lines(session_id) if safe_id else (None, 0)
+            if raw is None:
+                try:
+                    raw = json.loads(row["messages"] or "[]")
+                except json.JSONDecodeError:
+                    raw = []
+            # Self-heal: ensure every tool result immediately follows its call.
+            # An interrupted turn can persist a user message between an assistant
+            # tool_calls block and its tool result, which providers reject (400).
+            messages = self._repair_tool_pairing(raw)
+            # save() appends by line count. So the list we hand back must match the
+            # disk line for line, or the next save duplicates (placeholder inserted)
+            # or loses (corrupt line dropped) messages. Rewrite when they diverge.
+            # Also materialises a legacy blob, so save() sees a file and skips the
+            # blob migration.
+            # Compare content, not identity. The repair pass builds a fresh list for
+            # a well-formed block with two or more calls (the second result sits at
+            # call index + 2, which it reads as out of place). load() runs on every
+            # inbound and every inbox poll. Identity as the signal meant one rewrite
+            # per read for any session that ever ran two tools in one step.
+            # Never rewrite for an unsafe id. That would create the very file the id
+            # check exists to prevent.
+            if safe_id and (dropped > 0 or messages != raw):
+                self._rewrite(session_id, messages)
+                # The session list reads n_msgs from the index. Keep it in step with
+                # the file now. Waiting for the next save leaves a stale count.
+                self._conn.execute(
+                    "UPDATE sessions SET n_msgs = ? WHERE session_id = ?",
+                    (len(messages), session_id),
+                )
+                self._conn.commit()
         return SessionRecord(
             session_id=session_id,
             workspace=row["workspace"],
@@ -342,9 +585,16 @@ class ConversationStore:
                 "DELETE FROM sessions WHERE session_id = ?", (session_id,)
             )
             self._conn.commit()
-        path = self._file(session_id)
-        if path.exists():
-            path.unlink()
+            # Row and file go together, under the same lock. load() writes now (the
+            # pairing repair rewrites the file) and save() re-creates the row. With
+            # the unlink outside the lock, a save between the two steps could leave
+            # a row whose file was then removed underneath it.
+            # Unsafe id means no file, and _file() raises on it. Drop the row and stop,
+            # so a legacy row with a bad id can still be deleted.
+            if is_safe_session_id(session_id):
+                path = self._file(session_id)
+                if path.exists():
+                    path.unlink()
         return cur.rowcount > 0
 
     def rename(self, session_id: str, title: str) -> bool:

@@ -596,6 +596,9 @@ export function App() {
           if (d.command_trust?.required) setWorkspaceTrustRequest(d.command_trust);
           // Cowork: adopt the server-provisioned scratch dir (only when we don't already have one).
           if (d.workspace) setWorkspace((cur) => cur || d.workspace);
+          // Server truth on a live turn. A reconnect mid-turn never sees turn_start, so
+          // without this the Stop button and waiting row vanish.
+          if (typeof d.running === "boolean") setRunning(d.running);
           break;
         case "turn_start":
           setRunning(true);
@@ -1142,7 +1145,9 @@ export function App() {
     openRunSession(r.session_id, r.workspace, r.agent, { id: taskId, title: title || "" });
   };
 
-  const idle = items.length === 0 && !streaming;
+  // `running` too. A mid-turn reconnect may land before any item is rebuilt. A live
+  // session must show the transcript (waiting row, Stop), never the intro hero.
+  const idle = items.length === 0 && !streaming && !running;
   const pendingApproval = [...items].reverse().find((i) => i.kind === "approval" && !i.resolved);
   const pendingDirReq = [...items].reverse().find((i) => i.kind === "dirreq" && !i.resolved);
   const pendingPlan = [...items].reverse().find((i) => i.kind === "planreq" && !i.resolved);

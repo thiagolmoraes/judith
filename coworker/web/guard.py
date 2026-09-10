@@ -14,17 +14,20 @@ metadata endpoint at 169.254.169.254), and the reserved/multicast blocks.
 Every hop is checked, not just the first: `follow_redirects=True` otherwise lets a public
 URL 302 straight to loopback, which is the standard way this filter is bypassed.
 
-Not covered: DNS rebinding. The name is resolved here and resolved again by the client when
-it connects, so a record with a ~0 TTL can change between the two. Closing that needs
-connection-level IP pinning; the hop check is the cheap 90% and is stated as such.
+DNS rebinding is closed by connection-level pinning: `get_checked` rewrites each hop so the
+client connects to the exact address that passed the check (name in Host and SNI, so virtual
+hosting and certificate verification still see the name). A record with a ~0 TTL that flips
+to 127.0.0.1 between the check and the connect therefore changes nothing — the client never
+resolves the name itself. `check_url` alone (browser_open_url's pre-check) still carries the
+resolve-twice gap, because the browser owns its own connections and cannot be pinned from here.
 """
 
 from __future__ import annotations
 
 import ipaddress
 import socket
-from typing import Optional
-from urllib.parse import urlsplit
+from typing import Any, Mapping, Optional
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 MAX_REDIRECTS = 5
 
@@ -50,24 +53,26 @@ def _blocked_reason(ip: ipaddress._BaseAddress) -> Optional[str]:
     return None
 
 
-def check_url(url: str) -> Optional[str]:
-    """None if the URL may be fetched, else a human-readable refusal reason.
+def _vet(url: str) -> tuple[Optional[str], Optional[str]]:
+    """(refusal reason, address to pin the connection to).
 
-    Resolves the host and rejects when *any* answer lands in a blocked range, so a name
-    with both a public and a private A record cannot be used to slip through.
+    The reason is None when the URL may be fetched. The address is None for literal-IP
+    URLs (the URL already names the connection target) and the first resolved answer
+    otherwise — valid to pin because a refusal is returned when *any* answer lands in a
+    blocked range, so a name with both a public and a private A record cannot slip through.
     """
     parts = urlsplit(url)
     if parts.scheme not in ("http", "https"):
-        return "url must start with http:// or https://"
+        return "url must start with http:// or https://", None
     host = parts.hostname
     if not host:
-        return "url has no host"
+        return "url has no host", None
     # `.port` raises on a non-numeric or out-of-range port; judge that here so direct
     # check_url callers (browser_automation) get a reason back, never an exception.
     try:
         port = parts.port
     except ValueError:
-        return f"refusing to fetch {host}: the url has an invalid port"
+        return f"refusing to fetch {host}: the url has an invalid port", None
 
     # A literal address needs no lookup.
     try:
@@ -81,14 +86,15 @@ def check_url(url: str) -> Optional[str]:
         if mapped is not None:
             literal = mapped
         reason = _blocked_reason(literal)
-        return f"refusing to fetch {host}: {reason}" if reason else None
+        return (f"refusing to fetch {host}: {reason}" if reason else None), None
 
     try:
         infos = socket.getaddrinfo(host, port or (443 if parts.scheme == "https" else 80),
                                    proto=socket.IPPROTO_TCP)
     except OSError as exc:
-        return f"could not resolve {host}: {exc}"
+        return f"could not resolve {host}: {exc}", None
 
+    pin: Optional[str] = None
     for info in infos:
         raw = info[4][0]
         try:
@@ -101,33 +107,99 @@ def check_url(url: str) -> Optional[str]:
             ip = mapped
         reason = _blocked_reason(ip)
         if reason:
-            return f"refusing to fetch {host} ({ip}): {reason}"
-    return None
+            return f"refusing to fetch {host} ({ip}): {reason}", None
+        if pin is None:
+            pin = raw
+    return None, pin
 
 
-def get_checked(client, url: str, *, max_redirects: int = MAX_REDIRECTS, headers=None, params=None):
-    """GET `url`, validating the address before every hop.
+def check_url(url: str) -> Optional[str]:
+    """None if the URL may be fetched, else a human-readable refusal reason.
+
+    Resolves the host and rejects when *any* answer lands in a blocked range, so a name
+    with both a public and a private A record cannot be used to slip through.
+    """
+    return _vet(url)[0]
+
+
+def _pinned(url: str, ip: str) -> tuple[str, dict, dict]:
+    """Rewrite `url` so the client connects to `ip` while presenting the original name.
+
+    Returns (request_url, headers, extensions): the URL carries the vetted address so the
+    client never resolves the name itself, Host carries the name (and any explicit port)
+    for virtual hosting, and `sni_hostname` keeps the TLS handshake — including certificate
+    verification — against the name rather than the address.
+    """
+    parts = urlsplit(url)
+    host = parts.hostname
+    addr = f"[{ip}]" if ":" in ip else ip
+    userinfo, _, _ = parts.netloc.rpartition("@")
+    netloc = (f"{userinfo}@" if userinfo else "") + addr
+    host_header = host
+    if parts.port is not None:
+        netloc += f":{parts.port}"
+        host_header += f":{parts.port}"
+    request_url = urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+    extensions = {"sni_hostname": host} if parts.scheme == "https" else {}
+    return request_url, {"Host": host_header}, extensions
+
+
+def _without_host(headers: dict) -> dict:
+    """Drop every caller Host header, whatever its case. Header names are
+    case-insensitive, so "host" next to the pin's "Host" is two Host headers."""
+    return {k: v for k, v in headers.items() if k.lower() != "host"}
+
+
+def get_checked(
+    client: Any,
+    url: str,
+    *,
+    max_redirects: int = MAX_REDIRECTS,
+    headers: Optional[Mapping[str, str]] = None,
+    params: Optional[Mapping[str, Any]] = None,
+) -> Any:
+    """GET `url`, validating and pinning the address before every hop.
 
     `client` must be built with `follow_redirects=False`; redirects are walked here so each
-    Location is checked. Returns the final response. Raises `PermissionError` when a hop is
-    refused, `RuntimeError` when the redirect budget is exhausted.
+    Location is checked. Every hop connects to the exact address that passed its check (see
+    `_pinned`), so a rebinding name cannot swap targets between check and connect. Returns
+    the final response, with the final *logical* URL — the name, not the pinned address —
+    stashed as `resp.extensions["logical_url"]` for callers that display it. Raises
+    `PermissionError` when a hop is refused, `RuntimeError` when the budget is exhausted.
 
     `headers` ride along on every hop; `params` only on the first (a Location target is
     already the complete URL). No auth parameter on purpose: the URL comes from the model,
-    and a credential must never follow a redirect it controls.
+    and a credential must never follow a redirect it controls. On a pinned hop the pin's
+    Host header wins over a caller-supplied one: the name in Host is what keeps virtual
+    hosting pointed at the vetted site.
     """
     seen = url
     first = True
     for _ in range(max_redirects + 1):
-        reason = check_url(seen)
+        reason, pin = _vet(seen)
         if reason:
             raise PermissionError(reason)
-        resp = client.get(seen, headers=headers, params=params if first else None)
+        hop_headers = dict(headers or {})
+        hop_params = params if first else None
         first = False
+        if pin is None:
+            resp = client.get(seen, headers=hop_headers, params=hop_params)
+        else:
+            request_url, pin_headers, extensions = _pinned(seen, pin)
+            # The pin's Host must be the only one on the wire. dict.update only
+            # replaces the exact key "Host"; a caller's "host" would ride along.
+            hop_headers = _without_host(hop_headers)
+            hop_headers.update(pin_headers)
+            resp = client.get(request_url, headers=hop_headers, params=hop_params, extensions=extensions)
         if resp.status_code not in (301, 302, 303, 307, 308):
+            ext = getattr(resp, "extensions", None)
+            if isinstance(ext, dict):
+                ext["logical_url"] = seen
             return resp
         location = resp.headers.get("location")
         if not location:
             return resp
-        seen = str(resp.url.join(location))
+        # Resolved against the logical URL, not resp.url — the latter names the pinned
+        # address, and a relative Location must stay on the original host.
+        seen = urljoin(seen, location)
     raise RuntimeError(f"too many redirects (>{max_redirects})")

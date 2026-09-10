@@ -10,16 +10,36 @@ import { useI18n } from "../i18n/useLocale";
 // the session's artifact list, App un-hides the rail.
 export const OPEN_ARTIFACT_EVENT = "ocw-open-artifact";
 
+/** Normalize an artifact: href path for the session workspace.
+ *
+ * react-markdown / micromark percent-encodes non-ASCII URL characters, so
+ * `artifact:reports/报告.md` becomes `artifact:reports/%E6%8A%A5%E5%91%8A.md`.
+ * The backend looks up the literal filesystem path — encoded names 404 as "not found".
+ * Also strip a single leading `/` so `artifact:/reports/x.md` stays workspace-relative
+ * (Path(workspace) / "/abs" would otherwise escape the workspace root).
+ */
+export function normalizeArtifactPath(raw: string): string {
+  let path = raw;
+  try {
+    path = decodeURIComponent(raw);
+  } catch {
+    // malformed % sequences — keep raw
+  }
+  if (path.startsWith("/")) path = path.replace(/^\/+/, "");
+  return path;
+}
+
 function ArtifactChip({ path, title }: { path: string; title: string }) {
   const { t } = useI18n();
-  const file = path.split("/").pop() || path;
+  const resolved = normalizeArtifactPath(path);
+  const file = resolved.split("/").pop() || resolved;
   return (
     <button
       className="art-chip"
       data-testid="artifact-chip"
-      title={path}
+      title={resolved}
       onClick={() =>
-        window.dispatchEvent(new CustomEvent(OPEN_ARTIFACT_EVENT, { detail: { path } }))
+        window.dispatchEvent(new CustomEvent(OPEN_ARTIFACT_EVENT, { detail: { path: resolved } }))
       }
     >
       <span className="art-chip-ico">

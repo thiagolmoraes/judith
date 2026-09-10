@@ -454,3 +454,48 @@ def test_complete_picks_up_reasoning_content():
     provider = OpenAIProvider(client=_FakeClient(SimpleNamespace(choices=[choice])))
     turn = provider.complete(model="deepseek-v4-pro", messages=[{"role": "user", "content": "x"}])
     assert turn.text == "Answer" and turn.reasoning == "deep thought"
+
+
+def test_default_max_tokens_injected_and_caller_setting_wins():
+    """Compat servers left to their OWN defaults cap completions absurdly low
+    (owner-hit 2026-08-15: Together defaulted Kimi K3 to ~2k tokens, so every report
+    write truncated mid-arguments). The request always names a ceiling now."""
+    from coworker.providers.openai_provider import DEFAULT_MAX_TOKENS
+
+    client = _FakeClient(_response(content="ok"))
+    provider = OpenAIProvider(client=client)
+    provider.complete(model="kimi-k3", messages=[])
+    assert client.chat.completions.calls[0]["max_tokens"] == DEFAULT_MAX_TOKENS
+
+    client2 = _FakeClient(_response(content="ok"))
+    provider2 = OpenAIProvider(client=client2)
+    provider2.complete(model="kimi-k3", messages=[], max_tokens=512)
+    assert client2.chat.completions.calls[0]["max_tokens"] == 512
+
+
+def test_over_limit_max_tokens_is_dropped_and_retried():
+    """A model whose completion limit sits below our default must not surface the 400:
+    drop the param, retry on the server's own default (yesterday's behavior, at worst)."""
+
+    class _LimitRejecting:
+        def __init__(self, response):
+            self._response = response
+            self.calls: list[dict] = []
+
+        def create(self, **kwargs):
+            self.calls.append(kwargs)
+            if "max_tokens" in kwargs:
+                raise RuntimeError(
+                    "Error code: 400 - max_tokens must be at most 8193 for this model"
+                )
+            return self._response
+
+    client = _FakeClient(_response(content="ok"))
+    client.chat.completions = _LimitRejecting(_response(content="ok"))
+    provider = OpenAIProvider(client=client)
+
+    turn = provider.complete(model="tiny-model", messages=[])
+    calls = client.chat.completions.calls
+    assert turn.text == "ok" and len(calls) == 2
+    assert "max_tokens" not in calls[1]
+    assert "max_completion_tokens" not in calls[1]  # dropped, not renamed

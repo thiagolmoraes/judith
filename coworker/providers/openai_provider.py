@@ -76,6 +76,12 @@ def _strip_foreign_sidecars(messages: list[dict[str, Any]]) -> list[dict[str, An
 
 _MAX_TOKENS_ERROR = "'max_tokens' is not supported"
 
+# Ceiling, not a spend target — same rationale as the Anthropic provider's default: a
+# coworker writing a report ships the whole file inside one tool call's arguments, and
+# compat servers left to their OWN defaults cap completions absurdly low (observed
+# 2026-08-15: Together defaulted Kimi K3 to ~2k tokens — every ~5KB write truncated).
+DEFAULT_MAX_TOKENS = 32000
+
 
 def _param_fix_retry(kwargs: dict[str, Any], exc: Exception) -> dict[str, Any]:
     """Kwargs for the one retry an unsupported-parameter error earns, or re-raise.
@@ -96,6 +102,14 @@ def _param_fix_retry(kwargs: dict[str, Any], exc: Exception) -> dict[str, Any]:
         # Older compat servers don't know the usage opt-in; drop it, lose only metering.
         fixed = dict(kwargs)
         fixed.pop("stream_options")
+        return fixed
+    if ("max_tokens" in msg or "max_new_tokens" in msg) and "max_tokens" in kwargs:
+        # Our 32k default exceeded this model's completion limit (each server words the
+        # 400 differently, so no number parsing) — drop the param and retry on the
+        # server's own default rather than surfacing the 400. Worst case is exactly
+        # yesterday's behavior; best case the server allows far more once asked.
+        fixed = dict(kwargs)
+        fixed.pop("max_tokens")
         return fixed
     raise exc
 
@@ -173,11 +187,13 @@ class OpenAIProvider(ProviderClient):
         }
         if tools:
             kwargs["tools"] = tools
+        kwargs.setdefault("max_tokens", DEFAULT_MAX_TOKENS)
         _pin_reasoning_effort(kwargs)
 
         client = self._ensure_client()
-        # Up to two param-fix retries: effort and max_tokens can BOTH need fixing.
-        for _ in range(2):
+        # Up to three param-fix retries: effort, the max_tokens rename, and the
+        # max_tokens over-limit drop can ALL need fixing on one call.
+        for _ in range(3):
             try:
                 response = client.chat.completions.create(**kwargs)
                 break
@@ -221,6 +237,7 @@ class OpenAIProvider(ProviderClient):
         }
         if tools:
             kwargs["tools"] = tools
+        kwargs.setdefault("max_tokens", DEFAULT_MAX_TOKENS)
         _pin_reasoning_effort(kwargs)
         client = self._ensure_client()
 
@@ -230,8 +247,9 @@ class OpenAIProvider(ProviderClient):
         finish_reason = None
         usage: Optional[TokenUsage] = None
 
-        # Up to two param-fix retries: effort and max_tokens can BOTH need fixing.
-        for _ in range(2):
+        # Up to three param-fix retries: effort, the max_tokens rename, and the
+        # max_tokens over-limit drop can ALL need fixing on one call.
+        for _ in range(3):
             try:
                 chunks = client.chat.completions.create(**kwargs)
                 break
@@ -337,6 +355,47 @@ _PARAM_BLOCK = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+# A `<function=NAME>` that never closes — the model ran out of tokens (or drifted) partway
+# through writing the call. Anchored to end-of-text so it only matches a genuinely unfinished
+# tail, never a well-formed block earlier in the message. Small local models hit this often on
+# a large tool schema, and the turn used to end silently on the leftover text.
+_FUNCTION_OPEN_TRUNCATED = re.compile(
+    r"<function\s*=\s*(?P<name>[^>\s]+)\s*>(?P<body>(?:(?!</function\s*>).)*)$",
+    re.IGNORECASE | re.DOTALL,
+)
+
+# Markers that mean "this text IS a tool call the endpoint failed to parse", used to tell a
+# real answer from a leaked one. Fenced code is stripped first: a model *explaining* tool-call
+# syntax in a ``` block is answering, not calling.
+_LEAKED_TOOL_SYNTAX = (
+    "<tool_call>",
+    "</tool_call>",
+    "<function=",
+    "</function>",
+    "<parameter=",
+    "</parameter>",
+    "<function_calls>",
+    "<invoke ",
+)
+# An open fence runs to the end of the text. A model that stops mid example is still
+# answering, and the marker after the fence must not read as a leaked call.
+_FENCED = re.compile(r"```.*?(?:```|\Z)|~~~.*?(?:~~~|\Z)|`[^`\n]*`", re.DOTALL)
+
+
+def looks_like_unparsed_tool_call(
+    text: Optional[str], tools: Optional[list[dict[str, Any]]] = None
+) -> bool:
+    """True when assistant text still carries tool-call markup that salvage couldn't turn into
+    a call — i.e. the model tried to call a tool and the syntax was mangled or cut off.
+
+    Only meaningful when tools were actually offered, and only over OpenAI-compatible endpoints
+    that parse tool calls out of the model's raw output (LM Studio, Ollama, vLLM). The caller
+    uses it to end the turn as a retriable error instead of presenting the fragment as an answer.
+    """
+    if not tools or not text:
+        return False
+    return any(m in _FENCED.sub("", text).lower() for m in _LEAKED_TOOL_SYNTAX)
+
 
 def _coerce_param(raw: str) -> Any:
     """Keep free-text verbatim (the common case: file content), but recover real JSON values when
@@ -427,11 +486,47 @@ def _extract_balanced(text: str, start: int) -> Optional[str]:
     return None
 
 
-def _iter_top_objects(text: str):
+def _fence_spans(text: str) -> list[tuple[int, int]]:
+    """Character ranges of code fences and inline code in `text`."""
+    return [(m.start(), m.end()) for m in _FENCED.finditer(text)]
+
+
+def _fence_around(pos: int, spans: list[tuple[int, int]]) -> Optional[tuple[int, int]]:
+    """The fence span containing `pos`, or None. Text inside one is a quote, not a call."""
+    return next(((a, b) for a, b in spans if a <= pos < b), None)
+
+
+def _unquoted_matches(pattern: "re.Pattern[str]", text: str, spans: list[tuple[int, int]]):
+    """Matches of `pattern` that start outside every fence.
+
+    A match that starts inside a fence is skipped, and the scan resumes where that
+    fence ends rather than where the match ends. A block regex can run from quoted
+    markup inside a fence to the closing tag of a real call after it; resuming at
+    the fence end keeps the real call visible.
+    """
+    pos = 0
+    while pos <= len(text):
+        m = pattern.search(text, pos)
+        if m is None:
+            return
+        fence = _fence_around(m.start(), spans)
+        if fence is not None:
+            pos = fence[1]
+            continue
+        yield m
+        pos = m.end() if m.end() > m.start() else m.start() + 1
+
+
+def _iter_top_objects(text: str, spans: Optional[list[tuple[int, int]]] = None):
     """Yield balanced `{…}` substrings at brace-depth 0 (array brackets ignored), so embedded
-    JSON objects are found even amid surrounding prose."""
+    JSON objects are found even amid surrounding prose. A brace inside a fence is quoted
+    text: the scan jumps to the end of that fence."""
     i = 0
     while i < len(text):
+        fence = _fence_around(i, spans or [])
+        if fence is not None:
+            i = fence[1]
+            continue
         if text[i] == "{":
             sub = _extract_balanced(text, i)
             if sub:
@@ -477,14 +572,20 @@ def _salvage_tool_calls_from_text(
     1. `<tool_call>…</tool_call>` blocks (anywhere, balanced); 2. embedded `{"name","arguments"}`
     objects (even mixed with prose); 3. `toolname {args}` / `toolname [args]` for known tools.
     Returns [] (treat as plain text) when nothing tool-shaped is found."""
+    # A call that STARTS inside a code fence is a quote, not a call. A model that
+    # pastes a web page or a syntax example into a block must not have it run, even
+    # through a tool that needs no approval. Only the start position is judged, on
+    # the original text: a real call whose arguments carry a fenced block (a file
+    # body with code in it) or inline backticks (a shell command) keeps them whole.
     text = (content or "").strip()
     if not text:
         return []
+    spans = _fence_spans(text)
     names, single = _tool_index(tools)
 
     # 1) <tool_call> … </tool_call> blocks.
     calls: list[ToolCall] = []
-    for m in _TOOLCALL_OPEN.finditer(text):
+    for m in _unquoted_matches(_TOOLCALL_OPEN, text, spans):
         j = m.end()
         if j < len(text) and text[j] in "{[":
             sub = _extract_balanced(text, j)
@@ -497,7 +598,7 @@ def _salvage_tool_calls_from_text(
         return _renumber(calls)
 
     # 1b) Qwen/Hermes XML calls: <function=NAME><parameter=KEY>VAL</parameter>…</function>.
-    for fm in _FUNCTION_BLOCK.finditer(text):
+    for fm in _unquoted_matches(_FUNCTION_BLOCK, text, spans):
         name = fm.group("name").strip()
         if names is not None and name not in names:
             continue
@@ -509,8 +610,24 @@ def _salvage_tool_calls_from_text(
     if calls:
         return _renumber(calls)
 
+    # 1c) A TRUNCATED XML call: `<function=NAME>` with no closing tag, because the model ran
+    # out of tokens mid-call. Take the name plus every parameter that DID close; a trailing
+    # unterminated `<parameter=…>` is dropped rather than guessed, so a half-written path or
+    # file body can never reach a tool. If that leaves a required argument missing the call
+    # fails validation and the model gets a corrective tool error — which is the agent loop
+    # working, and strictly better than the turn ending on the leftover fragment.
+    tm = next(_unquoted_matches(_FUNCTION_OPEN_TRUNCATED, text, spans), None)
+    if tm:
+        name = tm.group("name").strip()
+        if names is None or name in names:
+            args = {
+                pm.group("key").strip(): _coerce_param(pm.group("val"))
+                for pm in _PARAM_BLOCK.finditer(tm.group("body"))
+            }
+            return _renumber([ToolCall(id="", name=name, arguments=args)])
+
     # 2) Embedded {"name": …, "arguments": …} objects, even surrounded by prose.
-    for sub in _iter_top_objects(text):
+    for sub in _iter_top_objects(text, spans):
         d = _loads(sub)
         if isinstance(d, dict) and "name" in d:
             c = _call_from_dict(d, names)
@@ -522,7 +639,8 @@ def _salvage_tool_calls_from_text(
     # 3) `toolname {args}` / `toolname [args]` shorthand — only for tools we actually offered.
     if names:
         for name in names:
-            for m in re.finditer(re.escape(name) + r"\s*[:=]?\s*", text):
+            shorthand = re.compile(re.escape(name) + r"\s*[:=]?\s*")
+            for m in _unquoted_matches(shorthand, text, spans):
                 j = m.end()
                 if j >= len(text) or text[j] not in "{[":
                     continue

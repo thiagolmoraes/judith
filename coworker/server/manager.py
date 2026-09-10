@@ -3104,11 +3104,17 @@ class SessionManager:
                 # A background turn has no user watching to read an inline error: a dead model or
                 # tool failure would otherwise vanish. Log it and park it in the dead-letter store.
                 if event.type.value == "error":
-                    reason = (event.data or {}).get("error", "unknown error")
+                    data = event.data or {}
+                    reason = data.get("error", "unknown error")
                     logger.warning(
                         "background turn failed for %s: %s", session_id, reason
                     )
                     self.unrouted.record(session_id, "-", message, reason=reason)
+                    if data.get("error_type") == "UnparsedToolCall":
+                        # The assistant_message just before this carried the
+                        # half-written tool call as text. It is not a reply. The
+                        # rescue below must not send that fragment to the contact.
+                        last_text = ""
             if reply_target and not sent_any and not deferred and last_text:
                 await self._deliver_unsent_reply(session_id, reply_target, last_text)
             self.save(session_id, engine)
@@ -3508,12 +3514,22 @@ class SessionManager:
                 f"who asked for it is not looking at this app."
             )
         sent_from_run = False
+        unparsed_error: Optional[str] = None
         try:
             async for _event in engine.run(opening):
+                data = _event.data or {}
                 if _event.type.value == "assistant_message":
-                    if "send_message" in ((_event.data or {}).get("tool_calls") or []):
+                    if "send_message" in (data.get("tool_calls") or []):
                         sent_from_run = True
-            run.result_text = _last_assistant_text(engine.messages)
+                elif _event.type.value == "error":
+                    if data.get("error_type") == "UnparsedToolCall":
+                        unparsed_error = data.get("error") or "unparsed tool call"
+            # On UnparsedToolCall the last assistant message is the half-written
+            # call, not a result. Same rule as the inbound path: a fragment must not
+            # reach the reply rescue below nor the completion summary.
+            run.result_text = (
+                None if unparsed_error else _last_assistant_text(engine.messages)
+            )
             if run_reply_target and not sent_from_run and run.result_text:
                 # Same safety net the inbound path has: the model was told where to
                 # answer and sometimes answers on screen anyway. Silent either way.
@@ -3521,9 +3537,15 @@ class SessionManager:
                     run.session_id, run_reply_target, run.result_text
                 )
             run.artifacts = _recent_files(task.workspace, since=run.started_at)
-            run.status = "ok"
-            if task.notify_on_completion:
-                await self._notify_task_done(task, run)
+            if unparsed_error:
+                # The engine ended this turn on its error path. A run with no answer
+                # is not a success, and an empty completion notice tells the owner
+                # nothing. Record the failure so the run history shows it.
+                run.status, run.error = "error", unparsed_error
+            else:
+                run.status = "ok"
+                if task.notify_on_completion:
+                    await self._notify_task_done(task, run)
         except Exception as exc:
             run.status, run.error = "error", str(exc)
         finally:
