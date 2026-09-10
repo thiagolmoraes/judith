@@ -212,6 +212,52 @@ export async function deleteSession(sessionId: string): Promise<{ ok: boolean; e
   return res.json();
 }
 
+export interface ForceIdleResult {
+  ok: boolean;
+  // Whether there was a flag to clear.
+  was_running?: boolean;
+  // Messages still waiting in the session's queue when the server answered.
+  queued?: number;
+  // "turn_alive": the turn is real, not a stuck flag. Refused unless `force` is set.
+  // "http_error": the server answered with a status this client has no reading for,
+  // or never answered at all (sidecar down, connection refused).
+  reason?: "turn_alive" | "http_error";
+  // The HTTP status behind "http_error". Absent when no answer came back.
+  status?: number;
+}
+
+// Escape hatch for a session whose running flag got stuck (a background turn that never
+// reached its cleanup). The server clears the flag, sends turn_done to every socket
+// viewing the session, and opens a turn for any message queued meanwhile. A turn that
+// is really alive answers 409. That comes back as `reason: "turn_alive"`, never thrown,
+// so the caller reads one shape. A fetch that never gets an answer comes back as
+// `reason: "http_error"` for the same reason. `force` overrides that check.
+export async function forceIdleSession(
+  sessionId: string,
+  opts: { force?: boolean } = {},
+): Promise<ForceIdleResult> {
+  const init: RequestInit = { method: "POST" };
+  if (opts.force) {
+    init.headers = { "Content-Type": "application/json" };
+    init.body = JSON.stringify({ force: true });
+  }
+  let res: Response;
+  try {
+    res = await fetch(`${httpBase()}/v1/sessions/${encodeURIComponent(sessionId)}/force-idle`, init);
+  } catch {
+    // No answer at all. Same reading as a status the client cannot use, so the
+    // click still says something on screen instead of returning in silence.
+    return { ok: false, reason: "http_error" };
+  }
+  if (res.status === 409) {
+    const body = (await res.json()) as ForceIdleResult;
+    return { ...body, ok: false, reason: "turn_alive" };
+  }
+  // Any other failure has no body worth reading: a proxy page, a crashed route.
+  if (!res.ok) return { ok: false, reason: "http_error", status: res.status };
+  return (await res.json()) as ForceIdleResult;
+}
+
 export interface ArtifactInfo {
   path: string; // workspace-relative (the display/API identifier)
   abs_path?: string; // absolute — what "Copy path" copies

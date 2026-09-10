@@ -51,6 +51,7 @@ const baseProps = {
   onDeleteSession: vi.fn(),
   onArchiveSession: vi.fn(),
   onTogglePin: vi.fn(),
+  onReleaseSession: vi.fn(),
   onManage: vi.fn(),
   onOpenPersona: vi.fn(),
   onManagePersonas: vi.fn(),
@@ -162,6 +163,100 @@ describe("Chronological list row actions (⋮ menu)", () => {
     expect(screen.getByTestId("row-menu-rename")).toBeTruthy();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByTestId("row-menu-rename")).toBeNull();
+  });
+
+  it("the kebab stays in the tab order: faded until hover or focus, never display:none", async () => {
+    stubFetch([
+      { match: "/v1/personas", method: "GET", json: PERSONAS },
+      { match: "/v1/settings", method: "GET", json: { nav_layout: "flat" } },
+    ]);
+    render(<Sidebar {...baseProps} />);
+    await screen.findByText("incident watch");
+
+    // jsdom has no hover, so the check is on the classes: the old `hidden` is gone and
+    // the row reveals the kebab when focus lands inside it.
+    const holder = screen.getAllByTestId("row-menu")[0].parentElement!;
+    expect(holder.classList.contains("hidden")).toBe(false);
+    expect(holder.className).toContain("group-focus-within:opacity-100");
+    expect(holder.className).toContain("group-focus-within:pointer-events-auto");
+    expect(holder.className).toContain("group-hover:opacity-100");
+  });
+});
+
+describe("Release session (stuck running flag)", () => {
+  const routes = [
+    { match: "/v1/personas", method: "GET", json: PERSONAS },
+    { match: "/v1/settings", method: "GET", json: { nav_layout: "flat" } },
+  ];
+  // Index 0 of the flat Recent list is s-ops-1 (see the describe above).
+  const opsWith = (liveness: SessionInfo["liveness"]) =>
+    SESSIONS.map((s) => (s.session_id === "s-ops-1" ? { ...s, liveness } : s));
+  const openOpsMenu = () => fireEvent.click(screen.getAllByTestId("row-menu")[0]);
+
+  it("a working row offers Release in two steps: arm, then hand the id to the owner", async () => {
+    stubFetch(routes);
+    render(<Sidebar {...baseProps} sessions={opsWith("working")} />);
+    await screen.findByText("incident watch");
+
+    openOpsMenu();
+    const release = screen.getByTestId("row-menu-release");
+    expect(release.textContent).toContain("Release session");
+    // First click only arms: nothing is sent, the label turns into the question.
+    fireEvent.click(release);
+    expect(baseProps.onReleaseSession).not.toHaveBeenCalled();
+    expect(screen.getByTestId("row-menu-release").textContent).toContain("Release?");
+    // Second click fires.
+    fireEvent.click(screen.getByTestId("row-menu-release"));
+    expect(baseProps.onReleaseSession).toHaveBeenCalledWith("s-ops-1");
+    // Menu closes after the click, and the row itself was not selected.
+    expect(screen.queryByTestId("row-menu-release")).toBeNull();
+    expect(baseProps.onSelectSession).not.toHaveBeenCalled();
+  });
+
+  it("leaving the menu disarms Release", async () => {
+    stubFetch(routes);
+    render(<Sidebar {...baseProps} sessions={opsWith("working")} />);
+    await screen.findByText("incident watch");
+
+    openOpsMenu();
+    fireEvent.click(screen.getByTestId("row-menu-release"));
+    expect(screen.getByTestId("row-menu-release").textContent).toContain("Release?");
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByTestId("row-menu-release")).toBeNull();
+
+    // Reopened, the item is back to its first step and nothing was sent.
+    openOpsMenu();
+    expect(screen.getByTestId("row-menu-release").textContent).toContain("Release session");
+    expect(baseProps.onReleaseSession).not.toHaveBeenCalled();
+  });
+
+  it("an idle row hides Release", async () => {
+    stubFetch(routes);
+    render(<Sidebar {...baseProps} sessions={opsWith("idle")} />);
+    await screen.findByText("incident watch");
+
+    openOpsMenu();
+    expect(screen.getByTestId("row-menu-archive")).toBeTruthy(); // menu did open
+    expect(screen.queryByTestId("row-menu-release")).toBeNull();
+    expect(baseProps.onReleaseSession).not.toHaveBeenCalled();
+  });
+
+  it("a sleeping row hides Release too: a pending self-wake is not a stuck flag", async () => {
+    stubFetch(routes);
+    render(<Sidebar {...baseProps} sessions={opsWith("sleeping")} />);
+    await screen.findByText("incident watch");
+
+    openOpsMenu();
+    expect(screen.queryByTestId("row-menu-release")).toBeNull();
+  });
+
+  it("a row with no liveness at all hides Release", async () => {
+    stubFetch(routes);
+    render(<Sidebar {...baseProps} />);
+    await screen.findByText("incident watch");
+
+    openOpsMenu();
+    expect(screen.queryByTestId("row-menu-release")).toBeNull();
   });
 });
 

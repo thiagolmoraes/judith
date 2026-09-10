@@ -184,6 +184,12 @@ class SessionManager:
         self._running_sessions: set[str] = (
             set()
         )  # sessions with an in-flight turn (busy)
+        # The task driving each running turn. The flag alone cannot tell a live turn
+        # from one that died before its cleanup. The task can: done means dead.
+        self._turn_tasks: dict[str, asyncio.Task] = {}
+        # Background turns started by force_idle to drain a stuck session's queue.
+        # Retained: the loop holds only a weak ref, and a GC'd task dies mid-turn.
+        self._drain_tasks: set[asyncio.Task] = set()
         # Sessions with an auto-title LLM call in flight (FB-010) — one call at a time.
         self._autotitle_inflight: set[str] = set()
         self._autotitle_tasks: set[asyncio.Task] = set()
@@ -3018,8 +3024,36 @@ class SessionManager:
         self._running_sessions.add(session_id)
         return True
 
+    def bind_turn_task(
+        self, session_id: str, task: Optional[asyncio.Task[Any]]
+    ) -> None:
+        """Remember the task that drives this session's turn.
+
+        Called right after the turn claims the running flag. A newer turn overwrites
+        an older binding on purpose: the flag was free, so the older turn is over.
+        """
+        if task is None:
+            return
+        self._turn_tasks[session_id] = task
+
+    def turn_alive(self, session_id: str) -> bool:
+        """True while the bound turn task is still pending."""
+        task = self._turn_tasks.get(session_id)
+        return task is not None and not task.done()
+
+    def _forget_turn_task(self, session_id: str) -> None:
+        # Only the bound turn itself, or a finished one, may drop the binding. The WS
+        # disconnect backstop calls mark_idle from a late done-callback, possibly after
+        # a newer turn took the session. It must not make that newer turn look dead.
+        task = self._turn_tasks.get(session_id)
+        if task is None:
+            return
+        if task.done() or task is _current_task():
+            self._turn_tasks.pop(session_id, None)
+
     def mark_idle(self, session_id: str) -> None:
         self._running_sessions.discard(session_id)
+        self._forget_turn_task(session_id)
         # Every turn path (WS, background delivery, durable resume) marks idle when it
         # finishes — the one shared post-turn moment, so auto-titling hooks in here and
         # can never add latency to the response itself.
@@ -3031,20 +3065,123 @@ class SessionManager:
     async def _resume_wake(self, wake) -> None:
         await self.deliver_to_session(wake.session_id, self._wake_message(wake))
 
-    def force_idle(self, session_id: str) -> dict[str, Any]:
+    async def force_idle(
+        self, session_id: str, *, force: bool = False
+    ) -> dict[str, Any]:
         """Clear a session's running flag by hand.
 
         The flag is in-memory and per-process: nothing outside this manager can observe
         or clear it, so a turn that dies without running its cleanup leaves the session
         permanently "busy". Every later message is queued into a turn that will never
-        execute — silently, since the queue is invisible. This is the escape hatch.
+        execute. Silently, since the queue is invisible. This is the escape hatch.
+
+        A live turn is refused unless `force` is set. The engine has no lock. Clearing
+        the flag under a live turn lets the next message start a second run on top of
+        it, and the turn_done below would make the GUI drop Stop while it still runs.
+
+        Sockets viewing the session get a `turn_done`. Without it the GUI keeps the
+        Stop button and the waiting row until it reconnects. Sent even when the flag
+        was already clear: a stale GUI state is harmless to reset, and the return
+        value still says what was found.
+
+        Messages that arrived while the flag was stuck sit in the engine's steering
+        queue, and that queue only empties on the next run. Clearing the flag alone
+        delivers nothing. So a real release starts that run: the oldest message opens
+        it, the rest ride in as steering at its first step. `queued` is what the
+        release left in the queue for that run to pick up.
+
+        The drain runs before the turn_done broadcast, not after. The broadcast
+        awaits, and an inbound that lands in that await used to claim the freed flag
+        first. The drain then found the session busy and queued the oldest message
+        behind the newer ones.
         """
+        alive = self.turn_alive(session_id)
+        if alive and not force:
+            # The flag is read, not assumed. A forced release clears it and leaves
+            # the live turn's binding, so the next plain call still refuses, with
+            # nothing set.
+            return {
+                "ok": False,
+                "reason": "turn_alive",
+                "was_running": session_id in self._running_sessions,
+                "queued": self._steering_backlog(session_id),
+            }
         was = session_id in self._running_sessions
         self.mark_idle(session_id)
-        return {"ok": True, "was_running": was}
+        # A forced release under a live turn drains nothing. That turn still injects
+        # its own queue at its next step. A second run here would steal from it.
+        if not alive:
+            self._drain_steering(session_id)
+        queued = self._steering_backlog(session_id)
+        await self.broadcast_session(session_id, {"type": "turn_done", "data": {}})
+        return {"ok": True, "was_running": was, "queued": queued}
+
+    def _steering_backlog(self, session_id: str) -> int:
+        engine = self._engines.get(session_id)
+        return engine.steering_backlog() if engine is not None else 0
+
+    def _drain_steering(self, session_id: str) -> None:
+        """Open a background turn with the oldest queued message.
+
+        Only the first entry is taken. deliver_to_session runs the engine, and the
+        engine injects the rest of its queue on its own at the first step without a
+        tool call. Popping them all here would only reorder them.
+
+        Claims the running flag here, with no await in between, and hands it to the
+        turn. Anything that runs before that turn starts must find the session busy
+        and queue behind the backlog, not in front of it.
+        """
+        engine = self._engines.get(session_id)
+        if engine is None:
+            return
+        entry = engine.pop_steering()
+        if entry is None:
+            return
+        text, source = entry
+        if not self.try_mark_running(session_id):
+            # Not expected: the flag was cleared a moment ago and nothing awaited
+            # since. Back to the head of the queue, so the order holds.
+            logger.warning("release could not claim %s for its backlog", session_id)
+            engine.push_steering_front(text, source)
+            return
+        task = asyncio.get_running_loop().create_task(
+            self.deliver_to_session(session_id, text, source=source, claimed=True)
+        )
+        # Bound now, not when the task starts: a release is refused while a bound
+        # task is pending, and this one is the turn from the moment it is scheduled.
+        self.bind_turn_task(session_id, task)
+        self._drain_tasks.add(task)
+        task.add_done_callback(lambda done: self._drain_finished(session_id, text, done))
+
+    def _drain_finished(
+        self, session_id: str, text: str, task: asyncio.Task[None]
+    ) -> None:
+        """Done callback of a drain turn.
+
+        deliver_to_session catches what its run raises. Anything that gets past it
+        would end in a task nobody awaits, and the message with it. Log it, park
+        the message, and give the flag back when the turn died before its own
+        cleanup could.
+        """
+        self._drain_tasks.discard(task)
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is None:
+            return
+        logger.warning("drain turn crashed for %s: %s", session_id, exc)
+        self.unrouted.record(session_id, "-", text, reason=str(exc))
+        if self._turn_tasks.get(session_id) is task:
+            # The binding is still this task, so the flag is still its claim.
+            self.mark_idle(session_id)
 
     async def deliver_to_session(
-        self, session_id: str, message: str, *, source: Optional[dict[str, Any]] = None
+        self,
+        session_id: str,
+        message: str,
+        *,
+        source: Optional[dict[str, Any]] = None,
+        claimed: bool = False,
     ) -> None:
         """Deliver an out-of-band message to a (durable) session — the agent stays resumable
         forever, so this works with no live socket. Busy (mid tool-loop): steer it into the live
@@ -3052,18 +3189,24 @@ class SessionManager:
         (results persist; if the session is Unattended, any approvals route to the Inbox). Shared
         by self-wake and channel-subscription delivery. `source` is the display-only MessageSource
         sidecar for connector messages (framed `message` stays the model-facing text).
+
+        `claimed`: the caller already holds the running flag for this turn. The release
+        drain claims it before it can yield the loop. The turn still binds itself and
+        still gives the flag back when it ends.
         """
         engine = self.get_engine(session_id)
         if engine is None:
             # No engine and none can be built (a code surface whose folder is gone).
             # Park it: an inbound WhatsApp/Slack message that vanishes here is
             # indistinguishable, to the sender, from one nobody read.
+            if claimed:
+                self.mark_idle(session_id)
             logger.warning("no engine for %s — parking inbound", session_id)
             self.unrouted.record(
                 session_id, "-", message, reason="session could not be resumed"
             )
             return
-        if not self.try_mark_running(session_id):
+        if not claimed and not self.try_mark_running(session_id):
             # Mid-turn: steer it into the live run at the next step. Recorded because a
             # session whose running flag is STUCK looks identical to a busy one from
             # here — every later message queues into a turn that will never execute, and
@@ -3071,16 +3214,19 @@ class SessionManager:
             logger.info("session %s busy — queued steering message", session_id)
             engine.queue_steering(message, source)
             return
-        # When the message came from a platform, the ONLY way back is send_message.
-        # Track what the turn actually did so an answer that never left can be rescued
-        # below — see _deliver_unsent_reply. Rebuilt from the sidecar rather than stored
-        # separately: connector + channel_id is exactly what format_target consumes, and
-        # a second copy of the same fact could drift from it.
-        reply_target = self._reply_target_for(session_id, source)
         sent_any = False
         deferred = False
         last_text = ""
+        # Nothing that can raise sits between the claim and this try. Its finally is
+        # what gives the flag back, and a raise before it left the session stuck.
         try:
+            self.bind_turn_task(session_id, asyncio.current_task())
+            # When the message came from a platform, the ONLY way back is send_message.
+            # Track what the turn actually did so an answer that never left can be rescued
+            # below — see _deliver_unsent_reply. Rebuilt from the sidecar rather than stored
+            # separately: connector + channel_id is exactly what format_target consumes, and
+            # a second copy of the same fact could drift from it.
+            reply_target = self._reply_target_for(session_id, source)
             async for event in engine.run(message, source=source):
                 # Stream every event to any socket viewing this session, so a background turn
                 # (channel delivery, self-wake, durable resume) is seen live — not just on reselect.
@@ -4206,6 +4352,14 @@ def _parse_inbox_json(s: str) -> dict[str, Any]:
         return v if isinstance(v, dict) else {}
     except Exception:
         return {}
+
+
+def _current_task() -> Optional[asyncio.Task[Any]]:
+    """The task running now. None outside a loop, and None inside a loop callback."""
+    try:
+        return asyncio.current_task()
+    except RuntimeError:
+        return None
 
 
 def _epoch() -> float:

@@ -16,6 +16,7 @@ import {
   PERSONAS_CHANGED,
   resolveInboxItem,
   deleteSession,
+  forceIdleSession,
   renameSession,
   runAutomation,
   setSessionFlags,
@@ -40,6 +41,7 @@ import type {
 import { isProjectScoped } from "./personaScope";
 import { baseName } from "./paths";
 import { itemsFromMessages } from "./itemsFromMessages";
+import { releaseFeedback } from "./releaseFeedback";
 import { addTurnUsage, emptyUsage, usageFromMessages } from "./usage";
 import { streamMode } from "./streamGate";
 import { InboxItemCard } from "./components/InboxItemCard";
@@ -202,6 +204,12 @@ export function App() {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [projects, setProjects] = useState<RecentWorkspace[]>([]);
   const [sessionId, setSessionId] = useState<string>(newId());
+  // For handlers that read the open session after an await. The closure keeps the
+  // session that was open at click time; the ref holds the one open now.
+  const sessionIdRef = useRef(sessionId);
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
   // Automation-run context (§ owner ask 2026-07-04): which task an open __run__ session belongs
   // to, driving the banner + "Back to runs". Best-effort — a run session without context still
   // shows a generic banner (detected by its __run__ id).
@@ -947,18 +955,21 @@ export function App() {
     if (!gatesWorkspace(target)) setWorkspace(null);
     setSessionId(newId());
   };
-  // Inbox → session: the item carries its session's workspace/agent, so open it directly.
-  // UX-026: 5s top-right toast when a SCHEDULED automation run starts (never for
-  // manual Run-now — the user is already watching). Rides the app-wide /ws/events
-  // stream; View run opens the run's live session.
-  const [runToast, setRunToast] = useState<{
-    title: string; sessionId: string; workspace: string; agent: string; time: string;
-  } | null>(null);
+  // One top-right toast slot, 5s then gone. Two things use it. UX-026: a SCHEDULED
+  // automation run starting (never manual Run-now, the user is already watching);
+  // it rides the app-wide /ws/events stream and View run opens the run's live
+  // session. And the answer to a Release click on a row that is not the open
+  // session, where a transcript notice would talk about the wrong session.
+  type Toast =
+    | { kind: "run"; title: string; sessionId: string; workspace: string; agent: string; time: string }
+    | { kind: "notice"; tone: "info" | "warn"; text: string };
+  const [toast, setToast] = useState<Toast | null>(null);
   useEffect(() => {
     const stop = connectEvents((msg) => {
       if (msg.type !== "automation_run_started") return;
       const d = (msg.data ?? {}) as Record<string, string>;
-      setRunToast({
+      setToast({
+        kind: "run",
         title: d.task_title || t("app.automationFallback"),
         sessionId: d.session_id || "",
         workspace: d.workspace || "",
@@ -970,10 +981,10 @@ export function App() {
     return stop;
   }, []);
   useEffect(() => {
-    if (!runToast) return;
-    const t = window.setTimeout(() => setRunToast(null), 5000);
+    if (!toast) return;
+    const t = window.setTimeout(() => setToast(null), 5000);
     return () => window.clearTimeout(t);
-  }, [runToast]);
+  }, [toast]);
 
   const openSessionFromInbox = (sid: string, ws: string, ag: string) => selectSession(sid, ws, ag);
   const selectSession = async (id: string, ws: string, ag: string) => {
@@ -1110,6 +1121,34 @@ export function App() {
       setSessionId(newId());
     }
   };
+  const releaseSession = async (id: string) => {
+    // No local `setRunning(false)`: the server broadcasts turn_done to the open socket,
+    // and that handler is the one place `running` is cleared.
+    // Never `force: true` from here, on purpose. Stop is how a live turn ends: it
+    // interrupts the stream, the tool, the approval and the checkpoint. The
+    // override stays a curl thing.
+    // forceIdleSession never throws. A refusal, a bad status and a fetch with no
+    // answer all come back as one shape, and the feedback below has words for each.
+    const result = await forceIdleSession(id);
+    // A refusal or a no-op changes nothing on screen, so say so. In the transcript when
+    // the released row is the open session, as a toast when it is another row. The
+    // ref, not the closure: the user may have opened another session while the
+    // request was in the air, and the verdict must land on what is on screen now.
+    const feedback = releaseFeedback(result, {
+      id,
+      title: sessions.find((s) => s.session_id === id)?.title,
+      openId: sessionIdRef.current,
+    });
+    if (feedback) {
+      const text = t(feedback.key, feedback.vars);
+      if (feedback.surface === "transcript") {
+        setItems((p) => [...p, { kind: "notice", tone: feedback.tone, text }]);
+      } else {
+        setToast({ kind: "notice", tone: feedback.tone, text });
+      }
+    }
+    refreshSessions();
+  };
   const deleteConversation = async (id: string) => {
     const res = await deleteSession(id);
     if (!res.ok) return;
@@ -1229,36 +1268,57 @@ export function App() {
       )}
       {/* Desktop-only auto-update prompt (15s after boot, then every 30 min; inert in browser). */}
       <UpdateBanner />
-      {/* UX-026: automation-start toast — quiet panel, neutral dot/drain, accent only
-          on the action (rev 2); auto-dismisses with the 5s drain bar. */}
-      {runToast && (
+      {/* The toast slot. Quiet panel, neutral dot/drain, accent only on the action
+          (UX-026 rev 2); auto-dismisses with the 5s drain bar. A run toast has the
+          View run action. A notice toast is one sentence and the dismiss. */}
+      {toast && (
         <div
           className="fixed top-3 right-3 z-[45] w-[290px] bg-panel border border-line rounded-xl shadow-lg px-3.5 pt-3 pb-2.5"
-          data-testid="automation-toast"
+          data-testid={toast.kind === "run" ? "automation-toast" : "notice-toast"}
+          // A notice is one sentence and no action, so a screen reader hears it as
+          // it appears. The run toast keeps its own reading: it carries a button.
+          role={toast.kind === "run" ? undefined : "status"}
+          aria-live={toast.kind === "run" ? undefined : "polite"}
         >
-          <div className="flex items-center gap-2 text-[12.5px] font-semibold">
-            <span className="w-[7px] h-[7px] rounded-full bg-faint toast-pulse" />
-            {t("app.automationStarted")}
-          </div>
-          <div className="text-[12.5px] text-muted mt-0.5 ml-[15px] truncate">
-            {t("app.toastSubtitle", { title: runToast.title, time: runToast.time })}
-          </div>
+          {toast.kind === "run" ? (
+            <>
+              <div className="flex items-center gap-2 text-[12.5px] font-semibold">
+                <span className="w-[7px] h-[7px] rounded-full bg-faint toast-pulse" />
+                {t("app.automationStarted")}
+              </div>
+              <div className="text-[12.5px] text-muted mt-0.5 ml-[15px] truncate">
+                {t("app.toastSubtitle", { title: toast.title, time: toast.time })}
+              </div>
+            </>
+          ) : (
+            <div className="flex items-start gap-2 text-[12.5px]">
+              <span
+                className={
+                  "w-[7px] h-[7px] mt-[6px] rounded-full shrink-0 " +
+                  (toast.tone === "warn" ? "bg-warnInk" : "bg-faint")
+                }
+              />
+              <span>{toast.text}</span>
+            </div>
+          )}
           <div className="flex items-center justify-between ml-[15px] mt-1.5">
+            {toast.kind === "run" && (
+              <button
+                className="text-[12.5px] text-accent font-medium"
+                data-testid="toast-view-run"
+                onClick={() => {
+                  selectSession(toast.sessionId, toast.workspace, toast.agent);
+                  setToast(null);
+                }}
+              >
+                {t("app.viewRun")}
+              </button>
+            )}
             <button
-              className="text-[12.5px] text-accent font-medium"
-              data-testid="toast-view-run"
-              onClick={() => {
-                selectSession(runToast.sessionId, runToast.workspace, runToast.agent);
-                setRunToast(null);
-              }}
-            >
-              {t("app.viewRun")}
-            </button>
-            <button
-              className="text-[12px] text-faint px-0.5"
+              className="text-[12px] text-faint px-0.5 ml-auto"
               data-testid="toast-dismiss"
               title={t("common.dismiss")}
-              onClick={() => setRunToast(null)}
+              onClick={() => setToast(null)}
             >
               ✕
             </button>
@@ -1326,6 +1386,7 @@ export function App() {
         onDeleteSession={deleteConversation}
         onArchiveSession={toggleArchived}
         onTogglePin={togglePinned}
+        onReleaseSession={releaseSession}
         onManage={() => openSettings("appearance")}
         onOpenPersona={(id) => {
           openPersona(id, "session");
