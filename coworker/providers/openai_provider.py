@@ -486,11 +486,47 @@ def _extract_balanced(text: str, start: int) -> Optional[str]:
     return None
 
 
-def _iter_top_objects(text: str):
+def _fence_spans(text: str) -> list[tuple[int, int]]:
+    """Character ranges of code fences and inline code in `text`."""
+    return [(m.start(), m.end()) for m in _FENCED.finditer(text)]
+
+
+def _fence_around(pos: int, spans: list[tuple[int, int]]) -> Optional[tuple[int, int]]:
+    """The fence span containing `pos`, or None. Text inside one is a quote, not a call."""
+    return next(((a, b) for a, b in spans if a <= pos < b), None)
+
+
+def _unquoted_matches(pattern: "re.Pattern[str]", text: str, spans: list[tuple[int, int]]):
+    """Matches of `pattern` that start outside every fence.
+
+    A match that starts inside a fence is skipped, and the scan resumes where that
+    fence ends rather than where the match ends. A block regex can run from quoted
+    markup inside a fence to the closing tag of a real call after it; resuming at
+    the fence end keeps the real call visible.
+    """
+    pos = 0
+    while pos <= len(text):
+        m = pattern.search(text, pos)
+        if m is None:
+            return
+        fence = _fence_around(m.start(), spans)
+        if fence is not None:
+            pos = fence[1]
+            continue
+        yield m
+        pos = m.end() if m.end() > m.start() else m.start() + 1
+
+
+def _iter_top_objects(text: str, spans: Optional[list[tuple[int, int]]] = None):
     """Yield balanced `{…}` substrings at brace-depth 0 (array brackets ignored), so embedded
-    JSON objects are found even amid surrounding prose."""
+    JSON objects are found even amid surrounding prose. A brace inside a fence is quoted
+    text: the scan jumps to the end of that fence."""
     i = 0
     while i < len(text):
+        fence = _fence_around(i, spans or [])
+        if fence is not None:
+            i = fence[1]
+            continue
         if text[i] == "{":
             sub = _extract_balanced(text, i)
             if sub:
@@ -536,18 +572,20 @@ def _salvage_tool_calls_from_text(
     1. `<tool_call>…</tool_call>` blocks (anywhere, balanced); 2. embedded `{"name","arguments"}`
     objects (even mixed with prose); 3. `toolname {args}` / `toolname [args]` for known tools.
     Returns [] (treat as plain text) when nothing tool-shaped is found."""
-    # Text inside a code fence is a quote, not a call. A model that pastes a web
-    # page or a syntax example into a block must not have it run, even through a
-    # tool that needs no approval. Same strip as looks_like_unparsed_tool_call, so
-    # both agree on what counts as a call.
-    text = _FENCED.sub("", content or "").strip()
+    # A call that STARTS inside a code fence is a quote, not a call. A model that
+    # pastes a web page or a syntax example into a block must not have it run, even
+    # through a tool that needs no approval. Only the start position is judged, on
+    # the original text: a real call whose arguments carry a fenced block (a file
+    # body with code in it) or inline backticks (a shell command) keeps them whole.
+    text = (content or "").strip()
     if not text:
         return []
+    spans = _fence_spans(text)
     names, single = _tool_index(tools)
 
     # 1) <tool_call> … </tool_call> blocks.
     calls: list[ToolCall] = []
-    for m in _TOOLCALL_OPEN.finditer(text):
+    for m in _unquoted_matches(_TOOLCALL_OPEN, text, spans):
         j = m.end()
         if j < len(text) and text[j] in "{[":
             sub = _extract_balanced(text, j)
@@ -560,7 +598,7 @@ def _salvage_tool_calls_from_text(
         return _renumber(calls)
 
     # 1b) Qwen/Hermes XML calls: <function=NAME><parameter=KEY>VAL</parameter>…</function>.
-    for fm in _FUNCTION_BLOCK.finditer(text):
+    for fm in _unquoted_matches(_FUNCTION_BLOCK, text, spans):
         name = fm.group("name").strip()
         if names is not None and name not in names:
             continue
@@ -578,7 +616,7 @@ def _salvage_tool_calls_from_text(
     # file body can never reach a tool. If that leaves a required argument missing the call
     # fails validation and the model gets a corrective tool error — which is the agent loop
     # working, and strictly better than the turn ending on the leftover fragment.
-    tm = _FUNCTION_OPEN_TRUNCATED.search(text)
+    tm = next(_unquoted_matches(_FUNCTION_OPEN_TRUNCATED, text, spans), None)
     if tm:
         name = tm.group("name").strip()
         if names is None or name in names:
@@ -589,7 +627,7 @@ def _salvage_tool_calls_from_text(
             return _renumber([ToolCall(id="", name=name, arguments=args)])
 
     # 2) Embedded {"name": …, "arguments": …} objects, even surrounded by prose.
-    for sub in _iter_top_objects(text):
+    for sub in _iter_top_objects(text, spans):
         d = _loads(sub)
         if isinstance(d, dict) and "name" in d:
             c = _call_from_dict(d, names)
@@ -601,7 +639,8 @@ def _salvage_tool_calls_from_text(
     # 3) `toolname {args}` / `toolname [args]` shorthand — only for tools we actually offered.
     if names:
         for name in names:
-            for m in re.finditer(re.escape(name) + r"\s*[:=]?\s*", text):
+            shorthand = re.compile(re.escape(name) + r"\s*[:=]?\s*")
+            for m in _unquoted_matches(shorthand, text, spans):
                 j = m.end()
                 if j >= len(text) or text[j] not in "{[":
                     continue

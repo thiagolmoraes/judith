@@ -319,12 +319,34 @@ def test_salvage_ignores_a_call_inside_an_open_fence():
 
 
 def test_salvage_keeps_a_call_outside_a_fence():
-    """The strip only removes the fenced part. A real call after a quoted example is
-    still recovered, with the arguments intact."""
+    """Only calls that start inside a fence are skipped. A real call after a quoted
+    example is still recovered, with the arguments intact."""
     text = f"Here is the shape:\n```\n<function=grep>\n```\nNow for real:\n{_QUOTED_CALL}"
     calls = _salvage_tool_calls_from_text(text, _TODO_TOOLS + _GREP_TOOL)
     assert [c.name for c in calls] == ["list_files"]
     assert calls[0].arguments == {"recursive": True}
+
+
+def test_salvage_keeps_fenced_code_inside_call_arguments():
+    """The fence check judges where the call starts, on the original text. A file body
+    that carries a code block stays whole. Stripping fences from the whole text would
+    write a truncated file without a word of warning."""
+    body = "# Notes\n```py\nx = 1\n```\nbye"
+    text = (
+        "<function=write_file><parameter=path>a.md</parameter>"
+        f"<parameter=content>{body}</parameter></function>"
+    )
+    calls = _salvage_tool_calls_from_text(text, None)
+    assert [c.name for c in calls] == ["write_file"]
+    assert calls[0].arguments["content"] == body
+
+
+def test_salvage_keeps_inline_backticks_inside_call_arguments():
+    """Inline code spans count as quotes for the check, but never get cut out of a
+    real call's arguments: a shell command with backticks must reach the tool as is."""
+    text = "<function=run_shell><parameter=command>echo `date`</parameter></function>"
+    calls = _salvage_tool_calls_from_text(text, None)
+    assert calls[0].arguments == {"command": "echo `date`"}
 
 
 def test_looks_like_unparsed_tool_call_ignores_code_and_needs_tools():
