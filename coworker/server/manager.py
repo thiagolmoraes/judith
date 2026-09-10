@@ -3031,16 +3031,22 @@ class SessionManager:
     async def _resume_wake(self, wake) -> None:
         await self.deliver_to_session(wake.session_id, self._wake_message(wake))
 
-    def force_idle(self, session_id: str) -> dict[str, Any]:
+    async def force_idle(self, session_id: str) -> dict[str, Any]:
         """Clear a session's running flag by hand.
 
         The flag is in-memory and per-process: nothing outside this manager can observe
         or clear it, so a turn that dies without running its cleanup leaves the session
         permanently "busy". Every later message is queued into a turn that will never
         execute — silently, since the queue is invisible. This is the escape hatch.
+
+        Sockets viewing the session get a `turn_done`. Without it the GUI keeps the
+        Stop button and the waiting row until it reconnects. Sent even when the flag
+        was already clear: a stale GUI state is harmless to reset, and the return
+        value still says what was found.
         """
         was = session_id in self._running_sessions
         self.mark_idle(session_id)
+        await self.broadcast_session(session_id, {"type": "turn_done", "data": {}})
         return {"ok": True, "was_running": was}
 
     async def deliver_to_session(

@@ -212,6 +212,16 @@ export async function deleteSession(sessionId: string): Promise<{ ok: boolean; e
   return res.json();
 }
 
+// Escape hatch for a session whose running flag got stuck (a background turn that never
+// reached its cleanup). The server clears the flag and sends turn_done to every socket
+// viewing the session. `was_running` says whether there was anything to clear.
+export async function forceIdleSession(sessionId: string): Promise<{ ok: boolean; was_running?: boolean }> {
+  const res = await fetch(`${httpBase()}/v1/sessions/${encodeURIComponent(sessionId)}/force-idle`, {
+    method: "POST",
+  });
+  return res.json();
+}
+
 export interface ArtifactInfo {
   path: string; // workspace-relative (the display/API identifier)
   abs_path?: string; // absolute — what "Copy path" copies

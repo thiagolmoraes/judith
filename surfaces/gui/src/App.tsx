@@ -16,6 +16,7 @@ import {
   PERSONAS_CHANGED,
   resolveInboxItem,
   deleteSession,
+  forceIdleSession,
   renameSession,
   runAutomation,
   setSessionFlags,
@@ -1110,6 +1111,12 @@ export function App() {
       setSessionId(newId());
     }
   };
+  const releaseSession = async (id: string) => {
+    // No local `setRunning(false)`: the server broadcasts turn_done to the open socket,
+    // and that handler is the one place `running` is cleared.
+    await forceIdleSession(id);
+    refreshSessions();
+  };
   const deleteConversation = async (id: string) => {
     const res = await deleteSession(id);
     if (!res.ok) return;
@@ -1326,6 +1333,7 @@ export function App() {
         onDeleteSession={deleteConversation}
         onArchiveSession={toggleArchived}
         onTogglePin={togglePinned}
+        onReleaseSession={releaseSession}
         onManage={() => openSettings("appearance")}
         onOpenPersona={(id) => {
           openPersona(id, "session");

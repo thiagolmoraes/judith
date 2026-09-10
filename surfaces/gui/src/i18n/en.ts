@@ -433,6 +433,7 @@ export const en: Catalog = {
   "sidebar.noProjects": "No projects yet — start one with the + above.",
   "sidebar.delete": "Delete",
   "sidebar.deleteConfirm": "Delete?",
+  "sidebar.release": "Release session",
   "composer.removeAttachment": "Remove {name}",
   "personas.intro": "Enable a coworker, then choose whether it appears in the new-session picker. The starred persona is the default for new sessions.",
   "personas.defaultTitle": "Default for new sessions",

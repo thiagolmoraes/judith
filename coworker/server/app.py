@@ -443,11 +443,12 @@ def create_app(manager: SessionManager) -> FastAPI:
         return {"unattended": manager.unattended.is_unattended(session_id)}
 
     @app.post("/v1/sessions/{session_id}/force-idle")
-    def session_force_idle(session_id: str) -> dict[str, Any]:
+    async def session_force_idle(session_id: str) -> dict[str, Any]:
         """Clear a stuck running flag. Safe: a genuinely running turn keeps going (the
         flag only gates NEW turns), so the worst case for a mistaken call is two turns
-        racing, which the engine already tolerates."""
-        return manager.force_idle(session_id)
+        racing, which the engine already tolerates. Async on purpose: the turn_done
+        broadcast writes to sockets owned by this loop."""
+        return await manager.force_idle(session_id)
 
     @app.post("/v1/sessions/{session_id}/unattended")
     def set_unattended(session_id: str, body: dict) -> dict[str, Any]:

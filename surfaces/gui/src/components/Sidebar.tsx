@@ -138,6 +138,8 @@ interface Props {
   onDeleteSession: (id: string) => void;
   onArchiveSession: (id: string, archived: boolean) => void;
   onTogglePin: (id: string, pinned: boolean) => void;
+  // Clear a stuck running flag. The row only offers it while it shows a live turn.
+  onReleaseSession: (id: string) => void;
   onManage: () => void;
   // Grouped-nav gear + New-session menu's "Manage personas…" entry points (§7).
   onOpenPersona: (id: string) => void;
@@ -443,6 +445,8 @@ export function Sidebar(props: Props) {
   // the menu offers Rename · Pin/Unpin · Archive/Unarchive · Delete, with the two-step delete
   // confirm kept inside it. Shared by BOTH row styles, so the chronological cardRow offers the
   // same actions as the persona accordion's sessionRow (owner ask 2026-07-09).
+  // A working row also gets Release. The running flag is in-memory; a turn that dies before
+  // its cleanup leaves it set, and this item is the only in-app way to clear it.
   const rowActions = (s: SessionInfo, title: string) => {
     const menuOpen = rowMenu?.id === s.session_id;
     const item = (testid: string, icon: IconName, label: string, onClick: () => void) => (
@@ -502,6 +506,10 @@ export function Sidebar(props: Props) {
                 () =>
                 props.onArchiveSession(s.session_id, !s.archived),
               )}
+              {s.liveness === "working" &&
+                item("row-menu-release", "wrench", t("sidebar.release"), () =>
+                  props.onReleaseSession(s.session_id),
+                )}
               <div className="h-px bg-line my-1 mx-2" />
               {confirmDelId === s.session_id ? (
                 <button

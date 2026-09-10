@@ -439,6 +439,7 @@ export const ptBR: Catalog = {
   "sidebar.noProjects": "Nenhum projeto ainda — crie um com o + acima.",
   "sidebar.delete": "Excluir",
   "sidebar.deleteConfirm": "Excluir?",
+  "sidebar.release": "Liberar sessão",
   "composer.removeAttachment": "Remover {name}",
   "personas.intro": "Ative um coworker e escolha se ele aparece no seletor de nova sessão. A persona com estrela é o padrão para novas sessões.",
   "personas.defaultTitle": "Padrão para novas sessões",

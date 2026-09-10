@@ -30,13 +30,13 @@ def test_the_flag_gates_a_second_turn(manager):
     assert manager.try_mark_running("s1") is True
 
 
-def test_force_idle_clears_a_stuck_flag(manager):
+async def test_force_idle_clears_a_stuck_flag(manager):
     """The escape hatch. The flag is in-memory and per-process, so before this there was
     no way — API, GUI or otherwise — to clear one that got stuck."""
     manager.try_mark_running("s1")
     assert manager.is_running("s1") is True
 
-    result = manager.force_idle("s1")
+    result = await manager.force_idle("s1")
     assert result["ok"] is True
     assert result["was_running"] is True
     assert manager.is_running("s1") is False
@@ -44,10 +44,59 @@ def test_force_idle_clears_a_stuck_flag(manager):
     assert manager.try_mark_running("s1") is True
 
 
-def test_force_idle_on_an_idle_session_is_a_no_op(manager):
+async def test_force_idle_on_an_idle_session_is_a_no_op(manager):
     """Reports what it found rather than pretending: `was_running` is how a caller
     learns whether it actually unstuck anything."""
-    assert manager.force_idle("never-ran") == {"ok": True, "was_running": False}
+    assert await manager.force_idle("never-ran") == {"ok": True, "was_running": False}
+
+
+async def test_force_idle_tells_every_viewer_the_turn_is_over(manager):
+    """A GUI socket watching a stuck session shows Stop and a waiting row until it hears
+    turn_done. Clearing the flag alone leaves that screen frozen."""
+    seen: list[dict] = []
+
+    async def viewer(message):
+        seen.append(message)
+
+    manager.register_session_client("s1", viewer)
+    manager.try_mark_running("s1")
+
+    await manager.force_idle("s1")
+
+    assert seen == [{"type": "turn_done", "data": {}}]
+
+
+async def test_force_idle_still_notifies_when_nothing_was_stuck(manager):
+    """The flag may be clear while the GUI still thinks it is running. A turn_done
+    resets that view. Cheap and safe: the App handler only flips running off."""
+    seen: list[dict] = []
+
+    async def viewer(message):
+        seen.append(message)
+
+    manager.register_session_client("idle", viewer)
+
+    result = await manager.force_idle("idle")
+
+    assert result == {"ok": True, "was_running": False}
+    assert seen == [{"type": "turn_done", "data": {}}]
+
+
+async def test_force_idle_survives_a_dead_viewer(manager):
+    """broadcast_session drops a socket that raises. The flag must still clear and the
+    call must still answer."""
+
+    async def dead(message):
+        raise RuntimeError("socket closed")
+
+    manager.register_session_client("s1", dead)
+    manager.try_mark_running("s1")
+
+    result = await manager.force_idle("s1")
+
+    assert result == {"ok": True, "was_running": True}
+    assert manager.is_running("s1") is False
+    assert manager.has_session_clients("s1") is False
 
 
 # -- what happens to a message that arrives while stuck ------------------------

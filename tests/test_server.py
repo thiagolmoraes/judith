@@ -1087,6 +1087,40 @@ def test_ws_disconnect_leaves_another_drivers_turn_running(tmp_path):
         manager.mark_idle("bg1")
 
 
+def test_force_idle_over_rest_tells_the_viewing_socket_turn_done(tmp_path):
+    # The GUI socket does not release a flag it did not claim (test above). So a flag
+    # stuck by a background turn can only go through this endpoint, and the socket
+    # showing the session must hear turn_done or it keeps Stop + the waiting row.
+    manager = SessionManager(workspace=tmp_path, provider=ScriptedProvider([_text("hi")]))
+    client = TestClient(create_app(manager))
+    manager.mark_running("s1")
+    try:
+        with client.websocket_connect("/ws/session/s1") as ws:
+            assert ws.receive_json()["data"]["running"] is True
+            body = client.post("/v1/sessions/s1/force-idle").json()
+            assert body == {"ok": True, "was_running": True}
+            assert ws.receive_json() == {"type": "turn_done", "data": {}}
+        assert manager.is_running("s1") is False
+    finally:
+        manager.mark_idle("s1")
+
+
+def test_force_idle_requires_the_sidecar_token(tmp_path, monkeypatch):
+    # Same gate as every other state-changing route. Left open, any local page could
+    # clear a session's flag and race a live turn.
+    monkeypatch.setenv("COWORKER_API_TOKEN", "a" * 64)
+    manager = SessionManager(workspace=tmp_path, provider=ScriptedProvider([]))
+    client = TestClient(create_app(manager))
+
+    assert client.post("/v1/sessions/s1/force-idle").status_code == 401
+
+    allowed = client.post(
+        "/v1/sessions/s1/force-idle", headers={"X-OpenWorker-Token": "a" * 64}
+    )
+    assert allowed.status_code == 200
+    assert allowed.json() == {"ok": True, "was_running": False}
+
+
 class _BlocksUntilReleased(ProviderClient):
     """Holds the turn open until the test says go. The provider runs on a worker
     thread, so waiting here leaves the server loop free to process the socket close."""
