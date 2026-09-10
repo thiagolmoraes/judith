@@ -132,7 +132,8 @@ class ConversationStore:
 
     def _read_jsonl_lines(self, sid: str) -> tuple[Optional[list[dict]], int]:
         """Parse the log. Returns (messages, dropped): `dropped` is how many lines were
-        skipped as invalid JSON. (None, 0) when there is no file yet."""
+        skipped as invalid JSON or as JSON that is not a message object. (None, 0) when
+        there is no file yet."""
         path = self._file(sid)
         if not path.exists():
             return None, 0
@@ -152,9 +153,17 @@ class ConversationStore:
             if not line.strip():
                 continue
             try:
-                messages.append(json.loads(line.decode("utf-8")))
+                message = json.loads(line.decode("utf-8"))
             except (UnicodeDecodeError, json.JSONDecodeError):
                 dropped += 1
+                continue
+            # Valid JSON is not always a message. `null`, `[]` or a bare string parse
+            # fine, then the repair pass calls .get() on them and load() raises. Count
+            # the line as dropped so the sanitising rewrite removes it from disk too.
+            if not isinstance(message, dict):
+                dropped += 1
+                continue
+            messages.append(message)
         return messages, dropped
 
     def _read_jsonl(self, sid: str) -> Optional[list[dict]]:

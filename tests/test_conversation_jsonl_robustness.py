@@ -60,3 +60,35 @@ def test_load_skips_a_corrupt_middle_line(tmp_path):
     loaded = store.load(sid)
     assert loaded is not None
     assert [m["content"] for m in loaded.messages] == ["first", "third"]
+
+
+def test_load_drops_valid_json_that_is_not_a_message(tmp_path):
+    """`null` and `[]` parse as JSON but are not messages. The repair pass calls
+    .get() on every entry, so one such line used to raise on every load. They must
+    be skipped like a corrupt line and scrubbed from disk by the same rewrite."""
+    store = ConversationStore(tmp_path / "state")
+    sid = "abc123def457"
+    jsonl = tmp_path / "state" / "conversations" / f"{sid}.jsonl"
+    jsonl.parent.mkdir(parents=True, exist_ok=True)
+    jsonl.write_text(
+        '{"role": "user", "content": "first"}\n'
+        "null\n"
+        '{"role": "assistant", "content": "second"}\n'
+        "[]\n"
+        '{"role": "user", "content": "third"}\n',
+        encoding="utf-8",
+    )
+    store._conn.execute(
+        "INSERT INTO sessions (session_id, workspace, model, mode, title, n_msgs) "
+        "VALUES (?, '/tmp', 'm', 'interactive', 't', 5)",
+        (sid,),
+    )
+    store._conn.commit()
+    assert store._count(sid) == 5
+
+    loaded = store.load(sid)  # must not raise
+    assert loaded is not None
+    assert [m["content"] for m in loaded.messages] == ["first", "second", "third"]
+    # The rewrite ran and the non-message lines are gone from disk.
+    assert store._count(sid) == 3
+    assert store.load(sid).messages == loaded.messages
