@@ -293,6 +293,40 @@ def test_salvage_truncated_xml_prefers_a_complete_call_and_filters_unknown_names
     assert _salvage_tool_calls_from_text("<function=rm_rf>\n<parameter=p>/", _TODO_TOOLS) == []
 
 
+_QUOTED_CALL = "<function=list_files><parameter=recursive>true</parameter></function>"
+
+
+def test_salvage_ignores_a_call_inside_a_closed_fence():
+    """Fenced text is a quote. A model pasting a web page or an example that carries
+    tool markup must not have it run, even for a tool that needs no approval."""
+    quoted_xml = f"The page says:\n```\n{_QUOTED_CALL}\n```\nThat is all."
+    assert _salvage_tool_calls_from_text(quoted_xml, _TODO_TOOLS) == []
+    quoted_tag = (
+        "Qwen writes:\n~~~\n"
+        '<tool_call>{"name": "list_files", "arguments": {"recursive": true}}</tool_call>\n'
+        "~~~"
+    )
+    assert _salvage_tool_calls_from_text(quoted_tag, _TODO_TOOLS) == []
+
+
+def test_salvage_ignores_a_call_inside_an_open_fence():
+    """A fence the model never closed still runs to the end of the text. The markup
+    after it is quoted, not called."""
+    assert _salvage_tool_calls_from_text(f"Example:\n```\n{_QUOTED_CALL}", _TODO_TOOLS) == []
+    assert _salvage_tool_calls_from_text(f"Example:\n~~~\n{_QUOTED_CALL}", _TODO_TOOLS) == []
+    # A truncated call inside an open fence is not rescued either.
+    assert _salvage_tool_calls_from_text("Example:\n```\n<function=list_files>", _TODO_TOOLS) == []
+
+
+def test_salvage_keeps_a_call_outside_a_fence():
+    """The strip only removes the fenced part. A real call after a quoted example is
+    still recovered, with the arguments intact."""
+    text = f"Here is the shape:\n```\n<function=grep>\n```\nNow for real:\n{_QUOTED_CALL}"
+    calls = _salvage_tool_calls_from_text(text, _TODO_TOOLS + _GREP_TOOL)
+    assert [c.name for c in calls] == ["list_files"]
+    assert calls[0].arguments == {"recursive": True}
+
+
 def test_looks_like_unparsed_tool_call_ignores_code_and_needs_tools():
     """Distinguishes a leaked call from a model *explaining* tool syntax — the latter is a real
     answer and must not be turned into an error."""

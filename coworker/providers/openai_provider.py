@@ -536,7 +536,11 @@ def _salvage_tool_calls_from_text(
     1. `<tool_call>…</tool_call>` blocks (anywhere, balanced); 2. embedded `{"name","arguments"}`
     objects (even mixed with prose); 3. `toolname {args}` / `toolname [args]` for known tools.
     Returns [] (treat as plain text) when nothing tool-shaped is found."""
-    text = (content or "").strip()
+    # Text inside a code fence is a quote, not a call. A model that pastes a web
+    # page or a syntax example into a block must not have it run, even through a
+    # tool that needs no approval. Same strip as looks_like_unparsed_tool_call, so
+    # both agree on what counts as a call.
+    text = _FENCED.sub("", content or "").strip()
     if not text:
         return []
     names, single = _tool_index(tools)
