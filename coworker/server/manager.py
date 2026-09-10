@@ -3025,7 +3025,7 @@ class SessionManager:
         return True
 
     def bind_turn_task(
-        self, session_id: str, task: Optional["asyncio.Task[Any]"]
+        self, session_id: str, task: Optional[asyncio.Task[Any]]
     ) -> None:
         """Remember the task that drives this session's turn.
 
@@ -3154,7 +3154,7 @@ class SessionManager:
         task.add_done_callback(lambda done: self._drain_finished(session_id, text, done))
 
     def _drain_finished(
-        self, session_id: str, text: str, task: "asyncio.Task[None]"
+        self, session_id: str, text: str, task: asyncio.Task[None]
     ) -> None:
         """Done callback of a drain turn.
 
@@ -4354,7 +4354,7 @@ def _parse_inbox_json(s: str) -> dict[str, Any]:
         return {}
 
 
-def _current_task() -> Optional["asyncio.Task[Any]"]:
+def _current_task() -> Optional[asyncio.Task[Any]]:
     """The task running now. None outside a loop, and None inside a loop callback."""
     try:
         return asyncio.current_task()
