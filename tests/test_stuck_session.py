@@ -116,35 +116,27 @@ async def test_force_idle_on_an_idle_session_is_a_no_op(manager):
     assert await manager.force_idle("never-ran") == {"ok": True, "was_running": False, "queued": 0}
 
 
-async def test_force_idle_tells_every_viewer_the_turn_is_over(manager):
+@pytest.mark.parametrize(
+    ("mark_running", "was_running"),
+    [
+        pytest.param(True, True, id="stuck-flag"),
+        pytest.param(False, False, id="nothing-stuck"),
+    ],
+)
+async def test_force_idle_tells_every_viewer_the_turn_is_over(
+    manager, mark_running, was_running
+):
     """A GUI socket watching a stuck session shows Stop and a waiting row until it hears
-    turn_done. Clearing the flag alone leaves that screen frozen."""
-    seen: list[dict] = []
+    turn_done. Clearing the flag alone leaves that screen frozen. Sent even when the
+    flag was already clear: the GUI may still think it is running, and the App handler
+    only flips running off, so the reset is cheap and safe."""
+    seen = _viewer_log(manager, "s1")
+    if mark_running:
+        manager.try_mark_running("s1")
 
-    async def viewer(message):
-        seen.append(message)
+    result = await manager.force_idle("s1")
 
-    manager.register_session_client("s1", viewer)
-    manager.try_mark_running("s1")
-
-    await manager.force_idle("s1")
-
-    assert seen == [{"type": "turn_done", "data": {}}]
-
-
-async def test_force_idle_still_notifies_when_nothing_was_stuck(manager):
-    """The flag may be clear while the GUI still thinks it is running. A turn_done
-    resets that view. Cheap and safe: the App handler only flips running off."""
-    seen: list[dict] = []
-
-    async def viewer(message):
-        seen.append(message)
-
-    manager.register_session_client("idle", viewer)
-
-    result = await manager.force_idle("idle")
-
-    assert result == {"ok": True, "was_running": False, "queued": 0}
+    assert result == {"ok": True, "was_running": was_running, "queued": 0}
     assert seen == [{"type": "turn_done", "data": {}}]
 
 
@@ -377,20 +369,7 @@ async def test_a_message_to_an_unresumable_session_is_parked(manager, monkeypatc
     assert "resume" in items[0]["reason"]
 
 
-# -- the REST hatch ------------------------------------------------------------
-def test_force_idle_over_rest(tmp_path, monkeypatch):
-    from fastapi.testclient import TestClient
-
-    from coworker.server import create_app
-
-    monkeypatch.setenv("COWORKER_STATE_DIR", str(tmp_path / "state"))
-    (tmp_path / "state").mkdir(parents=True, exist_ok=True)
-    mgr = SessionManager(workspace=tmp_path)
-    with TestClient(create_app(mgr)) as client:
-        mgr.try_mark_running("s1")
-        body = client.post("/v1/sessions/s1/force-idle").json()
-        assert body == {"ok": True, "was_running": True, "queued": 0}
-        assert mgr.is_running("s1") is False
+# The REST hatch itself is covered in tests/test_server.py, next to the other routes.
 
 
 # -- how a platform message asks to be answered --------------------------------

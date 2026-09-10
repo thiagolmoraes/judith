@@ -45,6 +45,35 @@ def _client(tmp_path, turns):
     return TestClient(create_app(manager))
 
 
+def _receive_json(ws, timeout: float = 5.0) -> dict:
+    """ws.receive_json with a deadline. TestClient's has none, so a frame that never
+    comes would hang the whole run instead of failing this one test."""
+    box: dict = {}
+
+    def _pull():
+        try:
+            box["frame"] = ws.receive_json()
+        except BaseException as exc:  # surfaced on the test thread below
+            box["error"] = exc
+
+    worker = threading.Thread(target=_pull, daemon=True)
+    worker.start()
+    worker.join(timeout)
+    if "error" in box:
+        raise box["error"]
+    assert "frame" in box, f"no frame within {timeout}s"
+    return box["frame"]
+
+
+def _read_until(ws, kind: str, timeout: float = 5.0) -> dict:
+    """Drain frames until one of `kind` arrives. Same deadline for the whole drain."""
+    deadline = time.monotonic() + timeout
+    while True:
+        frame = _receive_json(ws, timeout=max(0.1, deadline - time.monotonic()))
+        if frame["type"] == kind:
+            return frame
+
+
 # -- REST -----------------------------------------------------------------------
 
 
@@ -1092,15 +1121,16 @@ def test_force_idle_over_rest_tells_the_viewing_socket_turn_done(tmp_path):
     # The GUI socket does not release a flag it did not claim (test above). So a flag
     # stuck by a background turn can only go through this endpoint, and the socket
     # showing the session must hear turn_done or it keeps Stop + the waiting row.
+    # Read with a deadline: without the broadcast this must fail, not hang the run.
     manager = SessionManager(workspace=tmp_path, provider=ScriptedProvider([_text("hi")]))
     client = TestClient(create_app(manager))
     manager.mark_running("s1")
     try:
         with client.websocket_connect("/ws/session/s1") as ws:
-            assert ws.receive_json()["data"]["running"] is True
+            assert _receive_json(ws)["data"]["running"] is True
             body = client.post("/v1/sessions/s1/force-idle").json()
             assert body == {"ok": True, "was_running": True, "queued": 0}
-            assert ws.receive_json() == {"type": "turn_done", "data": {}}
+            assert _receive_json(ws) == {"type": "turn_done", "data": {}}
         assert manager.is_running("s1") is False
     finally:
         manager.mark_idle("s1")
@@ -1137,35 +1167,6 @@ class _BlocksUntilReleased(ProviderClient):
 
     def capabilities(self, model):
         return ModelCapabilities()
-
-
-def _receive_json(ws, timeout: float = 5.0) -> dict:
-    """ws.receive_json with a deadline. TestClient's has none, so a frame that never
-    comes would hang the whole run instead of failing this one test."""
-    box: dict = {}
-
-    def _pull():
-        try:
-            box["frame"] = ws.receive_json()
-        except BaseException as exc:  # surfaced on the test thread below
-            box["error"] = exc
-
-    worker = threading.Thread(target=_pull, daemon=True)
-    worker.start()
-    worker.join(timeout)
-    if "error" in box:
-        raise box["error"]
-    assert "frame" in box, f"no frame within {timeout}s"
-    return box["frame"]
-
-
-def _read_until(ws, kind: str, timeout: float = 5.0) -> dict:
-    """Drain frames until one of `kind` arrives. Same deadline for the whole drain."""
-    deadline = time.monotonic() + timeout
-    while True:
-        frame = _receive_json(ws, timeout=max(0.1, deadline - time.monotonic()))
-        if frame["type"] == kind:
-            return frame
 
 
 def _open_live_turn(client, provider, session_id: str):
