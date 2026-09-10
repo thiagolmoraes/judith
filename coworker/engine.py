@@ -186,6 +186,16 @@ class TurnEngine:
             return None
         return self._steering.pop(0)
 
+    def push_steering_front(
+        self, text: str, source: Optional[dict[str, Any]] = None
+    ) -> None:
+        """Put a message back at the head of the queue.
+
+        For a release that popped the oldest entry and then could not claim the
+        session for it. Appending would send it after everything that arrived later.
+        """
+        self._steering.insert(0, (text, source))
+
     # -- main loop --------------------------------------------------------------
     async def run(
         self, user_input: "str | list", *, source: Optional[dict[str, Any]] = None

@@ -3087,8 +3087,13 @@ class SessionManager:
         Messages that arrived while the flag was stuck sit in the engine's steering
         queue, and that queue only empties on the next run. Clearing the flag alone
         delivers nothing. So a real release starts that run: the oldest message opens
-        it, the rest ride in as steering at its first step. `queued` is what is still
-        waiting when this returns.
+        it, the rest ride in as steering at its first step. `queued` is what the
+        release left in the queue for that run to pick up.
+
+        The drain runs before the turn_done broadcast, not after. The broadcast
+        awaits, and an inbound that lands in that await used to claim the freed flag
+        first. The drain then found the session busy and queued the oldest message
+        behind the newer ones.
         """
         alive = self.turn_alive(session_id)
         if alive and not force:
@@ -3100,43 +3105,58 @@ class SessionManager:
             }
         was = session_id in self._running_sessions
         self.mark_idle(session_id)
-        await self.broadcast_session(session_id, {"type": "turn_done", "data": {}})
         # A forced release under a live turn drains nothing. That turn still injects
         # its own queue at its next step. A second run here would steal from it.
-        queued = (
-            self._steering_backlog(session_id)
-            if alive
-            else self._drain_steering(session_id)
-        )
+        if not alive:
+            self._drain_steering(session_id)
+        queued = self._steering_backlog(session_id)
+        await self.broadcast_session(session_id, {"type": "turn_done", "data": {}})
         return {"ok": True, "was_running": was, "queued": queued}
 
     def _steering_backlog(self, session_id: str) -> int:
         engine = self._engines.get(session_id)
         return engine.steering_backlog() if engine is not None else 0
 
-    def _drain_steering(self, session_id: str) -> int:
-        """Open a background turn with the oldest queued message. Returns what is left.
+    def _drain_steering(self, session_id: str) -> None:
+        """Open a background turn with the oldest queued message.
 
         Only the first entry is taken. deliver_to_session runs the engine, and the
         engine injects the rest of its queue on its own at the first step without a
         tool call. Popping them all here would only reorder them.
+
+        Claims the running flag here, with no await in between, and hands it to the
+        turn. Anything that runs before that turn starts must find the session busy
+        and queue behind the backlog, not in front of it.
         """
         engine = self._engines.get(session_id)
         if engine is None:
-            return 0
+            return
         entry = engine.pop_steering()
         if entry is None:
-            return 0
+            return
         text, source = entry
+        if not self.try_mark_running(session_id):
+            # Not expected: the flag was cleared a moment ago and nothing awaited
+            # since. Back to the head of the queue, so the order holds.
+            logger.warning("release could not claim %s for its backlog", session_id)
+            engine.push_steering_front(text, source)
+            return
         task = asyncio.get_running_loop().create_task(
-            self.deliver_to_session(session_id, text, source=source)
+            self.deliver_to_session(session_id, text, source=source, claimed=True)
         )
+        # Bound now, not when the task starts: a release is refused while a bound
+        # task is pending, and this one is the turn from the moment it is scheduled.
+        self.bind_turn_task(session_id, task)
         self._drain_tasks.add(task)
         task.add_done_callback(self._drain_tasks.discard)
-        return engine.steering_backlog()
 
     async def deliver_to_session(
-        self, session_id: str, message: str, *, source: Optional[dict[str, Any]] = None
+        self,
+        session_id: str,
+        message: str,
+        *,
+        source: Optional[dict[str, Any]] = None,
+        claimed: bool = False,
     ) -> None:
         """Deliver an out-of-band message to a (durable) session — the agent stays resumable
         forever, so this works with no live socket. Busy (mid tool-loop): steer it into the live
@@ -3144,18 +3164,24 @@ class SessionManager:
         (results persist; if the session is Unattended, any approvals route to the Inbox). Shared
         by self-wake and channel-subscription delivery. `source` is the display-only MessageSource
         sidecar for connector messages (framed `message` stays the model-facing text).
+
+        `claimed`: the caller already holds the running flag for this turn. The release
+        drain claims it before it can yield the loop. The turn still binds itself and
+        still gives the flag back when it ends.
         """
         engine = self.get_engine(session_id)
         if engine is None:
             # No engine and none can be built (a code surface whose folder is gone).
             # Park it: an inbound WhatsApp/Slack message that vanishes here is
             # indistinguishable, to the sender, from one nobody read.
+            if claimed:
+                self.mark_idle(session_id)
             logger.warning("no engine for %s — parking inbound", session_id)
             self.unrouted.record(
                 session_id, "-", message, reason="session could not be resumed"
             )
             return
-        if not self.try_mark_running(session_id):
+        if not claimed and not self.try_mark_running(session_id):
             # Mid-turn: steer it into the live run at the next step. Recorded because a
             # session whose running flag is STUCK looks identical to a busy one from
             # here — every later message queues into a turn that will never execute, and

@@ -201,6 +201,24 @@ def test_steering_injects_next_turn(tmp_path):
     assert events[-1].data["status"] == "completed"
 
 
+def test_pop_steering_takes_the_oldest_and_push_front_puts_it_back(tmp_path):
+    engine, _ = _engine(tmp_path, [])
+    engine.queue_steering("first", {"connector": "slack"})
+    engine.queue_steering("second")
+
+    entry = engine.pop_steering()
+
+    assert entry == ("first", {"connector": "slack"})
+    assert engine.steering_backlog() == 1
+
+    engine.push_steering_front(*entry)
+
+    assert engine.steering_backlog() == 2
+    assert engine.pop_steering() == ("first", {"connector": "slack"})
+    assert engine.pop_steering() == ("second", None)
+    assert engine.pop_steering() is None
+
+
 # -- parallel tool execution ------------------------------------------------------
 
 

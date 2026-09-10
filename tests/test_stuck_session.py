@@ -78,6 +78,17 @@ def _user_texts(call: list[dict]) -> list[str]:
     return [str(m["content"]) for m in call if m.get("role") == "user"]
 
 
+def _first_seen_order(calls: list[list[dict]], texts: tuple[str, ...]) -> list[str]:
+    """The order in which the model first saw each of `texts`, across every call."""
+    seen: list[str] = []
+    for call in calls:
+        for user_text in _user_texts(call):
+            for wanted in texts:
+                if wanted in user_text and wanted not in seen:
+                    seen.append(wanted)
+    return seen
+
+
 def _viewer_log(manager, session_id: str) -> list[dict]:
     seen: list[dict] = []
 
@@ -296,6 +307,104 @@ async def test_force_idle_hands_the_backlog_to_a_fresh_turn(make_manager, monkey
     assert "first while stuck" in _user_texts(second)[-2]
     assert "second while stuck" in _user_texts(second)[-1]
     assert engine.steering_backlog() == 0
+
+
+async def test_an_inbound_in_the_turn_done_gap_queues_behind_the_backlog(
+    make_manager, monkeypatch
+):
+    """force_idle clears the flag, then awaits the turn_done broadcast. That await
+    yields the loop. An inbound landing right there passed try_mark_running and
+    opened its own run. The drain that followed found the session busy and queued
+    the oldest message BEHIND the two that arrived after it: the model saw them as
+    [rival, second, third, first]. The drain now claims the flag before the
+    broadcast, so the inbound is the one that queues, at the end."""
+    provider = _RecordingProvider(["reply"] * 4)
+    manager = make_manager(provider=provider)
+    monkeypatch.setattr(manager, "_maybe_autotitle", lambda session_id: None)
+    manager.get_engine("s1")
+    manager.try_mark_running("s1")  # stuck: the flag is set, no turn task is bound
+    for text in ("first", "second", "third"):
+        await manager.deliver_to_session("s1", text)
+    rival: list[asyncio.Task] = []
+    real_broadcast = manager.broadcast_session
+
+    async def inbound_in_the_gap(session_id, message):
+        if message.get("type") == "turn_done" and not rival:
+            # The path a WhatsApp DM takes. Not awaited: like a real inbound it runs
+            # when the loop next yields, which this broadcast is about to do.
+            rival.append(
+                asyncio.create_task(manager.deliver_to_session(session_id, "rival"))
+            )
+        await real_broadcast(session_id, message)
+
+    monkeypatch.setattr(manager, "broadcast_session", inbound_in_the_gap)
+
+    result = await manager.force_idle("s1")
+
+    assert result == {"ok": True, "was_running": True, "queued": 2}
+    await _wait_until(
+        lambda: bool(rival)
+        and rival[0].done()
+        and len(provider.calls) >= 2
+        and not manager.is_running("s1")
+    )
+    await asyncio.gather(*rival)
+    assert _first_seen_order(provider.calls, ("first", "second", "third", "rival")) == [
+        "first",
+        "second",
+        "third",
+        "rival",
+    ]
+
+
+async def test_the_release_owns_the_next_turn_before_it_says_turn_done(
+    make_manager, monkeypatch
+):
+    """What anything that runs during the turn_done broadcast finds: the session
+    already claimed for its drain turn, with a live task bound to it."""
+    provider = _RecordingProvider(["reply"])
+    manager = make_manager(provider=provider)
+    monkeypatch.setattr(manager, "_maybe_autotitle", lambda session_id: None)
+    manager.get_engine("s1")
+    manager.try_mark_running("s1")
+    await manager.deliver_to_session("s1", "while stuck")
+    at_turn_done: list[tuple[bool, bool]] = []
+    real_broadcast = manager.broadcast_session
+
+    async def peek(session_id, message):
+        if message.get("type") == "turn_done" and not at_turn_done:
+            at_turn_done.append(
+                (manager.is_running(session_id), manager.turn_alive(session_id))
+            )
+        await real_broadcast(session_id, message)
+
+    monkeypatch.setattr(manager, "broadcast_session", peek)
+
+    await manager.force_idle("s1")
+
+    assert at_turn_done == [(True, True)]
+    await _wait_until(lambda: not manager.is_running("s1"))
+
+
+async def test_a_release_that_cannot_claim_puts_the_message_back_in_front(
+    manager, monkeypatch, caplog
+):
+    """Not expected: the flag was cleared a moment before and nothing awaited since.
+    If it happens anyway, the popped message goes back to the HEAD of the queue.
+    Appending it would send it after everything that arrived later."""
+    engine = manager.get_engine("s1")
+    manager.try_mark_running("s1")
+    await manager.deliver_to_session("s1", "first")
+    await manager.deliver_to_session("s1", "second")
+    monkeypatch.setattr(manager, "try_mark_running", lambda session_id: False)
+
+    with caplog.at_level("WARNING"):
+        result = await manager.force_idle("s1")
+
+    assert result == {"ok": True, "was_running": True, "queued": 2}
+    assert engine.pop_steering() == ("first", None)
+    assert engine.pop_steering() == ("second", None)
+    assert "could not claim s1" in caplog.text
 
 
 async def test_a_forced_release_under_a_live_turn_leaves_the_queue_to_it(manager):
