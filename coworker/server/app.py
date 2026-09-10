@@ -18,7 +18,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import Body, FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -41,6 +41,14 @@ class CompactionSettingsBody(BaseModel):
     compaction_threshold_pct: Optional[float] = None
     compaction_cap_tokens: Optional[int] = None
     compaction_model: Optional[str] = None
+
+
+class ForceIdleBody(BaseModel):
+    """POST /v1/sessions/{id}/force-idle. `force` releases a turn that is still alive.
+    A validated bool on purpose: through bool() the string "false" was True and released
+    a live turn. Module-level for the same FastAPI reason as ApprovalRevoke."""
+
+    force: bool = False
 
 # Origins allowed to talk to the local sidecar. It binds to 127.0.0.1, but a page in the
 # user's own browser can still reach loopback — so without an origin gate, any website they
@@ -444,13 +452,13 @@ def create_app(manager: SessionManager) -> FastAPI:
 
     @app.post("/v1/sessions/{session_id}/force-idle")
     async def session_force_idle(
-        session_id: str, body: Optional[dict[str, Any]] = Body(default=None)
+        session_id: str, body: Optional[ForceIdleBody] = None
     ) -> Any:
         """Clear a stuck running flag. A live turn answers 409 unless the body says
         `{"force": true}`. The engine has no lock, so a cleared flag under a live turn
         lets the next message start a second run on top of it. Async on purpose: the
         turn_done broadcast writes to sockets owned by this loop."""
-        force = bool((body or {}).get("force"))
+        force = body.force if body is not None else False
         result = await manager.force_idle(session_id, force=force)
         if result.get("reason") == "turn_alive":
             return JSONResponse(status_code=409, content=result)

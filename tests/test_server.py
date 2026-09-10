@@ -1218,6 +1218,34 @@ def test_force_idle_over_rest_refuses_a_live_turn_unless_forced(tmp_path):
                 _read_until(ws, "turn_done")
 
 
+def test_force_idle_over_rest_reads_force_as_a_bool_not_a_truthy_string(tmp_path):
+    # The body used to be a plain dict and `force` went through bool(). The string
+    # "false" is truthy, so `{"force": "false"}` released a live turn. The field is a
+    # validated bool now. Pydantic reads "false" as False, so the call stays refused,
+    # and a string it cannot read at all is a 422. The flag survives both.
+    provider = _BlocksUntilReleased()
+    manager = SessionManager(workspace=tmp_path, provider=provider)
+    with TestClient(create_app(manager)) as client:
+        with _open_live_turn(client, provider, "live5") as ws:
+            try:
+                refused = client.post(
+                    "/v1/sessions/live5/force-idle", json={"force": "false"}
+                )
+                assert refused.status_code == 409
+                assert refused.json()["reason"] == "turn_alive"
+                assert manager.is_running("live5") is True
+
+                rejected = client.post(
+                    "/v1/sessions/live5/force-idle", json={"force": "maybe"}
+                )
+                assert rejected.status_code == 422
+                assert manager.is_running("live5") is True
+            finally:
+                provider.release.set()
+                _read_until(ws, "assistant_message")
+                _read_until(ws, "turn_done")
+
+
 def test_a_socket_driven_turn_is_alive_until_its_turn_done(tmp_path):
     # claim_turn binds the task it starts. run_turn's finally ends the binding before
     # it broadcasts turn_done, so a client that heard turn_done sees a dead turn.
