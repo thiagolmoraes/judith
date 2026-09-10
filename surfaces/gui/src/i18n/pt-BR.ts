@@ -442,6 +442,7 @@ export const ptBR: Catalog = {
   "sidebar.release": "Liberar sessão",
   "sidebar.releaseConfirm": "Liberar?",
   "sidebar.releaseTurnAlive": "“{title}” ainda está rodando um turno. Abra e use Parar.",
+  "sidebar.releaseTurnAliveHere": "Esta sessão ainda está rodando um turno. Use Parar.",
   "sidebar.releaseNothingStuck": "Nada estava travado em “{title}”.",
   "sidebar.releaseFailed": "Não foi possível liberar “{title}”.",
   "composer.removeAttachment": "Remover {name}",

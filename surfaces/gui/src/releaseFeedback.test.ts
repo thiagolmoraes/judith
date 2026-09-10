@@ -12,9 +12,21 @@ describe("releaseFeedback", () => {
     expect(releaseFeedback({ ok: false, reason: "turn_alive", was_running: true }, OPEN)).toEqual({
       surface: "transcript",
       tone: "warn",
-      key: "sidebar.releaseTurnAlive",
+      key: "sidebar.releaseTurnAliveHere",
       vars: { title: "Weekly digest" },
     });
+  });
+
+  it("tells the open session to use Stop without asking to open it", () => {
+    const here = releaseFeedback({ ok: false, reason: "turn_alive" }, OPEN)!;
+    expect(translate("en", here.key, here.vars)).toBe(
+      "This session is still running a turn. Use Stop.",
+    );
+    expect(translate("pt-BR", here.key, here.vars)).toBe(
+      "Esta sessão ainda está rodando um turno. Use Parar.",
+    );
+    const other = releaseFeedback({ ok: false, reason: "turn_alive" }, OTHER)!;
+    expect(other.key).toBe("sidebar.releaseTurnAlive");
   });
 
   it("says so when there was no flag to clear", () => {

@@ -436,6 +436,7 @@ export const en: Catalog = {
   "sidebar.release": "Release session",
   "sidebar.releaseConfirm": "Release?",
   "sidebar.releaseTurnAlive": "“{title}” is still running a turn. Open it and use Stop.",
+  "sidebar.releaseTurnAliveHere": "This session is still running a turn. Use Stop.",
   "sidebar.releaseNothingStuck": "Nothing was stuck in “{title}”.",
   "sidebar.releaseFailed": "Could not release “{title}”.",
   "composer.removeAttachment": "Remove {name}",

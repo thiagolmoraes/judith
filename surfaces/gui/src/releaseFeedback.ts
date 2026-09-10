@@ -41,9 +41,16 @@ export function releaseFeedback(
 ): ReleaseFeedback | null {
   const found = feedbackFor(result);
   if (!found) return null;
+  const surface = target.id === target.openId ? "transcript" : "toast";
+  // In the open transcript "open it" makes no sense: the session is already on screen.
+  const key =
+    found.key === "sidebar.releaseTurnAlive" && surface === "transcript"
+      ? "sidebar.releaseTurnAliveHere"
+      : found.key;
   return {
     ...found,
-    surface: target.id === target.openId ? "transcript" : "toast",
+    key,
+    surface,
     vars: { title: releaseTitle(target.id, target.title) },
   };
 }
